@@ -1,0 +1,20 @@
+# binaries
+/server
+/bin/
+/dist/
+*.test
+*.out
+
+# local env / secrets
+.env
+.env.*
+!.env.example
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
+
+# frontend (added in Phase 9)
+web/node_modules/
+web/dist/

@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aaks
+      POSTGRES_PASSWORD: aaks
+      POSTGRES_DB: aaks
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aaks -d aaks"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HTTP_ADDR: ":8080"
+      DB_DSN: "postgres://aaks:aaks@postgres:5432/aaks?sslmode=disable"
+      # DEV-ONLY default key. Override ENCRYPTION_KEY in production / .env.
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-only-do-not-use-in-production}
+      GIT_KEY_PATH: /run/secrets/git_key
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      REPOS_ROOT: /var/lib/aaks/repos
+      WORKTREES_ROOT: /var/lib/aaks/worktrees
+    volumes:
+      # Lets the backend spawn sibling task containers (Docker-out-of-Docker).
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Shared with task containers so both see the same worktree paths.
+      - aaks-data:/var/lib/aaks
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:
+  aaks-data:
