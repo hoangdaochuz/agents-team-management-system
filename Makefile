@@ -1,5 +1,5 @@
 ## AI Agent Kanban System — developer commands
-.PHONY: build test vet lint run tidy compose-up compose-down runner clean
+.PHONY: build test vet lint run tidy compose-up compose-down runner clean web-install web-dev web-build web-typecheck
 
 build:
 	go build ./...
@@ -31,3 +31,16 @@ runner:
 
 clean:
 	go clean ./...
+
+## Frontend (Vite + React + TS) — lives in web/.
+web-install:
+	cd web && npm install
+
+web-dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
+
+web-typecheck:
+	cd web && npm run typecheck

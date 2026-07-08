@@ -17,9 +17,12 @@ per-task runner base image, CI.
 ## Quick start
 
 ```bash
-make build test          # build + run unit tests
+make build test          # build + run unit tests (Go)
 make compose-up          # app + postgres; visit http://localhost:8080/healthz
 make runner              # build the credential-less task-container base image (Phase 5+)
+make web-install         # install frontend deps
+make web-dev             # Vite dev server on :5173 (proxies /api -> :8080)
+make web-build           # typecheck + production build into web/dist
 ```
 
 ## Layout
@@ -29,6 +32,7 @@ cmd/server/        entrypoint
 internal/config/  env config
 internal/httpapi/ HTTP server, routes, middleware      (more packages land per phase)
 runner/           Dockerfile for per-task execution sandbox
+web/              Vite + React + TS SPA (api client, SSE hook, app shell)
 docs/             spec, design, tasks
 ```
 
