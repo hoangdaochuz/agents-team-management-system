@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kanban · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="kanban">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <div class="crumbs" style="margin-bottom:6px"><a href="dashboard.html">Projects</a><span class="sep">/</span><span>Agent Ops</span><span class="sep">/</span><span class="fg2">Sprint 24 board</span></div>
+            <h1 class="page-title">Sprint 24 — Agent Ops</h1>
+            <div class="page-sub">12 issues · drag cards across columns to update status · each issue is owned by one agent</div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost">Share</button>
+            <button class="btn btn-primary" onclick="openModal('newTask')">+ Create</button>
+          </div>
+        </div>
+
+        <!-- BOARD TOOLBAR -->
+        <div class="board-toolbar" data-od-id="board-toolbar">
+          <div class="board-search">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--meta)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+            <input type="text" placeholder="Search issues…" />
+          </div>
+
+          <button class="filter-btn">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            Type
+          </button>
+          <button class="filter-btn">Priority</button>
+          <button class="filter-btn">Assignee</button>
+          <button class="filter-btn">Labels</button>
+
+          <span class="divider-v"></span>
+
+          <button class="filter-btn">
+            Group: <b style="color:var(--fg);margin-left:2px">Status</b>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+
+          <span class="divider-v"></span>
+
+          <div class="avatar-stack" title="Assignees">
+            <span class="avatar sm">AT</span>
+            <span class="avatar sm">FO</span>
+            <span class="avatar sm">EC</span>
+            <span class="avatar sm">IR</span>
+            <span class="avatar sm">NO</span>
+            <span class="avatar sm more">+2</span>
+          </div>
+
+          <div style="margin-left:auto" class="seg" data-od-id="board-view">
+            <button class="active">Board</button>
+            <button>List</button>
+            <button>Timeline</button>
+          </div>
+        </div>
+
+        <!-- BOARD -->
+        <section class="kanban" data-kanban data-od-id="kanban-board">
+
+          <!-- BACKLOG -->
+          <div class="col" data-status="backlog">
+            <div class="col-head">
+              <div class="col-title"><span class="badge-dot" style="background:var(--meta)"></span>Backlog <span class="col-count">4</span></div>
+              <div class="col-head-actions">
+                <button class="col-add" aria-label="Add">＋</button>
+                <button class="col-menu" aria-label="More">⋯</button>
+              </div>
+            </div>
+            <div class="col-body stack" style="gap:var(--space-3)">
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts230">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-230</span></div>
+                  <span class="prio prio-medium" title="Medium"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 10h14M5 14h14"/></svg></span>
+                </div>
+                <div class="card-title2">Add rate-limiting to /v2/agents</div>
+                <div class="card-desc">Token-bucket limiter keyed by API key, configurable per workspace.</div>
+                <div class="card-labels"><span class="lbl lbl-backend">backend</span><span class="lbl lbl-refactor">infra</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.8-5.5A8 8 0 1 1 21 12Z"/></svg>2</span></div>
+                  <div class="meta-left"><span class="points">3</span><span class="avatar sm">AT</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts231">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-story"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="m8 11 8-3M8 13l8 3"/></svg></span><span class="card-id">TS-231</span></div>
+                  <span class="prio prio-high" title="High"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg></span>
+                </div>
+                <div class="card-title2">E2E tests for login flow</div>
+                <div class="card-desc">Cover SSO, MFA fallback, and expired-session redirect.</div>
+                <div class="card-labels"><span class="lbl lbl-qa">qa</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg>0/5</span></div>
+                  <div class="meta-left"><span class="points">5</span><span class="avatar sm">EC</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts232">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-232</span></div>
+                  <span class="prio prio-low" title="Low"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+                </div>
+                <div class="card-title2">Compile onboarding FAQ</div>
+                <div class="card-labels"><span class="lbl lbl-docs">docs</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.8-5.5A8 8 0 1 1 21 12Z"/></svg>1</span></div>
+                  <div class="meta-left"><span class="points">2</span><span class="avatar sm">NO</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts233">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-story"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="m8 11 8-3M8 13l8 3"/></svg></span><span class="card-id">TS-233</span></div>
+                  <span class="prio prio-medium" title="Medium"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 10h14M5 14h14"/></svg></span>
+                </div>
+                <div class="card-title2">Analyze July churn logs</div>
+                <div class="card-labels"><span class="lbl lbl-research">research</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"></div>
+                  <div class="meta-left"><span class="points">3</span><span class="avatar sm">IR</span></div>
+                </div>
+              </a>
+
+              <button class="col-add-card" onclick="openModal('newTask')">+ Create issue</button>
+            </div>
+          </div>
+
+          <!-- IN PROGRESS -->
+          <div class="col" data-status="progress">
+            <div class="col-head">
+              <div class="col-title"><span class="badge-dot" style="background:var(--accent)"></span>In progress <span class="col-count">3</span> <span class="col-wip">· 3/5</span></div>
+              <div class="col-head-actions">
+                <button class="col-add" aria-label="Add">＋</button>
+                <button class="col-menu" aria-label="More">⋯</button>
+              </div>
+            </div>
+            <div class="col-body stack" style="gap:var(--space-3)">
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts214">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-214</span></div>
+                  <span class="prio prio-highest" title="Highest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6M6 10 12 4l6 6"/></svg></span>
+                </div>
+                <div class="card-title2">Refactor JWT auth middleware</div>
+                <div class="card-desc">Split validateToken() into helpers, add context cancellation.</div>
+                <div class="card-labels"><span class="lbl lbl-backend">backend</span><span class="lbl lbl-refactor">auth</span></div>
+                <div style="margin:2px 0"><div class="spread" style="margin-bottom:3px"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg>3/5</span><span class="mono" style="font-size:11px">78%</span></div><div class="progress"><i style="width:78%"></i></div></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip due-soon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>Today</span><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.8-5.5A8 8 0 1 1 21 12Z"/></svg>4</span><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>2</span></div>
+                  <div class="meta-left"><span class="points">8</span><span class="avatar sm">FO</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts221">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-221</span></div>
+                  <span class="prio prio-medium" title="Medium"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 10h14M5 14h14"/></svg></span>
+                </div>
+                <div class="card-title2">Draft API v2 documentation</div>
+                <div class="card-desc">Endpoint reference + auth + pagination sections.</div>
+                <div class="card-labels"><span class="lbl lbl-docs">docs</span><span class="lbl lbl-backend">api</span></div>
+                <div style="margin:2px 0"><div class="spread" style="margin-bottom:3px"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/></svg>2/6</span><span class="mono" style="font-size:11px">41%</span></div><div class="progress"><i style="width:41%"></i></div></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.8-5.5A8 8 0 1 1 21 12Z"/></svg>1</span></div>
+                  <div class="meta-left"><span class="points">5</span><span class="avatar sm">NO</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts225">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-225</span></div>
+                  <span class="prio prio-high" title="High"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg></span>
+                </div>
+                <div class="card-title2">Seed sample user data</div>
+                <div class="card-desc">Paused — Echo waiting on you to clarify <span class="mono">user.tier</span>.</div>
+                <div class="card-labels"><span class="lbl lbl-backend">backend</span><span class="lbl lbl-qa">data</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="badge badge-warn" style="font-size:10.5px;padding:2px 7px"><span class="badge-dot"></span>paused</span></div>
+                  <div class="meta-left"><span class="points">2</span><span class="avatar sm">EC</span></div>
+                </div>
+              </a>
+
+              <button class="col-add-card" onclick="openModal('newTask')">+ Create issue</button>
+            </div>
+          </div>
+
+          <!-- IN REVIEW -->
+          <div class="col" data-status="review">
+            <div class="col-head">
+              <div class="col-title"><span class="badge-dot" style="background:var(--warn)"></span>In review <span class="col-count">2</span></div>
+              <div class="col-head-actions">
+                <button class="col-add" aria-label="Add">＋</button>
+                <button class="col-menu" aria-label="More">⋯</button>
+              </div>
+            </div>
+            <div class="col-body stack" style="gap:var(--space-3)">
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts209">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-story"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="m8 11 8-3M8 13l8 3"/></svg></span><span class="card-id">TS-209</span></div>
+                  <span class="prio prio-medium" title="Medium"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 10h14M5 14h14"/></svg></span>
+                </div>
+                <div class="card-title2">Competitor research report</div>
+                <div class="card-desc">Done, awaiting your feedback. 4 pages + comparison matrix.</div>
+                <div class="card-labels"><span class="lbl lbl-research">research</span><span class="lbl lbl-docs">v1</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.8-5.5A8 8 0 1 1 21 12Z"/></svg>6</span><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.5 12.5 21a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>3</span></div>
+                  <div class="meta-left"><span class="points">5</span><span class="avatar sm">IR</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts212">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-bug"><svg viewBox="0 0 24 24" fill="#fff"><circle cx="12" cy="12" r="4"/></svg></span><span class="card-id">TS-212</span></div>
+                  <span class="prio prio-highest" title="Highest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6M6 10 12 4l6 6"/></svg></span>
+                </div>
+                <div class="card-title2">Fix goroutine leak in runner</div>
+                <div class="card-desc">Fixed, re-running tests. Cancel context wasn't propagated.</div>
+                <div class="card-labels"><span class="lbl lbl-bug">bug</span><span class="lbl lbl-backend">runner</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="meta-chip due-over"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>Overdue</span><span class="meta-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.8-5.5A8 8 0 1 1 21 12Z"/></svg>3</span></div>
+                  <div class="meta-left"><span class="points">3</span><span class="avatar sm">FO</span></div>
+                </div>
+              </a>
+
+              <button class="col-add-card" onclick="openModal('newTask')">+ Create issue</button>
+            </div>
+          </div>
+
+          <!-- DONE -->
+          <div class="col" data-status="done">
+            <div class="col-head">
+              <div class="col-title"><span class="badge-dot" style="background:var(--success)"></span>Done <span class="col-count">3</span></div>
+              <div class="col-head-actions">
+                <button class="col-add" aria-label="Add">＋</button>
+                <button class="col-menu" aria-label="More">⋯</button>
+              </div>
+            </div>
+            <div class="col-body stack" style="gap:var(--space-3)">
+
+              <a href="task.html" class="tcard done-strike" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts207">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-207</span></div>
+                  <span class="prio prio-medium"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 10h14M5 14h14"/></svg></span>
+                </div>
+                <div class="card-title2">Deploy /v2/agents endpoint</div>
+                <div class="card-labels"><span class="lbl lbl-backend">backend</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"><span class="badge badge-success" style="font-size:10.5px;padding:2px 7px"><span class="badge-dot"></span>shipped</span></div>
+                  <div class="meta-left"><span class="points">5</span><span class="avatar sm">AT</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard done-strike" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts205">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-task"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="card-id">TS-205</span></div>
+                  <span class="prio prio-low"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+                </div>
+                <div class="card-title2">Standardize HTTP status codes</div>
+                <div class="card-labels"><span class="lbl lbl-refactor">refactor</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"></div>
+                  <div class="meta-left"><span class="points">3</span><span class="avatar sm">FO</span></div>
+                </div>
+              </a>
+
+              <a href="task.html" class="tcard done-strike" draggable="true" style="text-decoration:none;color:inherit" data-od-id="card-ts203">
+                <div class="card-top">
+                  <div class="card-id-row"><span class="type-icon type-story"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="m8 11 8-3M8 13l8 3"/></svg></span><span class="card-id">TS-203</span></div>
+                  <span class="prio prio-low"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+                </div>
+                <div class="card-title2">Write runner README</div>
+                <div class="card-labels"><span class="lbl lbl-docs">docs</span></div>
+                <div class="card-meta">
+                  <div class="meta-left"></div>
+                  <div class="meta-left"><span class="points">2</span><span class="avatar sm">NO</span></div>
+                </div>
+              </a>
+
+              <button class="col-add-card" onclick="openModal('newTask')">+ Create issue</button>
+            </div>
+          </div>
+
+        </section>
+
+        <p class="muted mt-6" style="font-size:13px">Tip: drag a card to another column to change its status. Dropping into <b>In review</b> pings you — the agent won't continue until you respond.</p>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- New issue modal -->
+  <div class="overlay" id="newTask">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div><h3>Create issue</h3><p class="muted" style="font-size:13px;margin:4px 0 0">Describe the goal — the agent will plan it out.</p></div>
+        <button class="icon-btn" onclick="closeModal('newTask')" aria-label="Close">✕</button>
+      </div>
+      <div class="row" style="gap:var(--space-4)">
+        <div class="field flex-1"><label>Type</label><select class="select"><option>Task</option><option>Story</option><option>Bug</option><option>Epic</option></select></div>
+        <div class="field"><label>Priority</label><select class="select"><option>Medium</option><option>Highest</option><option>High</option><option>Low</option></select></div>
+      </div>
+      <div class="field"><label>Title</label><input class="input" placeholder="e.g. Add pagination to /v2/tasks" /></div>
+      <div class="field"><label>Description</label><textarea class="input" placeholder="Expected output, constraints, related files…"></textarea></div>
+      <div class="row" style="gap:var(--space-4)">
+        <div class="field flex-1"><label>Assign to</label><select class="select"><option>Auto-pick best agent</option><option>Atlas — Backend</option><option>Forge — Refactor</option><option>Echo — QA</option><option>Iris — Research</option><option>Nova — Docs</option></select></div>
+        <div class="field"><label>Story points</label><input class="input" type="number" value="3" /></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal('newTask')">Cancel</button>
+        <button class="btn btn-primary" onclick="closeModal('newTask');toast('Issue created and added to Backlog')">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

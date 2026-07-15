@@ -2,8 +2,6 @@
 .github
 .loop-engineering
 docs
-web/node_modules
-web/dist
 *.md
 .env
 .env.*

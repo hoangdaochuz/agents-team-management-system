@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TS-214 · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="kanban">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="crumbs"><a href="kanban.html">Kanban</a><span class="sep">/</span><span>In progress</span><span class="sep">/</span><span class="fg2">TS-214</span></div>
+
+        <!-- Task header -->
+        <div class="card" data-od-id="task-header" style="margin-bottom:var(--space-5)">
+          <div class="spread" style="align-items:flex-start;flex-wrap:wrap;gap:var(--space-4)">
+            <div style="min-width:260px">
+              <div class="row" style="margin-bottom:8px">
+                <span class="badge badge-accent dot-running" id="taskStatus"><span class="badge-dot"></span>running</span>
+                <span class="badge">TS-214</span>
+                <span class="badge badge-muted"><span class="badge-dot"></span>P0</span>
+              </div>
+              <h1 class="page-title" data-od-id="task-title">Refactor JWT auth middleware</h1>
+              <p class="muted mt-2" style="font-size:14px;max-width:620px">Split <span class="mono">validateToken()</span> into smaller helpers, add context cancellation, and make sure every auth test still passes.</p>
+            </div>
+
+            <div class="row" style="align-items:flex-start">
+              <!-- MID-RUN: pause & feedback -->
+              <button class="btn btn-ghost" id="btnPause" onclick="enterPaused()" data-od-id="btn-pause-feedback">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+                Pause & give feedback
+              </button>
+              <button class="btn btn-soft" onclick="toast('Run stopped',{icon:'stop'})">Stop</button>
+              <button class="btn btn-primary" onclick="openModal('reviewModal')" data-od-id="btn-review">Review output</button>
+            </div>
+          </div>
+
+          <hr style="border:none;border-top:1px solid var(--border-soft);margin:var(--space-5) 0" />
+
+          <div class="spread" style="flex-wrap:wrap;gap:var(--space-5)">
+            <div class="row" style="align-items:center;gap:12px">
+              <span class="avatar lg">FO</span>
+              <div>
+                <div style="font-weight:600">Forge</div>
+                <div class="muted" style="font-size:13px">Code refactorer · owns this task</div>
+              </div>
+            </div>
+            <div class="stack" style="gap:2px">
+              <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em">Progress</div>
+              <div style="display:flex;align-items:center;gap:10px"><div class="progress" style="width:160px"><i id="taskBar" style="width:78%"></i></div><span class="mono" id="taskPct">78%</span></div>
+            </div>
+            <div class="stack" style="gap:2px"><div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em">Started</div><div class="mono">09:12</div></div>
+            <div class="stack" style="gap:2px"><div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em">ETA</div><div class="mono">~4 min</div></div>
+          </div>
+        </div>
+
+        <!-- PAUSED: inline feedback composer (mid-run) -->
+        <div class="card" id="pausedPanel" data-od-id="paused-feedback" style="display:none;margin-bottom:var(--space-5);border:1px solid color-mix(in oklab, var(--warn) 50%, transparent)">
+          <div class="spread" style="align-items:flex-start;flex-wrap:wrap;gap:var(--space-4)">
+            <div>
+              <span class="badge badge-warn" style="margin-bottom:8px"><span class="badge-dot"></span>paused · awaiting your feedback</span>
+              <h2 style="font-size:22px;margin-top:4px">Forge is paused and waiting</h2>
+              <p class="muted" style="font-size:14px;max-width:560px;margin-top:4px">Write the feedback Forge should apply before continuing. This is the substantive guidance that steers the run — not a passing note.</p>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="cancelPaused()">Cancel pause</button>
+          </div>
+
+          <hr style="border:none;border-top:1px solid var(--border-soft);margin:var(--space-4) 0" />
+
+          <div class="field">
+            <label>Your feedback</label>
+            <textarea class="input" id="pausedFb" placeholder="e.g. parseClaims should return a clear error when the token is expired — don't silently return a zero value. Split this into fixable steps."></textarea>
+            <div class="field-help">Be specific about the change you want — Forge will break it down and apply it.</div>
+          </div>
+
+          <div class="field mt-4">
+            <label>After applying feedback</label>
+            <div class="seg" id="pausedResumeSeg">
+              <button class="active" data-mode="resume">Resume automatically</button>
+              <button data-mode="ask">Wait for my confirmation</button>
+            </div>
+          </div>
+
+          <div class="row" style="justify-content:flex-end;margin-top:var(--space-4)">
+            <button class="btn btn-ghost" onclick="sendPaused(true)">Send &amp; keep paused</button>
+            <button class="btn btn-primary" onclick="sendPaused(false)">Send feedback &amp; resume</button>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div data-tabroot>
+          <div class="tabs" data-tabs data-od-id="task-tabs" style="margin-bottom:var(--space-4)">
+            <button class="tab active" data-tab="output">Output</button>
+            <button class="tab" data-tab="artifacts">Artifacts (2)</button>
+            <button class="tab" data-tab="feedback">Feedback log (3)</button>
+          </div>
+
+          <!-- OUTPUT -->
+          <div class="tab-panel active" data-tabpanel="output" id="output">
+            <div class="grid" style="grid-template-columns: 1fr 300px">
+
+              <div class="card flush" data-od-id="output-panel" style="height:fit-content">
+                <div class="spread" style="padding:var(--space-3) var(--space-4);border-bottom:1px solid var(--border-soft)">
+                  <div class="row" style="align-items:center;gap:8px">
+                    <span class="badge badge-accent dot-running"><span class="badge-dot"></span>streaming</span>
+                    <span class="mono muted" style="font-size:12px">forge · /tasks/refactor-auth</span>
+                  </div>
+                  <div class="row">
+                    <button class="icon-btn" style="width:30px;height:30px" onclick="toast('Log copied')" aria-label="Copy"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+                    <button class="icon-btn" style="width:30px;height:30px" id="streamToggle" aria-label="Pause stream">
+                      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="terminal" id="term" data-od-id="terminal"></div>
+              </div>
+
+              <!-- side steps -->
+              <div class="stack">
+                <div class="card" data-od-id="run-steps">
+                  <div class="card-head"><h2 class="card-title" style="font-size:16px">Steps</h2></div>
+                  <div class="stack" style="gap:var(--space-3)">
+                    <div class="row" style="align-items:flex-start;gap:10px"><span class="badge badge-success" style="margin-top:2px">✓</span><div><div style="font-size:14px;font-weight:500">Read repository</div><div class="muted" style="font-size:12px">412 files</div></div></div>
+                    <div class="row" style="align-items:flex-start;gap:10px"><span class="badge badge-success" style="margin-top:2px">✓</span><div><div style="font-size:14px;font-weight:500">Locate middleware</div><div class="muted" style="font-size:12px">3 JWT paths</div></div></div>
+                    <div class="row" style="align-items:flex-start;gap:10px"><span class="badge badge-success" style="margin-top:2px">✓</span><div><div style="font-size:14px;font-weight:500">Write patch</div><div class="muted" style="font-size:12px">+148 / −72</div></div></div>
+                    <div class="row" style="align-items:flex-start;gap:10px"><span class="badge badge-accent dot-running" style="margin-top:2px"><span class="badge-dot"></span></span><div><div style="font-size:14px;font-weight:500">Run tests</div><div class="muted" style="font-size:12px">38/38…</div></div></div>
+                    <div class="row" style="align-items:flex-start;gap:10px;opacity:.5"><span class="badge" style="margin-top:2px">4</span><div><div style="font-size:14px">Write summary</div></div></div>
+                  </div>
+                </div>
+
+                <div class="card" data-od-id="quick-feedback">
+                  <div class="card-head"><h2 class="card-title" style="font-size:16px">Quick note</h2></div>
+                  <p class="muted" style="font-size:13px;margin:0 0 var(--space-3)">A lightweight comment that doesn't pause the run — Forge picks it up after the current step.</p>
+                  <p class="muted" style="font-size:12px;margin:0 0 var(--space-3)">Need to steer the work? Use <b>Pause &amp; give feedback</b> instead.</p>
+                  <div class="field">
+                    <textarea class="input" id="quickFb" placeholder="e.g. keep backward-compat for the old Parse()"></textarea>
+                  </div>
+                  <div class="spread mt-4">
+                    <span class="muted" style="font-size:12px">⏎ Cmd+Enter to send</span>
+                    <button class="btn btn-primary btn-sm" onclick="sendQuick()">Send note</button>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- ARTIFACTS -->
+          <div class="tab-panel" data-tabpanel="artifacts" id="artifacts">
+            <div class="grid" style="grid-template-columns:repeat(2,1fr)">
+              <div class="card" data-od-id="artifact-1">
+                <div class="spread">
+                  <div class="row" style="align-items:center;gap:12px"><span class="feed-dot" style="background:var(--surface)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><div><div style="font-weight:600">src/middleware/auth.go</div><div class="mono muted" style="font-size:12px">+148 / −72 · patch</div></div></div>
+                  <button class="btn btn-soft btn-sm">View diff</button>
+                </div>
+              </div>
+              <div class="card" data-od-id="artifact-2">
+                <div class="spread">
+                  <div class="row" style="align-items:center;gap:12px"><span class="feed-dot" style="background:var(--surface)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/></svg></span><div><div style="font-weight:600">auth_refactor.md</div><div class="mono muted" style="font-size:12px">change summary</div></div></div>
+                  <button class="btn btn-soft btn-sm">Open</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- FEEDBACK LOG -->
+          <div class="tab-panel" data-tabpanel="feedback" id="feedback">
+            <div class="card" data-od-id="feedback-thread">
+              <div class="card-head"><h2 class="card-title">Feedback log</h2></div>
+              <div class="stack" style="gap:var(--space-3)">
+                <div class="fb-item">
+                  <span class="avatar sm">DA</span>
+                  <div class="fb-bubble">
+                    <div class="fb-meta">You · 09:18 · mid-run</div>
+                    <div style="font-size:14px">Don't delete the old <span class="mono">Parse()</span> — just mark it deprecated, another team still calls it.</div>
+                  </div>
+                </div>
+                <div class="fb-item">
+                  <span class="avatar sm">FO</span>
+                  <div class="fb-bubble" style="background:var(--surface-warm)">
+                    <div class="fb-meta">Forge · 09:19 · reply</div>
+                    <div style="font-size:14px">Got it — keeping <span class="mono">Parse()</span> as a thin wrapper over <span class="mono">parseClaims()</span> with a <span class="mono">// Deprecated</span> tag. Running tests now.</div>
+                  </div>
+                </div>
+                <div class="fb-item">
+                  <span class="avatar sm">FO</span>
+                  <div class="fb-bubble" style="background:var(--surface-warm)">
+                    <div class="fb-meta">Echo · 09:31 · self-paused to ask</div>
+                    <div style="font-size:14px">Field <span class="mono">user.tier</span> isn't in the DB seed — leave <span class="mono">null</span> or add the column?</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- POST-COMPLETION review modal -->
+  <div class="overlay" id="reviewModal">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div>
+          <span class="badge badge-accent" style="margin-bottom:8px"><span class="badge-dot"></span>after completion</span>
+          <h3>Review Forge's output</h3>
+          <p class="muted" style="font-size:13px;margin:4px 0 0">Accept to close the task, or request changes — Forge starts a new run applying your feedback.</p>
+        </div>
+        <button class="icon-btn" onclick="closeModal('reviewModal')" aria-label="Close">✕</button>
+      </div>
+      <div class="field">
+        <label>Decision</label>
+        <div class="seg">
+          <button class="active" data-verdict="approve">✓ Accept</button>
+          <button data-verdict="changes">Request changes</button>
+        </div>
+      </div>
+      <div class="field" id="reviewChangeField">
+        <label>Feedback / change request</label>
+        <textarea class="input" placeholder="e.g. add a proper test case for expired tokens"></textarea>
+        <div class="field-help">If you request changes, Forge re-runs with this feedback.</div>
+      </div>
+      <div class="field">
+        <label>Tags</label>
+        <div class="row" style="flex-wrap:wrap;gap:6px">
+          <span class="tag" style="cursor:pointer">good quality</span>
+          <span class="tag" style="cursor:pointer">needs more tests</span>
+          <span class="tag" style="cursor:pointer">breaking change</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal('reviewModal')">Later</button>
+        <button class="btn btn-primary" onclick="doReview()">Submit review</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+  <script>
+    // Start streaming terminal once on load
+    window.addEventListener("DOMContentLoaded", function () {
+      var term = document.getElementById("term");
+      if (term) startTerminal(term);
+    });
+
+    function sendQuick() {
+      var v = document.getElementById("quickFb").value.trim();
+      if (!v) { toast("Type a note first", { icon: "send" }); return; }
+      document.getElementById("quickFb").value = "";
+      toast("Note sent — Forge picks it up after this step");
+    }
+
+    /* ── Mid-run pause → inline feedback composer ──────────────── */
+    function setStatus(text, cls) {
+      var s = document.getElementById("taskStatus");
+      if (!s) return;
+      s.className = "badge " + cls;
+      s.innerHTML = '<span class="badge-dot"></span>' + text;
+    }
+
+    function enterPaused() {
+      document.getElementById("pausedPanel").style.display = "";
+      document.getElementById("btnPause").style.display = "none";
+      setStatus("paused · awaiting feedback", "badge-warn");
+      toast("Forge paused — write your feedback below", { icon: "pause" });
+    }
+
+    function cancelPaused() {
+      document.getElementById("pausedPanel").style.display = "none";
+      document.getElementById("btnPause").style.display = "";
+      document.getElementById("pausedFb").value = "";
+      setStatus("running", "badge-accent dot-running");
+    }
+
+    function pausedMode() {
+      var seg = document.getElementById("pausedResumeSeg");
+      if (!seg) return "resume";
+      var active = seg.querySelector("button.active");
+      return active ? active.getAttribute("data-mode") : "resume";
+    }
+
+    function sendPaused(keepPaused) {
+      var v = document.getElementById("pausedFb").value.trim();
+      if (!v) { toast("Describe your feedback first", { icon: "warn" }); return; }
+      var mode = pausedMode();
+      document.getElementById("pausedFb").value = "";
+      document.getElementById("pausedPanel").style.display = "none";
+
+      if (keepPaused) {
+        setStatus("paused · feedback sent", "badge-warn");
+        toast("Feedback sent — Forge stays paused until you resume");
+        return;
+      }
+
+      // resume path
+      document.getElementById("btnPause").style.display = "";
+      setStatus("running", "badge-accent dot-running");
+      toast("Feedback sent · Forge resuming" + (mode === "ask" ? " — will pause again for your OK" : ""));
+      setTimeout(function () {
+        var bar = document.getElementById("taskBar");
+        if (bar) { bar.style.width = "82%"; }
+        var pct = document.getElementById("taskPct");
+        if (pct) { pct.textContent = "82%"; }
+      }, 1200);
+    }
+
+    function doReview() {
+      closeModal("reviewModal");
+      toast("Review sent · Forge starting a new run with your feedback");
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Run history · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="history">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Run history</h1>
+            <div class="page-sub">Every time an agent ran a task — including re-runs from feedback</div>
+          </div>
+          <button class="btn btn-ghost">Export CSV</button>
+        </div>
+
+        <!-- Filters -->
+        <div class="card" style="margin-bottom:var(--space-5)" data-od-id="history-filters">
+          <div class="grid" style="grid-template-columns:repeat(4,1fr)">
+            <div class="field"><label>Status</label><select class="select"><option>All</option><option>Success</option><option>Revised from feedback</option><option>Failed</option></select></div>
+            <div class="field"><label>Agent</label><select class="select"><option>All agents</option><option>Atlas</option><option>Forge</option><option>Echo</option><option>Iris</option><option>Nova</option></select></div>
+            <div class="field"><label>From</label><input class="input" type="date" value="2026-07-09" /></div>
+            <div class="field"><label>To</label><input class="input" type="date" value="2026-07-15" /></div>
+          </div>
+        </div>
+
+        <div class="card flush" data-od-id="history-table">
+          <div style="overflow-x:auto">
+            <table class="table">
+              <thead><tr>
+                <th>Task</th><th>Agent</th><th>Status</th><th>Duration</th><th>Feedback</th><th>Outcome</th><th></th>
+              </tr></thead>
+              <tbody>
+                <tr>
+                  <td><a href="task.html" style="font-weight:500">TS-214</a><div class="muted" style="font-size:12px">Refactor JWT auth</div></td>
+                  <td><div class="row" style="align-items:center;gap:8px"><span class="avatar sm">FO</span>Forge</div></td>
+                  <td><span class="badge badge-success"><span class="badge-dot"></span>success</span></td>
+                  <td class="t-mono">3m 41s</td>
+                  <td><span class="badge badge-muted">1 mid-run note</span></td>
+                  <td>+148 / −72 · 38/38 tests</td>
+                  <td><a href="task.html" class="card-link">Open →</a></td>
+                </tr>
+                <tr>
+                  <td><a href="task.html" style="font-weight:500">TS-212</a><div class="muted" style="font-size:12px">Fix goroutine leak</div></td>
+                  <td><div class="row" style="align-items:center;gap:8px"><span class="avatar sm">FO</span>Forge</div></td>
+                  <td><span class="badge badge-accent"><span class="badge-dot"></span>revised from fb</span></td>
+                  <td class="t-mono">6m 02s</td>
+                  <td><span class="badge badge-accent">review → changes</span></td>
+                  <td>v2 · leak resolved</td>
+                  <td><a href="task.html" class="card-link">Open →</a></td>
+                </tr>
+                <tr>
+                  <td><a href="task.html" style="font-weight:500">TS-209</a><div class="muted" style="font-size:12px">Competitor report</div></td>
+                  <td><div class="row" style="align-items:center;gap:8px"><span class="avatar sm">IR</span>Iris</div></td>
+                  <td><span class="badge badge-success"><span class="badge-dot"></span>success</span></td>
+                  <td class="t-mono">11m 18s</td>
+                  <td><span class="badge badge-muted">—</span></td>
+                  <td>4 pages · PDF</td>
+                  <td><a href="task.html" class="card-link">Open →</a></td>
+                </tr>
+                <tr>
+                  <td><a href="task.html" style="font-weight:500">TS-207</a><div class="muted" style="font-size:12px">Deploy /v2/agents</div></td>
+                  <td><div class="row" style="align-items:center;gap:8px"><span class="avatar sm">AT</span>Atlas</div></td>
+                  <td><span class="badge badge-success"><span class="badge-dot"></span>success</span></td>
+                  <td class="t-mono">2m 09s</td>
+                  <td><span class="badge badge-muted">—</span></td>
+                  <td>staging · up</td>
+                  <td><a href="task.html" class="card-link">Open →</a></td>
+                </tr>
+                <tr>
+                  <td><a href="task.html" style="font-weight:500">TS-205</a><div class="muted" style="font-size:12px">Standardize HTTP codes</div></td>
+                  <td><div class="row" style="align-items:center;gap:8px"><span class="avatar sm">FO</span>Forge</div></td>
+                  <td><span class="badge badge-accent"><span class="badge-dot"></span>revised from fb</span></td>
+                  <td class="t-mono">8m 47s</td>
+                  <td><span class="badge badge-accent">2 review rounds</span></td>
+                  <td>22 endpoints · mapped</td>
+                  <td><a href="task.html" class="card-link">Open →</a></td>
+                </tr>
+                <tr>
+                  <td><a href="task.html" style="font-weight:500">TS-201</a><div class="muted" style="font-size:12px">Seed dev environment</div></td>
+                  <td><div class="row" style="align-items:center;gap:8px"><span class="avatar sm">EC</span>Echo</div></td>
+                  <td><span class="badge badge-danger"><span class="badge-dot"></span>failed</span></td>
+                  <td class="t-mono">1m 53s</td>
+                  <td><span class="badge badge-danger">stopped on schema error</span></td>
+                  <td>needs manual fix</td>
+                  <td><a href="task.html" class="card-link">Open →</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="spread mt-6">
+          <span class="muted" style="font-size:13px">Showing 6 / 42 runs in the selected range</span>
+          <div class="row">
+            <button class="btn btn-ghost btn-sm">Previous</button>
+            <button class="btn btn-ghost btn-sm">Next</button>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -16,7 +16,9 @@ services:
       retries: 10
 
   app:
-    build: .
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

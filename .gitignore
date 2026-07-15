@@ -15,6 +15,9 @@
 .idea/
 .vscode/
 
-# frontend (added in Phase 9)
-web/node_modules/
-web/dist/
+# frontend (lives in frontend/, see frontend/.gitignore)
+frontend/node_modules/
+frontend/dist/
+
+# opendesign tooling scaffolding (local only)
+.od-skills/

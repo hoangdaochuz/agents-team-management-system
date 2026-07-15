@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Ops — launcher</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body>
+  <div class="launcher">
+
+    <div class="hero-block">
+      <div class="hero-eyebrow">◆ AI Agent Operations</div>
+      <h1 class="hero-title">Orchestrate your team of AI agents</h1>
+      <p class="hero-sub">A kanban board assigns tasks to individual agents, you monitor output in real time, and you can step in — pause mid-run to correct, or review after completion so the agent can self-fix.</p>
+      <div class="row" style="justify-content:center;margin-top:var(--space-6)">
+        <a class="btn btn-primary" href="dashboard.html">Open dashboard</a>
+        <a class="btn btn-ghost" href="kanban.html">View board</a>
+      </div>
+    </div>
+
+    <div class="screen-grid">
+      <a class="screen-card" href="dashboard.html" data-od-id="launch-dashboard">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <h3>Dashboard</h3>
+        <p>KPI overview, running agents, the review queue, and recent activity.</p>
+      </a>
+      <a class="screen-card" href="kanban.html" data-od-id="launch-kanban">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="14" rx="1.5"/></svg></div>
+        <h3>Kanban board</h3>
+        <p>Drag cards across Backlog, In progress, In review, Done — each task owned by one agent.</p>
+      </a>
+      <a class="screen-card" href="task.html" data-od-id="launch-task">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg></div>
+        <h3>Task detail</h3>
+        <p>Live output streaming plus both feedback flows: pause mid-run and review after completion.</p>
+      </a>
+      <a class="screen-card" href="agents.html" data-od-id="launch-agents">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4"/></svg></div>
+        <h3>Agents</h3>
+        <p>A roster of 5 agents with role, status, current task, and load.</p>
+      </a>
+      <a class="screen-card" href="history.html" data-od-id="launch-history">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <h3>Run history</h3>
+        <p>Every run, including revisions made from feedback — filter by agent or status.</p>
+      </a>
+      <a class="screen-card" href="settings.html" data-od-id="launch-settings">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3"/></svg></div>
+        <h3>Settings</h3>
+        <p>Workspace, agent defaults, feedback & pausing rules, notifications, integrations.</p>
+      </a>
+    </div>
+
+    <p class="muted center" style="font-size:13px;margin-top:var(--space-12)">High-fidelity prototype · Apple visual system (neutral base + single blue accent). Every interaction works — tabs, kanban drag, feedback modals, terminal streaming.</p>
+
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

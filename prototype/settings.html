@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="settings">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Settings</h1>
+            <div class="page-sub">Workspace, agent defaults, and notifications</div>
+          </div>
+          <button class="btn btn-primary" onclick="toast('Settings saved')">Save changes</button>
+        </div>
+
+        <div class="grid" style="grid-template-columns:220px 1fr">
+
+          <!-- settings nav -->
+          <nav class="stack" style="gap:2px;position:sticky;top:80px;align-self:start">
+            <a href="#sec-workspace" class="active" style="padding:9px 12px;border-radius:var(--radius-md);display:block;font-size:14px;color:var(--fg);background:var(--surface)">Workspace</a>
+            <a href="#sec-agent" style="padding:9px 12px;border-radius:var(--radius-md);display:block;font-size:14px;color:var(--fg-2)">Agent defaults</a>
+            <a href="#sec-feedback" style="padding:9px 12px;border-radius:var(--radius-md);display:block;font-size:14px;color:var(--fg-2)">Feedback & pausing</a>
+            <a href="#sec-notify" style="padding:9px 12px;border-radius:var(--radius-md);display:block;font-size:14px;color:var(--fg-2)">Notifications</a>
+            <a href="#sec-integrations" style="padding:9px 12px;border-radius:var(--radius-md);display:block;font-size:14px;color:var(--fg-2)">Integrations</a>
+          </nav>
+
+          <div class="stack">
+
+            <section class="card" id="sec-workspace" data-od-id="set-workspace">
+              <div class="card-head"><h2 class="card-title">Workspace</h2></div>
+              <div class="grid" style="grid-template-columns:1fr 1fr">
+                <div class="field"><label>Workspace name</label><input class="input" value="Agent Ops — Dang Anh" /></div>
+                <div class="field"><label>Time zone</label><select class="select"><option>Asia/Ho Chi Minh (UTC+7)</option><option>UTC</option></select></div>
+              </div>
+              <div class="field mt-4"><label>Default repo path</label><input class="input mono" value="github.com/hoangdaochuz/agents-team-management-system" /></div>
+            </section>
+
+            <section class="card" id="sec-agent" data-od-id="set-agent">
+              <div class="card-head"><h2 class="card-title">Agent defaults</h2></div>
+              <div class="grid" style="grid-template-columns:1fr 1fr">
+                <div class="field"><label>Model</label><select class="select"><option>claude-sonnet-5</option><option>claude-opus-4-8</option><option>gpt-4o</option></select></div>
+                <div class="field"><label>Max concurrent agents</label><input class="input" type="number" value="5" /></div>
+              </div>
+              <div class="field mt-4">
+                <label>Default autonomy</label>
+                <div class="seg">
+                  <button>Assigned tasks only</button>
+                  <button class="active">Picks matching tasks</button>
+                  <button>Fully autonomous</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="card" id="sec-feedback" data-od-id="set-feedback">
+              <div class="card-head"><h2 class="card-title">Feedback & pausing</h2></div>
+              <div class="stack" style="gap:var(--space-4)">
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Allow mid-run pausing</div><div class="muted" style="font-size:12px">Users can pause an agent to give feedback while it's running</div></span><span class="switch on"></span></label>
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Auto-pause when tests fail</div><div class="muted" style="font-size:12px">Agent stops and asks instead of pushing through</div></span><span class="switch on"></span></label>
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Require review after completion</div><div class="muted" style="font-size:12px">Done tasks need your sign-off before they're closed</div></span><span class="switch on"></span></label>
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Let agents self-fix and re-run from feedback</div><div class="muted" style="font-size:12px">Without you clicking each time</div></span><span class="switch"></span></label>
+              </div>
+            </section>
+
+            <section class="card" id="sec-notify" data-od-id="set-notify">
+              <div class="card-head"><h2 class="card-title">Notifications</h2></div>
+              <div class="stack" style="gap:var(--space-4)">
+                <label class="spread"><span style="font-size:14px">When an agent pauses to ask</span><span class="switch on"></span></label>
+                <label class="spread"><span style="font-size:14px">When a task is done / up for review</span><span class="switch on"></span></label>
+                <label class="spread"><span style="font-size:14px">When a run fails</span><span class="switch on"></span></label>
+                <label class="spread"><span style="font-size:14px">Daily summary email</span><span class="switch"></span></label>
+              </div>
+            </section>
+
+            <section class="card" id="sec-integrations" data-od-id="set-integrations">
+              <div class="card-head"><h2 class="card-title">Integrations & API</h2></div>
+              <div class="stack" style="gap:var(--space-3)">
+                <div class="spread"><div class="row" style="align-items:center;gap:12px"><span class="feed-dot">GH</span><div><div style="font-weight:600;font-size:14px">GitHub</div><div class="mono muted" style="font-size:12px">token · gho_••••••••••3f2a</div></div></div><span class="badge badge-success"><span class="badge-dot"></span>connected</span></div>
+                <div class="spread"><div class="row" style="align-items:center;gap:12px"><span class="feed-dot">SL</span><div><div style="font-weight:600;font-size:14px">Slack</div><div class="mono muted" style="font-size:12px">#agent-ops</div></div></div><span class="badge badge-success"><span class="badge-dot"></span>connected</span></div>
+                <div class="spread"><div class="row" style="align-items:center;gap:12px"><span class="feed-dot">CI</span><div><div style="font-weight:600;font-size:14px">CI runner</div><div class="mono muted" style="font-size:12px"> webhook not set</div></div></div><button class="btn btn-soft btn-sm">Connect</button></div>
+                <hr style="border:none;border-top:1px solid var(--border-soft)" />
+                <div class="field"><label>API key (masked)</label><div class="row"><input class="input mono" value="sk-ops-•••••••••••••••9c4e" readonly /><button class="btn btn-ghost btn-sm">Reveal</button></div></div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+  <script>
+    // settings nav active state on click
+    document.querySelectorAll('nav a[href^="#sec"]').forEach(function (a) {
+      a.addEventListener("click", function () {
+        document.querySelectorAll('nav a[href^="#sec"]').forEach(function (x) { x.classList.remove("active"); x.style.background = ""; x.style.color = "var(--fg-2)"; });
+        a.classList.add("active"); a.style.background = "var(--surface)"; a.style.color = "var(--fg)";
+      });
+    });
+  </script>
+</body>
+</html>

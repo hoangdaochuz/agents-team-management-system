@@ -1,46 +1,47 @@
 ## AI Agent Kanban System — developer commands
 .PHONY: build test vet lint run tidy compose-up compose-down runner clean web-install web-dev web-build web-typecheck
 
+## Go targets live in backend/.
 build:
-	go build ./...
+	cd backend && go build ./...
 
 test:
-	go test ./...
+	cd backend && go test ./...
 
 vet:
-	go vet ./...
+	cd backend && go vet ./...
 
 lint:
-	golangci-lint run
+	cd backend && golangci-lint run
 
 run:
-	go run ./cmd/server
+	cd backend && go run ./cmd/server
 
 tidy:
-	go mod tidy
+	cd backend && go mod tidy
 
 compose-up:
-	docker compose up --build
+	docker compose -f deploy/docker-compose.yml up --build
 
 compose-down:
-	docker compose down
+	docker compose -f deploy/docker-compose.yml down
 
 ## Build the per-task runner base image (credential-less sandbox).
 runner:
-	docker build -t aaks-runner:latest ./runner
+	docker build -t aaks-runner:latest backend/runner
 
 clean:
-	go clean ./...
+	cd backend && go clean ./...
 
-## Frontend (Vite + React + TS) — lives in web/.
+## Frontend (Vite + React + TS) — lives in frontend/.
 web-install:
-	cd web && npm install
+	cd frontend && npm install
 
 web-dev:
-	cd web && npm run dev
+	cd frontend && npm run dev
 
 web-build:
-	cd web && npm run build
+	cd frontend && npm run build
 
 web-typecheck:
-	cd web && npm run typecheck
+	cd frontend && npm run typecheck

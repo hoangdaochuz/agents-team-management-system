@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="dashboard">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Dashboard</h1>
+            <div class="page-sub">Workspace overview · updated in real time</div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost" onclick="location.href='history.html'">View history</button>
+            <button class="btn btn-primary" onclick="location.href='kanban.html'">Open board</button>
+          </div>
+        </div>
+
+        <!-- KPI -->
+        <section class="kpi-row" data-od-id="kpi-row">
+          <div class="kpi" data-od-id="kpi-active-agents">
+            <div class="kpi-label">Active agents</div>
+            <div class="kpi-value">3<span style="font-size:18px;color:var(--muted)"> / 5</span></div>
+            <div class="kpi-delta up">▲ Atlas, Forge, Echo online</div>
+            <svg class="kpi-spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="0,20 15,14 30,18 45,8 60,12 75,5 100,9"/></svg>
+          </div>
+          <div class="kpi" data-od-id="kpi-running-tasks">
+            <div class="kpi-label">Running tasks</div>
+            <div class="kpi-value">7</div>
+            <div class="kpi-delta">2 up for review in 4 min</div>
+            <svg class="kpi-spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--success)" stroke-width="2" points="0,16 15,18 30,10 45,14 60,7 75,11 100,6"/></svg>
+          </div>
+          <div class="kpi" data-od-id="kpi-done-today">
+            <div class="kpi-label">Completed today</div>
+            <div class="kpi-value">12</div>
+            <div class="kpi-delta up">▲ +4 vs yesterday</div>
+            <svg class="kpi-spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="0,22 15,19 30,15 45,17 60,10 75,8 100,4"/></svg>
+          </div>
+          <div class="kpi" data-od-id="kpi-awaiting-feedback">
+            <div class="kpi-label">Awaiting feedback</div>
+            <div class="kpi-value">5</div>
+            <div class="kpi-delta down">▼ 1 task paused, waiting on you</div>
+            <svg class="kpi-spark" viewBox="0 0 100 28" preserveAspectRatio="none"><polyline fill="none" stroke="var(--warn)" stroke-width="2" points="0,6 15,10 30,8 45,14 60,12 75,18 100,16"/></svg>
+          </div>
+        </section>
+
+        <!-- Main grid -->
+        <div class="grid mt-6" style="grid-template-columns: 1.6fr 1fr">
+
+          <!-- LEFT -->
+          <div class="stack">
+            <section class="card" data-od-id="running-tasks">
+              <div class="card-head">
+                <h2 class="card-title">Running tasks</h2>
+                <a class="card-link" href="kanban.html">View all →</a>
+              </div>
+              <div class="stack" style="gap:var(--space-3)">
+
+                <a href="task.html" class="tcard" style="text-decoration:none;color:inherit" data-od-id="run-task-ts214">
+                  <div class="spread">
+                    <div>
+                      <div class="tcard-title">Refactor JWT auth middleware</div>
+                      <div class="muted" style="font-size:12px;margin-top:2px">TS-214 · started 09:12</div>
+                    </div>
+                    <span class="badge badge-accent dot-running"><span class="badge-dot"></span>running</span>
+                  </div>
+                  <div>
+                    <div class="spread" style="margin-bottom:5px"><span class="fg2" style="font-size:12px">Applying patch + running tests</span><span class="mono" style="font-size:12px">78%</span></div>
+                    <div class="progress"><i style="width:78%"></i></div>
+                  </div>
+                  <div class="tcard-foot">
+                    <div class="row" style="align-items:center;gap:8px"><span class="avatar sm">FO</span><span class="fg2" style="font-size:13px">Forge</span></div>
+                    <span class="due">ETA 4 min</span>
+                  </div>
+                </a>
+
+                <div class="tcard" data-od-id="run-task-ts221">
+                  <div class="spread">
+                    <div>
+                      <div class="tcard-title">Draft API v2 documentation</div>
+                      <div class="muted" style="font-size:12px;margin-top:2px">TS-221 · started 08:55</div>
+                    </div>
+                    <span class="badge badge-accent dot-running"><span class="badge-dot"></span>running</span>
+                  </div>
+                  <div>
+                    <div class="spread" style="margin-bottom:5px"><span class="fg2" style="font-size:12px">Building endpoint reference</span><span class="mono" style="font-size:12px">41%</span></div>
+                    <div class="progress"><i style="width:41%"></i></div>
+                  </div>
+                  <div class="tcard-foot">
+                    <div class="row" style="align-items:center;gap:8px"><span class="avatar sm">NO</span><span class="fg2" style="font-size:13px">Nova</span></div>
+                    <span class="due">ETA 11 min</span>
+                  </div>
+                </div>
+
+                <div class="tcard" data-od-id="run-task-ts218" style="border-left:3px solid var(--warn)">
+                  <div class="spread">
+                    <div>
+                      <div class="tcard-title">Paused — needs schema confirmation</div>
+                      <div class="muted" style="font-size:12px;margin-top:2px">TS-218 · paused 09:31</div>
+                    </div>
+                    <span class="badge badge-warn"><span class="badge-dot"></span>paused · awaiting feedback</span>
+                  </div>
+                  <div class="fb-bubble" style="background:var(--surface-warm)">
+                    <div class="fb-meta">Echo asked at 09:31</div>
+                    <div style="font-size:14px">Field <span class="mono">user.tier</span> isn't in the DB seed — leave it <span class="mono">null</span> or add a new column?</div>
+                  </div>
+                  <div class="tcard-foot">
+                    <div class="row" style="align-items:center;gap:8px"><span class="avatar sm">EC</span><span class="fg2" style="font-size:13px">Echo</span></div>
+                    <button class="btn btn-primary btn-sm" onclick="location.href='task.html'">Reply to Echo</button>
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+            <!-- Activity -->
+            <section class="card" data-od-id="activity-feed">
+              <div class="card-head">
+                <h2 class="card-title">Recent activity</h2>
+              </div>
+              <div class="feed">
+                <div class="feed-item">
+                  <div class="feed-dot">FO</div>
+                  <div><div class="feed-text"><b>Forge</b> passed 38/38 tests on <a href="task.html">TS-214</a> · awaiting review</div><div class="feed-time">2 min ago</div></div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot">EC</div>
+                  <div><div class="feed-text"><b>Echo</b> paused <a href="task.html">TS-218</a> to clarify the schema</div><div class="feed-time">9 min ago</div></div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot">AT</div>
+                  <div><div class="feed-text"><b>Atlas</b> deployed endpoint <span class="mono">/v2/agents</span> to staging</div><div class="feed-time">23 min ago</div></div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot">IR</div>
+                  <div><div class="feed-text"><b>Iris</b> submitted the competitor research report (TS-209)</div><div class="feed-time">41 min ago</div></div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-dot">NO</div>
+                  <div><div class="feed-text"><b>Nova</b> started drafting API v2 docs (TS-221)</div><div class="feed-time">1 hour ago</div></div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- RIGHT -->
+          <div class="stack">
+            <section class="card" data-od-id="agent-status">
+              <div class="card-head">
+                <h2 class="card-title">Agent status</h2>
+                <a class="card-link" href="agents.html">Manage →</a>
+              </div>
+              <div class="stack" style="gap:var(--space-3)">
+
+                <div class="spread" data-od-id="agent-atlas">
+                  <div class="row" style="align-items:center;gap:10px"><span class="avatar">AT</span><div><div style="font-weight:600;font-size:14px">Atlas</div><div class="muted" style="font-size:12px">Backend engineer</div></div></div>
+                  <span class="badge badge-success"><span class="badge-dot"></span>running</span>
+                </div>
+                <div class="spread" data-od-id="agent-forge">
+                  <div class="row" style="align-items:center;gap:10px"><span class="avatar">FO</span><div><div style="font-weight:600;font-size:14px">Forge</div><div class="muted" style="font-size:12px">Code refactorer</div></div></div>
+                  <span class="badge badge-success"><span class="badge-dot"></span>running</span>
+                </div>
+                <div class="spread" data-od-id="agent-echo">
+                  <div class="row" style="align-items:center;gap:10px"><span class="avatar">EC</span><div><div style="font-weight:600;font-size:14px">Echo</div><div class="muted" style="font-size:12px">QA & tests</div></div></div>
+                  <span class="badge badge-warn"><span class="badge-dot"></span>paused</span>
+                </div>
+                <div class="spread" data-od-id="agent-iris">
+                  <div class="row" style="align-items:center;gap:10px"><span class="avatar">IR</span><div><div style="font-weight:600;font-size:14px">Iris</div><div class="muted" style="font-size:12px">Research analyst</div></div></div>
+                  <span class="badge badge-muted"><span class="badge-dot"></span>idle</span>
+                </div>
+                <div class="spread" data-od-id="agent-nova">
+                  <div class="row" style="align-items:center;gap:10px"><span class="avatar">NO</span><div><div style="font-weight:600;font-size:14px">Nova</div><div class="muted" style="font-size:12px">Docs & writer</div></div></div>
+                  <span class="badge badge-success"><span class="badge-dot"></span>running</span>
+                </div>
+
+              </div>
+            </section>
+
+            <section class="card" data-od-id="review-queue">
+              <div class="card-head">
+                <h2 class="card-title">Waiting on your review</h2>
+              </div>
+              <div class="stack" style="gap:var(--space-3)">
+                <a href="task.html" class="spread" style="text-decoration:none;color:inherit;padding:var(--space-3);border-radius:var(--radius-md);background:var(--surface)">
+                  <div><div style="font-weight:600;font-size:14px">TS-214 · Refactor JWT</div><div class="muted" style="font-size:12px">Forge · 38/38 tests pass</div></div>
+                  <span class="badge badge-accent">review</span>
+                </a>
+                <a href="task.html" class="spread" style="text-decoration:none;color:inherit;padding:var(--space-3);border-radius:var(--radius-md);background:var(--surface)">
+                  <div><div style="font-weight:600;font-size:14px">TS-209 · Competitor report</div><div class="muted" style="font-size:12px">Iris · 4 pages finalized</div></div>
+                  <span class="badge badge-accent">review</span>
+                </a>
+              </div>
+            </section>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

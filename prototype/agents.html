@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agents · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="agents">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Agents</h1>
+            <div class="page-sub">5 agents in the workspace · 3 running</div>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('newAgent')">+ New agent</button>
+        </div>
+
+        <div class="grid" style="grid-template-columns:repeat(3,1fr)" data-od-id="agent-grid">
+
+          <div class="agent-card" data-od-id="agent-atlas">
+            <div class="agent-top">
+              <span class="avatar lg">AT</span>
+              <div style="flex:1"><div class="agent-name">Atlas</div><div class="agent-role">Backend engineer</div></div>
+              <span class="badge badge-success"><span class="badge-dot"></span>running</span>
+            </div>
+            <div class="cap-tags"><span class="tag">go</span><span class="tag">postgres</span><span class="tag">api</span><span class="tag">ci</span></div>
+            <div>
+              <div class="spread" style="margin-bottom:5px"><span class="muted" style="font-size:12px">Load today</span><span class="mono" style="font-size:12px">72%</span></div>
+              <div class="progress"><i style="width:72%;background:var(--accent)"></i></div>
+            </div>
+            <div class="spread" style="padding-top:var(--space-2);border-top:1px solid var(--border-soft)">
+              <div><div class="muted" style="font-size:12px">Working on</div><a href="task.html" style="font-size:13px;font-weight:500">TS-230 · rate-limit</a></div>
+            </div>
+          </div>
+
+          <div class="agent-card" data-od-id="agent-forge">
+            <div class="agent-top">
+              <span class="avatar lg">FO</span>
+              <div style="flex:1"><div class="agent-name">Forge</div><div class="agent-role">Code refactorer</div></div>
+              <span class="badge badge-success"><span class="badge-dot"></span>running</span>
+            </div>
+            <div class="cap-tags"><span class="tag">refactor</span><span class="tag">testing</span><span class="tag">go</span><span class="tag">lint</span></div>
+            <div>
+              <div class="spread" style="margin-bottom:5px"><span class="muted" style="font-size:12px">Load today</span><span class="mono" style="font-size:12px">91%</span></div>
+              <div class="progress"><i style="width:91%;background:var(--warn)"></i></div>
+            </div>
+            <div class="spread" style="padding-top:var(--space-2);border-top:1px solid var(--border-soft)">
+              <div><div class="muted" style="font-size:12px">Working on</div><a href="task.html" style="font-size:13px;font-weight:500">TS-214 · JWT refactor</a></div>
+            </div>
+          </div>
+
+          <div class="agent-card" data-od-id="agent-echo">
+            <div class="agent-top">
+              <span class="avatar lg">EC</span>
+              <div style="flex:1"><div class="agent-name">Echo</div><div class="agent-role">QA & tests</div></div>
+              <span class="badge badge-warn"><span class="badge-dot"></span>paused</span>
+            </div>
+            <div class="cap-tags"><span class="tag">e2e</span><span class="tag">unit-test</span><span class="tag">regression</span></div>
+            <div>
+              <div class="spread" style="margin-bottom:5px"><span class="muted" style="font-size:12px">Load today</span><span class="mono" style="font-size:12px">34%</span></div>
+              <div class="progress"><i style="width:34%"></i></div>
+            </div>
+            <div class="spread" style="padding-top:var(--space-2);border-top:1px solid var(--border-soft)">
+              <div><div class="muted" style="font-size:12px">Paused — waiting on you</div><a href="task.html" style="font-size:13px;font-weight:500">TS-225 · seed data</a></div>
+              <button class="btn btn-soft btn-sm" onclick="toast('Echo resumed')">Resume</button>
+            </div>
+          </div>
+
+          <div class="agent-card" data-od-id="agent-iris">
+            <div class="agent-top">
+              <span class="avatar lg">IR</span>
+              <div style="flex:1"><div class="agent-name">Iris</div><div class="agent-role">Research analyst</div></div>
+              <span class="badge badge-muted"><span class="badge-dot"></span>idle</span>
+            </div>
+            <div class="cap-tags"><span class="tag">web search</span><span class="tag">synthesis</span><span class="tag">report</span></div>
+            <div>
+              <div class="spread" style="margin-bottom:5px"><span class="muted" style="font-size:12px">Load today</span><span class="mono" style="font-size:12px">18%</span></div>
+              <div class="progress"><i style="width:18%"></i></div>
+            </div>
+            <div class="spread" style="padding-top:var(--space-2);border-top:1px solid var(--border-soft)">
+              <div><div class="muted" style="font-size:12px">Last completed</div><a href="task.html" style="font-size:13px;font-weight:500">TS-209 · competitor report</a></div>
+            </div>
+          </div>
+
+          <div class="agent-card" data-od-id="agent-nova">
+            <div class="agent-top">
+              <span class="avatar lg">NO</span>
+              <div style="flex:1"><div class="agent-name">Nova</div><div class="agent-role">Docs & writer</div></div>
+              <span class="badge badge-success"><span class="badge-dot"></span>running</span>
+            </div>
+            <div class="cap-tags"><span class="tag">markdown</span><span class="tag">api-ref</span><span class="tag">onboarding</span></div>
+            <div>
+              <div class="spread" style="margin-bottom:5px"><span class="muted" style="font-size:12px">Load today</span><span class="mono" style="font-size:12px">55%</span></div>
+              <div class="progress"><i style="width:55%"></i></div>
+            </div>
+            <div class="spread" style="padding-top:var(--space-2);border-top:1px solid var(--border-soft)">
+              <div><div class="muted" style="font-size:12px">Working on</div><a href="task.html" style="font-size:13px;font-weight:500">TS-221 · API v2 docs</a></div>
+            </div>
+          </div>
+
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <div class="overlay" id="newAgent">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div><h3>New agent</h3><p class="muted" style="font-size:13px;margin:4px 0 0">Define its role and autonomy limits.</p></div>
+        <button class="icon-btn" onclick="closeModal('newAgent')">✕</button>
+      </div>
+      <div class="field"><label>Agent name</label><input class="input" placeholder="e.g. Pixel — UI engineer" /></div>
+      <div class="field"><label>Role</label><input class="input" placeholder="e.g. Frontend / React" /></div>
+      <div class="field">
+        <label>Autonomy</label>
+        <div class="seg">
+          <button>Assigned tasks only</button>
+          <button class="active">Picks matching tasks</button>
+          <button>Fully autonomous</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Action limits</label>
+        <div class="stack" style="gap:var(--space-2)">
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:400"><span>Auto-pause when tests fail</span><span class="switch on" style="margin-left:auto"></span></label>
+          <label style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:400"><span>Allow direct commits</span><span class="switch" style="margin-left:auto"></span></label>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal('newAgent')">Cancel</button>
+        <button class="btn btn-primary" onclick="closeModal('newAgent');toast('Agent created')">Create agent</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
