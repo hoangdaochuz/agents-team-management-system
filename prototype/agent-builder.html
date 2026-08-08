@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent builder · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="agents">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="crumbs"><a href="agents.html">Agents</a><span class="sep">/</span><span class="fg2">New agent</span></div>
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Build an agent</h1>
+            <div class="page-sub">Scoped to <b>Agent Ops</b> · define identity, prompts, model, skills, tools, and guardrails.</div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost" onclick="location.href='agents.html'">Cancel</button>
+            <button class="btn btn-primary" onclick="saveAgent()">Create agent</button>
+          </div>
+        </div>
+
+        <div class="builder">
+          <!-- MAIN -->
+          <div class="builder-main">
+
+            <!-- Identity -->
+            <section class="form-section" data-od-id="sec-identity">
+              <h2>Identity</h2>
+              <div class="sec-sub">How this agent introduces itself and shows up across the workspace.</div>
+              <div class="row" style="align-items:flex-start;gap:var(--space-4)">
+                <span class="avatar lg" style="background:linear-gradient(135deg,var(--accent),#6d28d9)">PX</span>
+                <div class="form-grid" style="flex:1">
+                  <div class="field"><label>Agent name</label><input class="input" placeholder="e.g. Pixel" value="Pixel" /></div>
+                  <div class="field"><label>Role / title</label><input class="input" placeholder="e.g. Frontend / React engineer" value="Frontend / React engineer" /></div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Model -->
+            <section class="form-section" data-od-id="sec-model">
+              <h2>Model</h2>
+              <div class="sec-sub">Pick the brain and tune generation.</div>
+              <div class="form-grid">
+                <div class="field">
+                  <label>Provider</label>
+                  <select class="select"><option>Anthropic</option><option>OpenAI</option><option>Self-hosted</option></select>
+                </div>
+                <div class="field">
+                  <label>Model</label>
+                  <select class="select"><option>claude-sonnet-5</option><option>claude-opus-4-8</option><option>claude-haiku-4-5</option></select>
+                </div>
+              </div>
+              <div class="form-grid mt-4">
+                <div class="field">
+                  <label>Temperature</label>
+                  <div class="slider-row"><input type="range" min="0" max="100" value="30" id="temp" oninput="document.getElementById('tempV').textContent=(this.value/100).toFixed(2)" /><span class="slider-val" id="tempV">0.30</span></div>
+                </div>
+                <div class="field">
+                  <label>Max output tokens</label>
+                  <input class="input" type="number" value="8192" />
+                </div>
+              </div>
+            </section>
+
+            <!-- Prompts -->
+            <section class="form-section" data-od-id="sec-prompts">
+              <h2>Prompts</h2>
+              <div class="sec-sub">System prompt sets persona &amp; rules; user prompt is the task template filled per run.</div>
+
+              <div class="field">
+                <label>System prompt</label>
+                <div class="prompt-tools">
+                  <span class="tag" onclick="insertVar('sys','{{task.title}}')">+ task.title</span>
+                  <span class="tag" onclick="insertVar('sys','{{repo}}')">+ repo</span>
+                  <span class="tag" onclick="insertVar('sys','{{skills}}')">+ skills</span>
+                </div>
+                <textarea class="prompt-editor" id="sys" placeholder="You are Pixel, a senior frontend engineer…">You are Pixel, a senior frontend engineer working in the Agent Ops repo.
+- Prefer functional, typed React with hooks.
+- Match the existing Apple design-system classes (.card, .btn, .badge).
+- Never introduce a new CSS framework.
+- Keep components under 200 lines.</textarea>
+              </div>
+
+              <div class="field mt-4">
+                <label>User prompt template <span class="muted">(optional)</span></label>
+                <textarea class="prompt-editor" id="usr" placeholder="Complete: {{task.title}}\nConstraints: {{task.constraints}}">Complete: {{task.title}}
+Constraints: {{task.constraints}}
+Start by reproducing the issue, then implement the smallest correct fix.</textarea>
+              </div>
+            </section>
+
+            <!-- Mode -->
+            <section class="form-section" data-od-id="sec-mode">
+              <h2>Mode &amp; autonomy</h2>
+              <div class="sec-sub">How much freedom this agent has to pick up and continue work.</div>
+              <div class="choice-grid">
+                <label class="choice"><input type="radio" name="mode" /> Assigned only</label>
+                <label class="choice on"><input type="radio" name="mode" checked /> Picks matching tasks</label>
+                <label class="choice"><input type="radio" name="mode" /> Fully autonomous</label>
+              </div>
+            </section>
+
+            <!-- Skills -->
+            <section class="form-section" data-od-id="sec-skills">
+              <h2>Skills</h2>
+              <div class="sec-sub">Inject workspace skills into this agent's context.</div>
+              <div class="chip-pick" id="skillChips">
+                <span class="tag on" data-skill>git-pr-flow</span>
+                <span class="tag on" data-skill>test-driven</span>
+                <span class="tag" data-skill>code-review-strict</span>
+                <span class="tag" data-skill>db-migration-safe</span>
+                <span class="tag on" data-skill>accessibility-audit</span>
+                <span class="tag" data-skill>+ add skill</span>
+              </div>
+            </section>
+
+            <!-- Tools -->
+            <section class="form-section" data-od-id="sec-tools">
+              <h2>Tools &amp; MCP</h2>
+              <div class="sec-sub">Built-in tools plus bridged MCP tools the agent may call.</div>
+              <div class="choice-grid">
+                <label class="choice on"><input type="checkbox" checked /> read_file</label>
+                <label class="choice on"><input type="checkbox" checked /> write_file</label>
+                <label class="choice on"><input type="checkbox" checked /> list_files</label>
+                <label class="choice on"><input type="checkbox" checked /> run_command</label>
+                <label class="choice"><input type="checkbox" /> web_search</label>
+                <label class="choice"><input type="checkbox" /> gh_pr_create</label>
+              </div>
+              <div class="field mt-4">
+                <label>MCP servers</label>
+                <div class="chip-pick">
+                  <span class="tag on" data-skill>filesystem (repo)</span>
+                  <span class="tag" data-skill>postgres (staging)</span>
+                  <span class="tag" data-skill>playwright</span>
+                </div>
+              </div>
+            </section>
+
+            <!-- Rules & limits -->
+            <section class="form-section" data-od-id="sec-rules">
+              <h2>Rules &amp; guardrails</h2>
+              <div class="sec-sub">Workspace rules apply automatically; add agent-specific limits below.</div>
+              <div class="stack" style="gap:var(--space-3)">
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Auto-pause when tests fail</div><div class="muted" style="font-size:12px">Stop and ask instead of pushing through</div></span><span class="switch on"></span></label>
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Allow direct commits</div><div class="muted" style="font-size:12px">Off = must open a branch + PR</div></span><span class="switch"></span></label>
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Allow running shell commands</div><div class="muted" style="font-size:12px">build, test, lint inside the sandbox</div></span><span class="switch on"></span></label>
+                <label class="spread"><span><div style="font-size:14px;font-weight:500">Require human approval before merge</div><div class="muted" style="font-size:12px">Never auto-merge</div></span><span class="switch on"></span></label>
+              </div>
+              <div class="form-grid mt-4">
+                <div class="field"><label>Max steps per run</label><input class="input" type="number" value="50" /></div>
+                <div class="field"><label>Wall-clock cap (min)</label><input class="input" type="number" value="30" /></div>
+              </div>
+            </section>
+
+            <!-- Knowledge -->
+            <section class="form-section" data-od-id="sec-kb">
+              <h2>Knowledge base access</h2>
+              <div class="sec-sub">Which indexed sources this agent can retrieve from.</div>
+              <div class="chip-pick">
+                <span class="tag on" data-skill>docs/architecture.md</span>
+                <span class="tag on" data-skill>ADR log</span>
+                <span class="tag" data-skill>api.openai.com/docs</span>
+                <span class="tag on" data-skill>onboarding-handbook.pdf</span>
+              </div>
+            </section>
+
+          </div>
+
+          <!-- STICKY SAVE -->
+          <aside class="builder-side">
+            <div class="sticky-save" data-od-id="builder-summary">
+              <div style="font-weight:600;font-size:15px">Agent summary</div>
+              <div class="summary-row"><span class="muted">Workspace</span><span>Agent Ops</span></div>
+              <div class="summary-row"><span class="muted">Model</span><span class="mono">claude-sonnet-5</span></div>
+              <div class="summary-row"><span class="muted">Skills</span><span>3 selected</span></div>
+              <div class="summary-row"><span class="muted">Tools</span><span>4 built-in</span></div>
+              <div class="summary-row"><span class="muted">Autonomy</span><span>Picks tasks</span></div>
+              <hr style="border:none;border-top:1px solid var(--border-soft);margin:var(--space-2) 0" />
+              <button class="btn btn-primary w-full" onclick="saveAgent()" style="justify-content:center">Create agent</button>
+              <button class="btn btn-ghost w-full" onclick="toast('Saved as draft')" style="justify-content:center">Save draft</button>
+              <p class="muted center" style="font-size:11px;margin:0">Agents are isolated to this workspace.</p>
+            </div>
+          </aside>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+  <script>
+    // chip toggle (skills / mcp / kb)
+    document.querySelectorAll(".chip-pick .tag").forEach(function (t) {
+      t.addEventListener("click", function () { t.classList.toggle("on"); });
+    });
+    // choice toggle (radio/checkbox wrappers)
+    document.querySelectorAll(".choice").forEach(function (c) {
+      c.addEventListener("click", function (e) {
+        if (e.target.tagName === "INPUT") return;
+        var inp = c.querySelector("input");
+        if (!inp) return;
+        if (inp.type === "radio") {
+          c.parentElement.querySelectorAll(".choice").forEach(function (x) { x.classList.remove("on"); });
+          inp.checked = true; c.classList.add("on");
+        } else {
+          inp.checked = !inp.checked; c.classList.toggle("on", inp.checked);
+        }
+      });
+      // sync visual with checkbox state
+      var inp = c.querySelector("input");
+      if (inp && inp.type === "checkbox") c.classList.toggle("on", inp.checked);
+    });
+    function insertVar(id, text) {
+      var el = document.getElementById(id);
+      el.value += " " + text; el.focus();
+    }
+    function saveAgent() { toast("Agent “Pixel” created in Agent Ops"); }
+  </script>
+</body>
+</html>

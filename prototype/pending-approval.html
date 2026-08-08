@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Awaiting approval · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body>
+  <div class="pending-wrap" data-od-id="pending">
+    <div class="pending-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    </div>
+    <h1>Request sent — awaiting approval</h1>
+    <p class="lead">Your account is created. The workspace admin for <b>Agent Ops</b> has been notified and will approve your access.</p>
+
+    <div class="pending-steps" data-od-id="pending-steps">
+      <div class="pending-step done">
+        <span class="ps-dot">✓</span>
+        <div class="ps-text"><b>Account created</b><span>jane@company.com · password set</span></div>
+      </div>
+      <div class="pending-step done">
+        <span class="ps-dot">✓</span>
+        <div class="ps-text"><b>Join request submitted</b><span>Workspace: Agent Ops · invite code 7F3A</span></div>
+      </div>
+      <div class="pending-step current">
+        <span class="ps-dot">3</span>
+        <div class="ps-text"><b>Admin review</b><span>Dang Anh (Workspace admin) was emailed — usually approves within a few hours</span></div>
+      </div>
+      <div class="pending-step">
+        <span class="ps-dot">4</span>
+        <div class="ps-text"><b>Access granted</b><span>You'll get a sign-in link the moment you're approved</span></div>
+      </div>
+    </div>
+
+    <div class="row" style="justify-content:center;gap:var(--space-3)">
+      <button class="btn btn-ghost" onclick="toast('We\'ll email you when approved')">Resend notification</button>
+      <a class="btn btn-primary" href="login.html">Back to sign in</a>
+    </div>
+
+    <p class="muted center" style="font-size:12px;margin-top:var(--space-6)">Wrong workspace? <a href="signup.html">Start over</a> · Questions? <a href="#">Contact your admin</a></p>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

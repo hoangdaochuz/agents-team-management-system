@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototype/workspace-resources.html",
+  "entry": "prototype/workspace-resources.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-08T08:16:52.797Z",
+  "updatedAt": "2026-08-08T08:16:52.797Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

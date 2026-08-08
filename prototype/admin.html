@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Members &amp; roles · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="admin" data-role="admin">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="crumbs"><a href="workspaces.html">Workspaces</a><span class="sep">/</span><span class="fg2">Agent Ops</span><span class="sep">/</span><span>Members &amp; roles</span></div>
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Members &amp; roles</h1>
+            <div class="page-sub">Who can access this workspace and what they can do. Owner-only screen.</div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost">Export audit log</button>
+            <button class="btn btn-primary" onclick="openModal('invite')">+ Invite people</button>
+          </div>
+        </div>
+
+        <!-- admin role notice -->
+        <div class="scope-banner" data-od-id="admin-notice">
+          <span class="res-ico" style="background:color-mix(in oklab,var(--accent) 12%,white);color:var(--accent)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 6v6c0 4 3 6.5 7 9 4-2.5 7-5 7-9V6z"/></svg></span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:14px">You're viewing this as <b>Owner</b> of Agent Ops</div>
+            <div class="muted" style="font-size:12px">Role changes apply to this workspace only. Org-wide roles are set in organization settings.</div>
+          </div>
+        </div>
+
+        <!-- Pending approvals (sign-up requests) -->
+        <div class="card flush" data-od-id="pending-approvals" style="margin-bottom:var(--space-5)">
+          <div class="card-head" style="padding:var(--space-5) var(--space-5) var(--space-3)">
+            <h2 class="card-title">Pending approvals <span class="badge badge-warn" style="margin-left:4px"><span class="badge-dot"></span>2 requests</span></h2>
+            <span class="muted" style="font-size:13px">New sign-ups need your approval before they can access this workspace</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="table">
+              <thead><tr><th>Requester</th><th>Requested role</th><th>Requested</th><th></th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm" style="background:#86868b">HV</span><div><div style="font-weight:500">Hoa Vu</div><div class="mono muted" style="font-size:12px">hoa@agentops.dev</div></div></div></td>
+                  <td><select class="select" style="padding:5px 8px;font-size:12px"><option>Member</option><option>Admin</option></select></td>
+                  <td class="t-mono">2 hours ago</td>
+                  <td><div class="row" style="justify-content:flex-end;gap:var(--space-2)"><button class="btn btn-ghost btn-sm" onclick="rowDecline(this)">Decline</button><button class="btn btn-primary btn-sm" onclick="rowApprove(this)">Approve</button></div></td>
+                </tr>
+                <tr>
+                  <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm" style="background:#86868b">SP</span><div><div style="font-weight:500">Sam Park</div><div class="mono muted" style="font-size:12px">sam@agentops.dev</div></div></div></td>
+                  <td><select class="select" style="padding:5px 8px;font-size:12px"><option>Member</option><option>Admin</option></select></td>
+                  <td class="t-mono">5 hours ago</td>
+                  <td><div class="row" style="justify-content:flex-end;gap:var(--space-2)"><button class="btn btn-ghost btn-sm" onclick="rowDecline(this)">Decline</button><button class="btn btn-primary btn-sm" onclick="rowApprove(this)">Approve</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div data-tabroot>
+          <div class="tabs" data-tabs data-od-id="admin-tabs" style="margin-bottom:var(--space-5)">
+            <button class="tab active" data-tab="members">Members <span class="muted">(5)</span></button>
+            <button class="tab" data-tab="roles">Roles &amp; permissions</button>
+            <button class="tab" data-tab="audit">Audit log</button>
+          </div>
+
+          <!-- MEMBERS -->
+          <div class="tab-panel active" data-tabpanel="members" id="members">
+            <div class="card flush" data-od-id="members-table">
+              <div style="overflow-x:auto">
+                <table class="table">
+                  <thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Last active</th><th></th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm">DA</span><div><div style="font-weight:500">Dang Anh <span class="muted">(you)</span></div><div class="mono muted" style="font-size:12px">dang@agentops.dev</div></div></div></td>
+                      <td><span class="role-pill role-owner">Owner</span></td>
+                      <td><span class="status-dot status-active"></span>Active</td>
+                      <td class="t-mono">now</td>
+                      <td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td>
+                    </tr>
+                    <tr>
+                      <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm" style="background:#15803d">LM</span><div><div style="font-weight:500">Linh Mai</div><div class="mono muted" style="font-size:12px">linh@agentops.dev</div></div></div></td>
+                      <td><select class="select" style="padding:5px 8px;font-size:12px"><option>Admin</option><option>Member</option><option>Owner</option></select></td>
+                      <td><span class="status-dot status-active"></span>Active</td>
+                      <td class="t-mono">2 min ago</td>
+                      <td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td>
+                    </tr>
+                    <tr>
+                      <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm" style="background:#6d28d9">TR</span><div><div style="font-weight:500">Tuantran</div><div class="mono muted" style="font-size:12px">tuan@agentops.dev</div></div></div></td>
+                      <td><select class="select" style="padding:5px 8px;font-size:12px"><option>Member</option><option>Admin</option></select></td>
+                      <td><span class="status-dot status-active"></span>Active</td>
+                      <td class="t-mono">1 hour ago</td>
+                      <td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td>
+                    </tr>
+                    <tr>
+                      <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm" style="background:#86868b">HV</span><div><div style="font-weight:500">Hoa Vu</div><div class="mono muted" style="font-size:12px">hoa@agentops.dev</div></div></div></td>
+                      <td><select class="select" style="padding:5px 8px;font-size:12px"><option>Member</option><option>Admin</option></select></td>
+                      <td><span class="status-dot status-invited"></span>Invited</td>
+                      <td class="t-mono">—</td>
+                      <td><button class="btn btn-soft btn-sm">Resend</button></td>
+                    </tr>
+                    <tr>
+                      <td><div class="row" style="align-items:center;gap:10px"><span class="avatar sm" style="background:#86868b">BK</span><div><div style="font-weight:500">Bot — CI watcher</div><div class="mono muted" style="font-size:12px">ci-bot (service account)</div></div></div></td>
+                      <td><span class="role-pill role-member">Member</span></td>
+                      <td><span class="status-dot status-disabled"></span>Disabled</td>
+                      <td class="t-mono">3 days ago</td>
+                      <td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p class="muted mt-4" style="font-size:13px">Seats: 4 / 10 used on the Pro plan. Service accounts don't count toward seats.</p>
+          </div>
+
+          <!-- ROLES & PERMISSIONS -->
+          <div class="tab-panel" data-tabpanel="roles" id="roles">
+            <div class="card flush" data-od-id="perm-matrix">
+              <div style="overflow-x:auto">
+                <table class="matrix">
+                  <thead><tr><th>Capability</th><th>Owner</th><th>Admin</th><th>Member</th></tr></thead>
+                  <tbody>
+                    <tr><td class="cap">View dashboard &amp; runs</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                    <tr><td class="cap">Create / assign tasks</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                    <tr><td class="cap">Give feedback &amp; review output</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+                    <tr><td class="cap">Create &amp; edit agents</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+                    <tr><td class="cap">Manage skills / plugins / MCP / rules</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+                    <tr><td class="cap">Approve &amp; merge PRs</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+                    <tr><td class="cap">Invite members &amp; set roles</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+                    <tr><td class="cap">View audit log</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+                    <tr><td class="cap">Delete workspace / transfer ownership</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+                    <tr><td class="cap">Manage billing &amp; plan</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p class="muted mt-4" style="font-size:13px">Members can optionally get per-task "approver" rights without a full role change. Owners can't be removed while they hold the only owner seat.</p>
+          </div>
+
+          <!-- AUDIT LOG -->
+          <div class="tab-panel" data-tabpanel="audit" id="audit">
+            <div class="card flush" data-od-id="audit-log">
+              <div style="overflow-x:auto">
+                <table class="table">
+                  <thead><tr><th>Actor</th><th>Action</th><th>Target</th><th>Time</th><th>IP</th></tr></thead>
+                  <tbody>
+                    <tr><td>Linh Mai</td><td><span class="badge badge-accent">role.changed</span></td><td>Tuantran → Member</td><td class="t-mono">09:41</td><td class="t-mono muted">203.0.113.4</td></tr>
+                    <tr><td>Dang Anh</td><td><span class="badge badge-muted">rule.enabled</span></td><td>No direct commits to main</td><td class="t-mono">09:12</td><td class="t-mono muted">203.0.113.9</td></tr>
+                    <tr><td>Linh Mai</td><td><span class="badge badge-muted">mcp.connected</span></td><td>postgres (staging)</td><td class="t-mono">08:55</td><td class="t-mono muted">203.0.113.4</td></tr>
+                    <tr><td>Dang Anh</td><td><span class="badge badge-success">agent.created</span></td><td>Forge</td><td class="t-mono">08:30</td><td class="t-mono muted">203.0.113.9</td></tr>
+                    <tr><td>System</td><td><span class="badge badge-warn">member.invited</span></td><td>hoa@agentops.dev</td><td class="t-mono">07:58</td><td class="t-mono muted">203.0.113.9</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Invite modal -->
+  <div class="overlay" id="invite">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div><h3>Invite to Agent Ops</h3><p class="muted" style="font-size:13px;margin:4px 0 0">They'll get access to this workspace only.</p></div>
+        <button class="icon-btn" onclick="closeModal('invite')" aria-label="Close">✕</button>
+      </div>
+      <div class="field"><label>Email addresses</label><textarea class="input" placeholder="teammate@company.com, another@company.com"></textarea></div>
+      <div class="field">
+        <label>Role</label>
+        <div class="seg">
+          <button class="active">Member</button>
+          <button>Admin</button>
+        </div>
+        <div class="field-help">Members can run tasks &amp; review; Admins can manage agents and resources.</div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal('invite')">Cancel</button>
+        <button class="btn btn-primary" onclick="closeModal('invite');toast('Invitations sent')">Send invites</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+  <script>
+    function rowApprove(btn) {
+      var tr = btn.closest("tr");
+      if (tr) tr.remove();
+      toast("Approved · invite sent");
+    }
+    function rowDecline(btn) {
+      var tr = btn.closest("tr");
+      if (tr) tr.remove();
+      toast("Request declined", { icon: "stop" });
+    }
+  </script>
+</body>
+</html>

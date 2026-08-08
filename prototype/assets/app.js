@@ -14,18 +14,68 @@
   ];
   window.AGENTS = AGENTS;
 
-  /* ── Sidebar injection ─────────────────────────────────────── */
-  const NAV = [
-    { group: "Workspace", items: [
+  /* ── Role-aware navigation ─────────────────────────────────── */
+  /* Roles: member | admin (workspace admin) | sysadmin (superadmin).
+   * Source priority: ?role= query > body[data-role] > "admin". */
+  const ROLE_LABELS = {
+    member: "Member",
+    admin: "Workspace admin",
+    sysadmin: "Superadmin",
+  };
+  window.ROLE_LABELS = ROLE_LABELS;
+
+  function getRole() {
+    try {
+      var q = new URLSearchParams(location.search).get("role");
+      if (q && ROLE_LABELS[q]) return q;
+    } catch (e) {}
+    return document.body.dataset.role || "admin";
+  }
+
+  function navForRole(role) {
+    const sys = role === "sysadmin";
+    const wsAdmin = role === "admin" || sys;
+    const groups = [];
+
+    const wsItems = [
       { id: "dashboard", label: "Dashboard", href: "dashboard.html", icon: ICON("grid") },
-      { id: "kanban",    label: "Kanban board", href: "kanban.html", icon: ICON("board") },
-      { id: "agents",    label: "Agents", href: "agents.html", icon: ICON("bot") },
-    ]},
-    { group: "Operations", items: [
-      { id: "history",    label: "Run history", href: "history.html", icon: ICON("clock") },
-      { id: "settings",   label: "Settings", href: "settings.html", icon: ICON("gear") },
-    ]},
+      { id: "kanban", label: "Kanban board", href: "kanban.html", icon: ICON("board") },
+      { id: "agents", label: "Agents", href: "agents.html", icon: ICON("bot") },
+    ];
+    if (wsAdmin) wsItems.push({ id: "resources", label: "Resources", href: "workspace-resources.html", icon: ICON("book") });
+    groups.push({ group: "Workspace", items: wsItems });
+
+    if (wsAdmin) {
+      groups.push({ group: "Organization", items: [
+        { id: "workspaces", label: "Workspaces", href: "workspaces.html", icon: ICON("layers") },
+        { id: "admin", label: "Members & roles", href: "admin.html", icon: ICON("users") },
+      ]});
+    }
+
+    if (sys) {
+      groups.push({ group: "System", items: [
+        { id: "sysadmin", label: "System console", href: "sysadmin.html", icon: ICON("server") },
+        { id: "orgs", label: "Organizations", href: "sysadmin.html#orgs", icon: ICON("box") },
+        { id: "audit", label: "System audit", href: "sysadmin.html#audit", icon: ICON("shield") },
+      ]});
+    }
+
+    const opItems = [{ id: "history", label: "Run history", href: "history.html", icon: ICON("clock") }];
+    if (wsAdmin) opItems.push({ id: "settings", label: "Settings", href: "settings.html", icon: ICON("gear") });
+    groups.push({ group: "Operations", items: opItems });
+
+    return groups;
+  }
+
+
+  /* ── Workspaces (multi-tenant) ─────────────────────────────── */
+  const WORKSPACES = [
+    { id: "agentops", glyph: "AO", name: "Agent Ops", repo: "agents-team-management-system", agents: 5, role: "Owner" },
+    { id: "acme",     glyph: "AC", name: "Acme Backend", repo: "acme/api-service", agents: 8, role: "Admin" },
+    { id: "marketing",glyph: "MK", name: "Marketing Site", repo: "acme/marketing-web", agents: 3, role: "Member" },
   ];
+  window.WORKSPACES = WORKSPACES;
+  const CURRENT_WS = "agentops";
 
   function ICON(name) {
     const s = 'stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"';
@@ -45,31 +95,73 @@
       stop:   `<svg viewBox="0 0 24 24" ${s}><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`,
       code:   `<svg viewBox="0 0 24 24" ${s}><path d="m8 6-6 6 6 6M16 6l6 6-6 6"/></svg>`,
       file:   `<svg viewBox="0 0 24 24" ${s}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>`,
+      layers: `<svg viewBox="0 0 24 24" ${s}><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5M3 16l9 5 9-5" opacity=".55"/></svg>`,
+      book:   `<svg viewBox="0 0 24 24" ${s}><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 1 2-2h13"/></svg>`,
+      plug:   `<svg viewBox="0 0 24 24" ${s}><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></svg>`,
+      server: `<svg viewBox="0 0 24 24" ${s}><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>`,
+      shield: `<svg viewBox="0 0 24 24" ${s}><path d="M12 3 5 6v6c0 4 3 6.5 7 9 4-2.5 7-5 7-9V6z"/><path d="m9 12 2 2 4-4"/></svg>`,
+      users:  `<svg viewBox="0 0 24 24" ${s}><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6M17 20a6 6 0 0 0-3-5.2"/></svg>`,
+      key:    `<svg viewBox="0 0 24 24" ${s}><circle cx="8" cy="8" r="4"/><path d="m11 11 9 9M17 17l2-2M14 14l2-2"/></svg>`,
+      wrench: `<svg viewBox="0 0 24 24" ${s}><path d="M15 6a4 4 0 0 0-5 5l-6 6 3 3 6-6a4 4 0 0 0 5-5l-2.5 2.5-2-2z"/></svg>`,
+      box:    `<svg viewBox="0 0 24 24" ${s}><path d="m12 3 8 4.5v9L12 21 4 16.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>`,
+      chev:   `<svg viewBox="0 0 24 24" ${s}><path d="m6 9 6 6 6-6"/></svg>`,
+      logout: `<svg viewBox="0 0 24 24" ${s}><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h12"/></svg>`,
     };
     return map[name] || "";
   }
   window.ICON = ICON;
 
+  function buildWsSwitch() {
+    const cur = WORKSPACES.find((w) => w.id === CURRENT_WS) || WORKSPACES[0];
+    let opts = WORKSPACES.map((w) => {
+      const cur = w.id === CURRENT_WS ? " current" : "";
+      return `<button class="ws-opt${cur}" data-ws="${w.id}">
+        <span class="ws-glyph" style="background:${wsColor(w.id)}">${w.glyph}</span>
+        <span class="ws-info"><span class="ws-name">${w.name}</span><span class="ws-repo">${w.repo}</span></span>
+        ${cur ? `<span class="badge badge-accent" style="font-size:10px">current</span>` : ""}
+      </button>`;
+    }).join("");
+    return `<div class="ws-switch">
+      <button class="ws-btn" id="wsBtn" aria-haspopup="true" aria-expanded="false">
+        <span class="ws-glyph" style="background:${wsColor(cur.id)}">${cur.glyph}</span>
+        <span class="ws-info"><span class="ws-name">${cur.name}</span><span class="ws-repo">${cur.repo}</span></span>
+        <span class="ws-chev">${ICON("chev")}</span>
+      </button>
+      <div class="ws-menu" id="wsMenu">
+        ${opts}
+        <div class="ws-menu-foot">
+          <a class="btn btn-ghost btn-sm" href="workspaces.html">${ICON("layers")}<span>Manage workspaces</span></a>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function wsColor(id) {
+    const map = { agentops: "var(--accent)", acme: "#15803d", marketing: "#6d28d9" };
+    return map[id] || "var(--fg)";
+  }
+
   function buildSidebar() {
     const page = document.body.dataset.page || "";
+    const role = getRole();
     let html = "";
-    html += `<div class="brand">
-      <div class="brand-mark">◆</div>
-      <div><div class="brand-name">Agent Ops</div><div class="brand-sub">Control room</div></div>
-    </div>`;
-    NAV.forEach((g) => {
+    html += buildWsSwitch();
+    navForRole(role).forEach((g) => {
       html += `<div>`;
       html += `<div class="nav-group-label">${g.group}</div>`;
       html += `<nav class="nav">`;
       g.items.forEach((it) => {
         const active = it.id === page ? " active" : "";
-        html += `<a href="${it.href}" class="${active.trim()}"><span class="nav-ico">${it.icon}</span>${it.label}</a>`;
+        const href = it.href + (it.href.indexOf("?") === -1 && role ? "?role=" + role : "");
+        html += `<a href="${href}" class="${active.trim()}"><span class="nav-ico">${it.icon}</span>${it.label}</a>`;
       });
       html += `</nav></div>`;
     });
+    const rolePill = role === "sysadmin" ? "role-sysadmin" : role === "admin" ? "role-admin" : "role-member";
     html += `<div class="sidebar-foot">
       <div class="avatar">DA</div>
-      <div><div class="who-name">Dang Anh</div><div class="who-role">Workspace owner</div></div>
+      <div style="flex:1;min-width:0"><div class="who-name">Dang Anh</div><div class="who-role"><span class="role-pill ${rolePill}">${ROLE_LABELS[role]}</span></div></div>
+      <button class="icon-btn" style="width:30px;height:30px" onclick="location.href='login.html'" aria-label="Sign out" title="Sign out">${ICON("logout")}</button>
     </div>`;
     return html;
   }
@@ -97,6 +189,29 @@
       burger.addEventListener("click", () => sb.classList.toggle("open"));
       document.addEventListener("click", (e) => {
         if (!sb.contains(e.target) && !burger.contains(e.target)) sb.classList.remove("open");
+      });
+    }
+    // workspace switcher
+    const wsBtn = document.getElementById("wsBtn");
+    const wsMenu = document.getElementById("wsMenu");
+    if (wsBtn && wsMenu) {
+      wsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const open = wsMenu.classList.toggle("open");
+        wsBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      document.addEventListener("click", (e) => {
+        if (!wsMenu.contains(e.target) && !wsBtn.contains(e.target)) {
+          wsMenu.classList.remove("open");
+          wsBtn.setAttribute("aria-expanded", "false");
+        }
+      });
+      wsMenu.querySelectorAll(".ws-opt").forEach((opt) => {
+        opt.addEventListener("click", () => {
+          const w = WORKSPACES.find((x) => x.id === opt.dataset.ws);
+          wsMenu.classList.remove("open");
+          if (w && w.id !== CURRENT_WS) toast("Switched to " + w.name);
+        });
       });
     }
   }

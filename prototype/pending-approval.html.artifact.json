@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototype/pending-approval.html",
+  "entry": "prototype/pending-approval.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-08T13:58:53.020Z",
+  "updatedAt": "2026-08-08T13:58:53.020Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

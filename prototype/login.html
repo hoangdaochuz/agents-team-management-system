@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body>
+  <div class="auth" data-od-id="auth">
+    <!-- aside -->
+    <aside class="auth-aside" data-od-id="auth-brand">
+      <div class="auth-brand">
+        <div class="brand-mark">◆</div>
+        <div><div class="brand-name" style="color:#fff">Agent Ops</div><div class="brand-sub" style="color:rgba(245,245,247,.5)">Control room</div></div>
+      </div>
+      <div class="auth-pitch">
+        <h2>One control room for every AI agent team.</h2>
+        <p>Isolate each workspace by repo. Assign scoped agents, skills, and tools — then watch them ship, with you in the loop.</p>
+      </div>
+      <div class="auth-foot">SOC 2 Type II · SSO / SAML · Per-workspace isolation</div>
+    </aside>
+
+    <!-- form -->
+    <main class="auth-main">
+      <div class="auth-card" data-od-id="auth-form">
+        <h1>Sign in</h1>
+        <p class="muted">Welcome back. Sign in to your organization.</p>
+
+        <div class="auth-form">
+          <div class="field">
+            <label>Work email</label>
+            <input class="input" type="email" placeholder="you@company.com" value="dang@agentops.dev" />
+          </div>
+          <div class="field">
+            <label>Password</label>
+            <input class="input" type="password" placeholder="••••••••••" value="secretvalue" />
+          </div>
+          <div class="remember">
+            <label><input type="checkbox" checked style="accent-color:var(--accent)" /> Keep me signed in</label>
+            <a href="#" style="font-size:var(--text-sm)">Forgot password?</a>
+          </div>
+          <button class="btn btn-primary w-full" onclick="location.href='dashboard.html'" style="justify-content:center;padding:11px">Sign in</button>
+        </div>
+
+        <div class="auth-divider">or continue with</div>
+
+        <div class="stack" style="gap:var(--space-3)">
+          <button class="sso-btn" onclick="location.href='dashboard.html'">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm0 14a8 8 0 0 1-6-2.7c.9-1.6 3-2.3 6-2.3s5.1.7 6 2.3A8 8 0 0 1 12 20Z"/></svg>
+            Google Workspace
+          </button>
+          <button class="sso-btn" onclick="location.href='dashboard.html'">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Single sign-on (SAML)
+          </button>
+        </div>
+
+        <div class="auth-switch">New to Agent Ops? <a href="#">Create an organization</a></div>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

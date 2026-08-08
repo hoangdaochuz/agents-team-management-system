@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototype/admin.html",
+  "entry": "prototype/admin.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-08T08:18:18.911Z",
+  "updatedAt": "2026-08-08T08:18:18.911Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

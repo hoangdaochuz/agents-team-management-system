@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign up · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body>
+  <div class="auth" data-od-id="auth">
+    <aside class="auth-aside" data-od-id="auth-brand">
+      <div class="auth-brand">
+        <div class="brand-mark">◆</div>
+        <div><div class="brand-name" style="color:#fff">Agent Ops</div><div class="brand-sub" style="color:rgba(245,245,247,.5)">Control room</div></div>
+      </div>
+      <div class="auth-pitch">
+        <h2>Spin up an AI agent team for your repo.</h2>
+        <p>Sign up, request access to a workspace, and an admin approves you in minutes.</p>
+      </div>
+      <div class="auth-foot">SOC 2 Type II · SSO / SAML · Per-workspace isolation</div>
+    </aside>
+
+    <main class="auth-main">
+      <div class="auth-card" data-od-id="auth-form">
+        <h1>Create your account</h1>
+        <p class="muted">Already have one? <a href="login.html">Sign in</a></p>
+
+        <div class="auth-form">
+          <div class="field"><label>Full name</label><input class="input" placeholder="Jane Engineer" /></div>
+          <div class="field"><label>Work email</label><input class="input" type="email" placeholder="you@company.com" /></div>
+          <div class="field"><label>Password</label><input class="input" type="password" placeholder="At least 12 characters" /><div class="field-help">Use 12+ characters with a number and symbol.</div></div>
+
+          <div class="field">
+            <label>How do you want to start?</label>
+            <div class="seg" id="startMode">
+              <button class="active" data-mode="join">Join a workspace</button>
+              <button data-mode="new">Create new org</button>
+            </div>
+          </div>
+
+          <div class="field" id="joinField">
+            <label>Workspace invite code or URL</label>
+            <input class="input" placeholder="e.g. agentops-invite-7F3A" />
+            <div class="field-help">Ask your workspace admin for an invite code. They'll still approve your request.</div>
+          </div>
+          <div class="field" id="newField" style="display:none">
+            <label>Organization name</label>
+            <input class="input" placeholder="e.g. Acme Inc." />
+            <div class="field-help">You'll be the Owner of the first workspace in this org.</div>
+          </div>
+
+          <label class="remember"><input type="checkbox" style="accent-color:var(--accent)" /> I agree to the Terms &amp; Privacy Policy</label>
+          <button class="btn btn-primary w-full" onclick="location.href='pending-approval.html'" style="justify-content:center;padding:11px">Request access</button>
+        </div>
+
+        <div class="auth-divider">or sign up with</div>
+        <button class="sso-btn" onclick="location.href='pending-approval.html'">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm0 14a8 8 0 0 1-6-2.7c.9-1.6 3-2.3 6-2.3s5.1.7 6 2.3A8 8 0 0 1 12 20Z"/></svg>
+          Google Workspace
+        </button>
+      </div>
+    </main>
+  </div>
+  <script>
+    document.querySelectorAll("#startMode button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        document.querySelectorAll("#startMode button").forEach(function (x) { x.classList.remove("active"); });
+        b.classList.add("active");
+        var join = b.dataset.mode === "join";
+        document.getElementById("joinField").style.display = join ? "" : "none";
+        document.getElementById("newField").style.display = join ? "none" : "";
+      });
+    });
+  </script>
+</body>
+</html>

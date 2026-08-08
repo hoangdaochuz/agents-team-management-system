@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resources · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="resources">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="crumbs"><a href="workspaces.html">Workspaces</a><span class="sep">/</span><span class="fg2">Agent Ops</span><span class="sep">/</span><span>Resources</span></div>
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Workspace resources</h1>
+            <div class="page-sub">Everything an agent can draw on — scoped to this workspace only.</div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost" onclick="location.href='agent-builder.html'">+ New agent</button>
+          </div>
+        </div>
+
+        <!-- scope -->
+        <div class="scope-banner" data-od-id="ws-scope">
+          <span class="ws-glyph" style="background:var(--accent)">AO</span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:14px">Agent Ops</div>
+            <div class="mono muted" style="font-size:12px">github.com/hoangdaochuz/agents-team-management-system · 5 agents</div>
+          </div>
+          <span class="badge badge-muted">Isolated — no cross-workspace access</span>
+        </div>
+
+        <div data-tabroot>
+          <div class="tabs" data-tabs data-od-id="res-tabs" style="margin-bottom:var(--space-5)">
+            <button class="tab active" data-tab="kb">Knowledge base</button>
+            <button class="tab" data-tab="skills">Skills</button>
+            <button class="tab" data-tab="plugins">Plugins</button>
+            <button class="tab" data-tab="mcp">MCP servers</button>
+            <button class="tab" data-tab="rules">Rules</button>
+          </div>
+
+          <!-- KNOWLEDGE BASE -->
+          <div class="tab-panel active" data-tabpanel="kb" id="kb">
+            <div class="res-head">
+              <div class="res-search"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--meta)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input placeholder="Search sources…" /></div>
+              <div class="row">
+                <button class="btn btn-ghost btn-sm">Import from repo</button>
+                <button class="btn btn-primary btn-sm">+ Add source</button>
+              </div>
+            </div>
+            <div class="res-card" data-od-id="kb-list">
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>
+                <div><div class="res-title">docs/architecture.md</div><div class="res-meta">Repo file · 24 KB · indexed 412 chunks</div></div>
+                <span class="badge badge-success"><span class="badge-dot"></span>indexed</span>
+                <div class="res-actions"><button class="icon-btn" style="width:30px;height:30px">⋯</button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>
+                <div><div class="res-title">ADR log (docs/adr/*)</div><div class="res-meta">Repo folder · 11 files · indexed</div></div>
+                <span class="badge badge-success"><span class="badge-dot"></span>indexed</span>
+                <div class="res-actions"><button class="icon-btn" style="width:30px;height:30px">⋯</button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+                <div><div class="res-title">api.openai.com/docs</div><div class="res-meta">Web URL · crawled · 86 pages</div></div>
+                <span class="badge badge-warn"><span class="badge-dot"></span>re-indexing</span>
+                <div class="res-actions"><button class="icon-btn" style="width:30px;height:30px">⋯</button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg></span>
+                <div><div class="res-title">onboarding-handbook.pdf</div><div class="res-meta">Upload · 1.2 MB · 38 chunks</div></div>
+                <span class="badge badge-success"><span class="badge-dot"></span>indexed</span>
+                <div class="res-actions"><button class="icon-btn" style="width:30px;height:30px">⋯</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SKILLS -->
+          <div class="tab-panel" data-tabpanel="skills" id="skills">
+            <div class="res-head">
+              <div class="res-search"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--meta)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input placeholder="Search skills…" /></div>
+              <button class="btn btn-primary btn-sm">+ Add skill</button>
+            </div>
+            <div class="res-card" data-od-id="skills-list">
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 9 5-9 5-9-5 9-5Z"/></svg></span>
+                <div><div class="res-title">git-pr-flow</div><div class="res-meta">Trigger: "open a PR" · creates branch, commits, opens PR · 3 steps</div></div>
+                <span class="badge badge-accent">enabled</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 9 5-9 5-9-5 9-5Z"/></svg></span>
+                <div><div class="res-title">test-driven</div><div class="res-meta">Trigger: code change · writes failing test first · TDD loop</div></div>
+                <span class="badge badge-accent">enabled</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 9 5-9 5-9-5 9-5Z"/></svg></span>
+                <div><div class="res-title">code-review-strict</div><div class="res-meta">Trigger: before PR · adversarial 5-axis self-review</div></div>
+                <span class="badge badge-muted">disabled</span>
+                <div class="res-actions"><button class="switch" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 9 5-9 5-9-5 9-5Z"/></svg></span>
+                <div><div class="res-title">db-migration-safe</div><div class="res-meta">Trigger: schema change · checks backward compat</div></div>
+                <span class="badge badge-accent">enabled</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PLUGINS -->
+          <div class="tab-panel" data-tabpanel="plugins" id="plugins">
+            <div class="res-head">
+              <div class="res-search"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--meta)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input placeholder="Search plugins…" /></div>
+              <button class="btn btn-primary btn-sm">+ Install plugin</button>
+            </div>
+            <div class="res-card" data-od-id="plugins-list">
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></svg></span>
+                <div><div class="res-title">GitHub</div><div class="res-meta">v2.4.1 · issues, PRs, actions · scopes: repo, workflow</div></div>
+                <span class="badge badge-accent">enabled</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></svg></span>
+                <div><div class="res-title">Linear</div><div class="res-meta">v1.2.0 · sync issues &amp; status</div></div>
+                <span class="badge badge-accent">enabled</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0z"/><path d="M12 16v5"/></svg></span>
+                <div><div class="res-title">Sentry</div><div class="res-meta">v0.9.3 · pull stack traces for bug tasks</div></div>
+                <span class="badge badge-muted">disabled</span>
+                <div class="res-actions"><button class="switch" aria-label="Toggle"></button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MCP SERVERS -->
+          <div class="tab-panel" data-tabpanel="mcp" id="mcp">
+            <div class="res-head">
+              <div class="res-search"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--meta)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input placeholder="Search servers…" /></div>
+              <button class="btn btn-primary btn-sm">+ Connect server</button>
+            </div>
+            <div class="res-card" data-od-id="mcp-list">
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></span>
+                <div><div class="res-title">filesystem (repo)</div><div class="res-meta">stdio · 6 tools · read_file, write_file, list_files…</div></div>
+                <span class="badge badge-success"><span class="badge-dot"></span>connected</span>
+                <div class="res-actions"><button class="icon-btn" style="width:30px;height:30px">⋯</button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></span>
+                <div><div class="res-title">postgres (staging)</div><div class="res-meta">http · 4 tools · query, explain, schema</div></div>
+                <span class="badge badge-success"><span class="badge-dot"></span>connected</span>
+                <div class="res-actions"><button class="icon-btn" style="width:30px;height:30px">⋯</button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></span>
+                <div><div class="res-title">playwright</div><div class="res-meta">stdio · 9 tools · navigate, click, screenshot</div></div>
+                <span class="badge badge-danger"><span class="badge-dot"></span>offline</span>
+                <div class="res-actions"><button class="btn btn-soft btn-sm">Reconnect</button></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RULES -->
+          <div class="tab-panel" data-tabpanel="rules" id="rules">
+            <div class="res-head">
+              <div class="res-search"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--meta)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input placeholder="Search rules…" /></div>
+              <button class="btn btn-primary btn-sm">+ Add rule</button>
+            </div>
+            <div class="res-card" data-od-id="rules-list">
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 6v6c0 4 3 6.5 7 9 4-2.5 7-5 7-9V6z"/></svg></span>
+                <div><div class="res-title">No direct commits to main</div><div class="res-meta">Agents must open a branch + PR. Enforced.</div></div>
+                <span class="badge badge-accent">enforced</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 6v6c0 4 3 6.5 7 9 4-2.5 7-5 7-9V6z"/></svg></span>
+                <div><div class="res-title">All code changes need tests</div><div class="res-meta">PRs without test deltas are blocked for review.</div></div>
+                <span class="badge badge-accent">enforced</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 6v6c0 4 3 6.5 7 9 4-2.5 7-5 7-9V6z"/></svg></span>
+                <div><div class="res-title">Never auto-merge PRs</div><div class="res-meta">A human must approve every merge.</div></div>
+                <span class="badge badge-accent">enforced</span>
+                <div class="res-actions"><button class="switch on" aria-label="Toggle"></button></div>
+              </div>
+              <div class="res-item">
+                <span class="res-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 5 6v6c0 4 3 6.5 7 9 4-2.5 7-5 7-9V6z"/></svg></span>
+                <div><div class="res-title">Keep secrets out of commits</div><div class="res-meta">Pre-commit scan for API keys / tokens.</div></div>
+                <span class="badge badge-muted">off</span>
+                <div class="res-actions"><button class="switch" aria-label="Toggle"></button></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </main>
+    </div>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

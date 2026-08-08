@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workspaces · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="workspaces">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <h1 class="page-title">Workspaces</h1>
+            <div class="page-sub">Each workspace is isolated by repo — its own agents, skills, tools, and rules. Switch context any time from the sidebar.</div>
+          </div>
+          <button class="btn btn-primary" onclick="openModal('newWs')">+ New workspace</button>
+        </div>
+
+        <!-- Org context -->
+        <div class="scope-banner" data-od-id="org-scope">
+          <span class="ws-glyph" style="background:var(--fg)">◆</span>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:14px">Organization: Dang Anh (Personal)</div>
+            <div class="muted" style="font-size:12px">3 workspaces · Pro plan · members across workspaces share one org login</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="location.href='admin.html'">Manage members</button>
+        </div>
+
+        <div class="ws-grid" data-od-id="ws-grid">
+
+          <a href="dashboard.html" class="ws-card current" data-od-id="ws-agentops">
+            <div class="ws-card-top">
+              <span class="ws-glyph" style="background:var(--accent)">AO</span>
+              <div style="flex:1"><h3>Agent Ops</h3><div class="mono">github.com/hoangdaochuz/agents-team-management-system</div></div>
+              <span class="badge badge-accent">current</span>
+            </div>
+            <p class="muted" style="font-size:13px;margin:0">Internal tool — manage AI agent teams, kanban, and feedback loops.</p>
+            <div class="ws-stats">
+              <div><div class="ws-stat-num">5</div><div class="ws-stat-lbl">Agents</div></div>
+              <div><div class="ws-stat-num">12</div><div class="ws-stat-lbl">Open tasks</div></div>
+              <div><div class="ws-stat-num">Owner</div><div class="ws-stat-lbl">Your role</div></div>
+            </div>
+          </a>
+
+          <a href="dashboard.html" class="ws-card" data-od-id="ws-acme">
+            <div class="ws-card-top">
+              <span class="ws-glyph" style="background:#15803d">AC</span>
+              <div style="flex:1"><h3>Acme Backend</h3><div class="mono">github.com/acme/api-service</div></div>
+            </div>
+            <p class="muted" style="font-size:13px;margin:0">Production Go API — bug fixes, refactors, and CI maintenance.</p>
+            <div class="ws-stats">
+              <div><div class="ws-stat-num">8</div><div class="ws-stat-lbl">Agents</div></div>
+              <div><div class="ws-stat-num">23</div><div class="ws-stat-lbl">Open tasks</div></div>
+              <div><div class="ws-stat-num">Admin</div><div class="ws-stat-lbl">Your role</div></div>
+            </div>
+          </a>
+
+          <a href="dashboard.html" class="ws-card" data-od-id="ws-marketing">
+            <div class="ws-card-top">
+              <span class="ws-glyph" style="background:#6d28d9">MK</span>
+              <div style="flex:1"><h3>Marketing Site</h3><div class="mono">github.com/acme/marketing-web</div></div>
+            </div>
+            <p class="muted" style="font-size:13px;margin:0">Next.js marketing site — landing pages, blog, and SEO.</p>
+            <div class="ws-stats">
+              <div><div class="ws-stat-num">3</div><div class="ws-stat-lbl">Agents</div></div>
+              <div><div class="ws-stat-num">6</div><div class="ws-stat-lbl">Open tasks</div></div>
+              <div><div class="ws-stat-num">Member</div><div class="ws-stat-lbl">Your role</div></div>
+            </div>
+          </a>
+
+          <button class="ws-card" onclick="openModal('newWs')" data-od-id="ws-new" style="border:1px dashed var(--border);box-shadow:none;justify-content:center;align-items:center;text-align:center;color:var(--muted)">
+            <div style="margin:auto">
+              <div style="font-size:28px">＋</div>
+              <div style="font-weight:600;color:var(--fg)">Create workspace</div>
+              <div style="font-size:13px">Connect a repo and isolate agents</div>
+            </div>
+          </button>
+
+        </div>
+
+        <div class="card mt-6" data-od-id="isolation-note">
+          <div class="card-head"><h2 class="card-title">How workspace isolation works</h2></div>
+          <div class="grid" style="grid-template-columns:repeat(3,1fr)">
+            <div><div style="font-weight:600;font-size:14px;margin-bottom:4px">Separate repos</div><p class="muted" style="font-size:13px;margin:0">Each workspace binds to one repo/folder. Agents can't read or write outside it.</p></div>
+            <div><div style="font-weight:600;font-size:14px;margin-bottom:4px">Scoped agents &amp; skills</div><p class="muted" style="font-size:13px;margin:0">Agents, skills, MCP servers, and rules belong to a workspace — no cross-workspace leakage.</p></div>
+            <div><div style="font-weight:600;font-size:14px;margin-bottom:4px">Per-workspace members</div><p class="muted" style="font-size:13px;margin:0">Invite users per workspace and assign Owner / Admin / Member roles.</p></div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- New workspace modal -->
+  <div class="overlay" id="newWs">
+    <div class="modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div><h3>Create workspace</h3><p class="muted" style="font-size:13px;margin:4px 0 0">Bind a repo and isolate a fresh team of agents.</p></div>
+        <button class="icon-btn" onclick="closeModal('newWs')" aria-label="Close">✕</button>
+      </div>
+      <div class="field"><label>Workspace name</label><input class="input" placeholder="e.g. Payments Service" /></div>
+      <div class="field">
+        <label>Repository</label>
+        <select class="select"><option>github.com/hoangdaochuz/payments-svc</option><option>github.com/acme/billing</option><option>Connect a new repo…</option></select>
+        <div class="field-help">Agents will only see files inside this repo.</div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Default branch</label><input class="input mono" value="main" /></div>
+        <div class="field"><label>Your role</label><select class="select"><option>Owner</option><option>Admin</option></select></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal('newWs')">Cancel</button>
+        <button class="btn btn-primary" onclick="closeModal('newWs');toast('Workspace created — connect agents next')">Create workspace</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

@@ -4,7 +4,16 @@
       "Bash(rtk ls *)",
       "Bash(rtk git *)",
       "Bash(go version *)",
-      "Bash(rtk go *)"
+      "Bash(rtk go *)",
+      "WebFetch(domain:github.com)",
+      "WebSearch",
+      "Bash(npm --version)",
+      "Bash(npm root *)",
+      "Bash(openspec --version)",
+      "Bash(openspec init *)",
+      "Bash(rtk read *)",
+      "Bash(openspec new *)",
+      "Bash(openspec status *)"
     ]
   }
 }

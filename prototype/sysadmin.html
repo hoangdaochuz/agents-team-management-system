@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>System console · Agent Ops</title>
+  <link rel="stylesheet" href="assets/app.css" />
+</head>
+<body data-page="sysadmin" data-role="sysadmin">
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main class="content">
+
+        <div class="page-head">
+          <div>
+            <div class="row" style="gap:8px;margin-bottom:6px"><span class="sys-badge">SUPERADMIN</span><span class="muted" style="font-size:13px">System-wide · all orgs &amp; workspaces</span></div>
+            <h1 class="page-title">System console</h1>
+            <div class="page-sub">You're signed in as a superadmin. Actions here affect every organization on the instance.</div>
+          </div>
+          <div class="row">
+            <button class="btn btn-ghost">System audit</button>
+            <button class="btn btn-primary">Run maintenance</button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="sa-kpis" data-od-id="sa-kpis">
+          <div class="kpi"><div class="kpi-label">Organizations</div><div class="kpi-value">14</div><div class="kpi-delta up">▲ +2 this month</div></div>
+          <div class="kpi"><div class="kpi-label">Workspaces</div><div class="kpi-value">47</div><div class="kpi-delta">across 14 orgs</div></div>
+          <div class="kpi"><div class="kpi-label">Active users (24h)</div><div class="kpi-value">312</div><div class="kpi-delta up">▲ +18 today</div></div>
+          <div class="kpi"><div class="kpi-label">Open seats</div><div class="kpi-value">186</div><div class="kpi-delta down">▼ 4 over plan</div></div>
+        </div>
+
+        <div class="grid" style="grid-template-columns:1.7fr 1fr">
+
+          <!-- ORGS TABLE -->
+          <div class="stack">
+            <div class="card flush" id="orgs" data-od-id="orgs-table">
+              <div class="card-head" style="padding:var(--space-5) var(--space-5) var(--space-3)">
+                <h2 class="card-title">Organizations</h2>
+                <button class="btn btn-ghost btn-sm">+ New org</button>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="table">
+                  <thead><tr><th>Organization</th><th>Plan</th><th>Workspaces</th><th>Seats</th><th>Status</th><th></th></tr></thead>
+                  <tbody>
+                    <tr><td><div style="font-weight:500">Acme Inc.</div><div class="mono muted" style="font-size:12px">acme.agentops.dev</div></td><td><span class="role-pill role-admin">Enterprise</span></td><td>9</td><td>64 / 80</td><td><span class="status-dot status-active"></span>Active</td><td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td></tr>
+                    <tr><td><div style="font-weight:500">Dang Anh (Personal)</div><div class="mono muted" style="font-size:12px">dang.agentops.dev</div></td><td><span class="role-pill role-member">Pro</span></td><td>3</td><td>4 / 10</td><td><span class="status-dot status-active"></span>Active</td><td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td></tr>
+                    <tr><td><div style="font-weight:500">Northwind</div><div class="mono muted" style="font-size:12px">northwind.agentops.dev</div></td><td><span class="role-pill role-admin">Team</span></td><td>5</td><td>22 / 25</td><td><span class="status-dot status-active"></span>Active</td><td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td></tr>
+                    <tr><td><div style="font-weight:500">Globex</div><div class="mono muted" style="font-size:12px">globex.agentops.dev</div></td><td><span class="role-pill role-member">Free</span></td><td>2</td><td>3 / 5</td><td><span class="status-dot status-invited"></span>Trial</td><td><button class="icon-btn" style="width:30px;height:30px">⋯</button></td></tr>
+                    <tr><td><div style="font-weight:500">Initech</div><div class="mono muted" style="font-size:12px">initech.agentops.dev</div></td><td><span class="role-pill role-member">Pro</span></td><td>4</td><td>0 / 10</td><td><span class="status-dot status-disabled"></span>Suspended</td><td><button class="btn btn-soft btn-sm">Restore</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- PENDING SIGNUPS (cross-org) -->
+            <div class="card flush" id="audit" data-od-id="sa-pending">
+              <div class="card-head" style="padding:var(--space-5) var(--space-5) var(--space-3)">
+                <h2 class="card-title">Sign-up requests <span class="muted" style="font-weight:400">(org-level)</span></h2>
+                <span class="badge badge-warn"><span class="badge-dot"></span>6 pending</span>
+              </div>
+              <div style="overflow-x:auto">
+                <table class="table">
+                  <thead><tr><th>User</th><th>Workspace</th><th>Requested</th><th></th></tr></thead>
+                  <tbody>
+                    <tr><td><div style="font-weight:500">Hoa Vu</div><div class="mono muted" style="font-size:12px">hoa@agentops.dev</div></td><td>Agent Ops</td><td class="t-mono">2h ago</td><td><button class="btn btn-primary btn-sm">Approve</button></td></tr>
+                    <tr><td><div style="font-weight:500">Sam Park</div><div class="mono muted" style="font-size:12px">sam@acme.com</div></td><td>Acme Backend</td><td class="t-mono">5h ago</td><td><button class="btn btn-primary btn-sm">Approve</button></td></tr>
+                    <tr><td><div style="font-weight:500">R. Kumar</div><div class="mono muted" style="font-size:12px">r@northwind.io</div></td><td>Northwind API</td><td class="t-mono">1d ago</td><td><button class="btn btn-primary btn-sm">Approve</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: health + flags + audit -->
+          <div class="stack">
+            <div class="card" data-od-id="system-health">
+              <div class="card-head"><h2 class="card-title">System health</h2><span class="badge badge-success"><span class="badge-dot"></span>operational</span></div>
+              <div class="health-row"><span class="health-name">API gateway</span><span class="health-bar"><i style="width:99%;background:var(--success)"></i></span><span class="health-val">99.9%</span></div>
+              <div class="health-row"><span class="health-name">Runner fleet</span><span class="health-bar"><i style="width:97%;background:var(--success)"></i></span><span class="health-val">97.4%</span></div>
+              <div class="health-row"><span class="health-name">Postgres</span><span class="health-bar"><i style="width:100%;background:var(--success)"></i></span><span class="health-val">100%</span></div>
+              <div class="health-row"><span class="health-name">LLM providers</span><span class="health-bar"><i style="width:88%;background:var(--warn)"></i></span><span class="health-val">88.1%</span></div>
+            </div>
+
+            <div class="card" data-od-id="feature-flags">
+              <div class="card-head"><h2 class="card-title">Feature flags</h2></div>
+              <div class="flag-row"><div><div class="flag-name">Auto-merge PRs</div><div class="flag-desc">Off by default for all orgs</div></div><button class="switch" aria-label="Toggle"></button></div>
+              <div class="flag-row"><div><div class="flag-name">MCP marketplace</div><div class="flag-desc">Beta — 3 orgs enrolled</div></div><button class="switch on" aria-label="Toggle"></button></div>
+              <div class="flag-row"><div><div class="flag-name">SSO / SAML</div><div class="flag-desc">Enterprise orgs only</div></div><button class="switch on" aria-label="Toggle"></button></div>
+              <div class="flag-row"><div><div class="flag-name">Audit log export</div><div class="flag-desc">All paid plans</div></div><button class="switch on" aria-label="Toggle"></button></div>
+            </div>
+
+            <div class="card" data-od-id="system-audit">
+              <div class="card-head"><h2 class="card-title">System audit</h2></div>
+              <div class="feed">
+                <div class="feed-item"><div class="feed-dot" style="background:var(--fg);color:#fff">SY</div><div><div class="feed-text"><b>sysadmin</b> suspended org <b>Initech</b> (billing)</div><div class="feed-time">14 min ago</div></div></div>
+                <div class="feed-item"><div class="feed-dot" style="background:var(--fg);color:#fff">SY</div><div><div class="feed-text"><b>sysadmin</b> enabled flag <span class="mono">mcp_marketplace</span></div><div class="feed-time">2 h ago</div></div></div>
+                <div class="feed-item"><div class="feed-dot" style="background:var(--fg);color:#fff">SY</div><div><div class="feed-text">Runner autoscale <b>+2 nodes</b> (peak load)</div><div class="feed-time">5 h ago</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+  <script src="assets/app.js"></script>
+</body>
+</html>

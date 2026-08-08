@@ -50,6 +50,70 @@
         <h3>Settings</h3>
         <p>Workspace, agent defaults, feedback & pausing rules, notifications, integrations.</p>
       </a>
+      <a class="screen-card" href="workspaces.html" data-od-id="launch-workspaces">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5" opacity=".55"/></svg></div>
+        <h3>Workspaces</h3>
+        <p>Multi-tenant — each workspace binds a repo and isolates its own agents, skills, and rules.</p>
+      </a>
+      <a class="screen-card" href="workspace-resources.html" data-od-id="launch-resources">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 1 2-2h13"/></svg></div>
+        <h3>Workspace resources</h3>
+        <p>Per-workspace knowledge base, skills, plugins, MCP servers, and rules.</p>
+      </a>
+      <a class="screen-card" href="agent-builder.html" data-od-id="launch-builder">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4"/></svg></div>
+        <h3>Agent builder</h3>
+        <p>Full agent config — system & user prompts, model, mode, skills, tools, MCP, rules, limits.</p>
+      </a>
+      <a class="screen-card" href="admin.html" data-od-id="launch-admin">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="8" r="3.2"/><path d="M3 20a6 6 0 0 1 12 0M16 5a3 3 0 0 1 0 6"/></svg></div>
+        <h3>Members & roles</h3>
+        <p>Invite users, assign Owner / Admin / Member roles, a permission matrix, and audit log.</p>
+      </a>
+      <a class="screen-card" href="login.html" data-od-id="launch-login">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h12"/></svg></div>
+        <h3>Sign in</h3>
+        <p>Auth — email/password plus Google Workspace & SAML SSO. Every user logs in to use the system.</p>
+      </a>
+      <a class="screen-card" href="signup.html" data-od-id="launch-signup">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 8 0 4 4 0 0 0-8 0M19 8v6M22 11h-6"/></svg></div>
+        <h3>Sign up</h3>
+        <p>Create an account and request access to a workspace — an admin must approve before you can log in.</p>
+      </a>
+      <a class="screen-card" href="pending-approval.html" data-od-id="launch-pending">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+        <h3>Awaiting approval</h3>
+        <p>The post-signup state — request sent, workspace admin notified, access granted on approval.</p>
+      </a>
+      <a class="screen-card" href="sysadmin.html" data-od-id="launch-sysadmin">
+        <div class="screen-thumb"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg></div>
+        <h3>System console (superadmin)</h3>
+        <p>Org-wide control — all organizations, workspaces, seats, system health, feature flags & cross-org sign-up approvals.</p>
+      </a>
+    </div>
+
+    <!-- Role views: same app, three distinct experiences -->
+    <h2 class="center" style="font-size:var(--text-xl);margin:var(--space-12) 0 var(--space-3)">Three roles, three views</h2>
+    <p class="muted center" style="margin-bottom:var(--space-5)">The same workspace renders differently per role. Preview each below.</p>
+    <div class="role-view-grid">
+      <a class="role-view" href="dashboard.html?role=member" data-od-id="view-member">
+        <div class="rv-head"><span class="role-pill role-member">Member</span></div>
+        <h3>Normal user</h3>
+        <p>Runs tasks, monitors agent output, gives feedback. No access to members, billing, or resources config.</p>
+        <span class="rv-link">Preview dashboard →</span>
+      </a>
+      <a class="role-view" href="dashboard.html?role=admin" data-od-id="view-admin">
+        <div class="rv-head"><span class="role-pill role-admin">Workspace admin</span></div>
+        <h3>Workspace admin</h3>
+        <p>Everything a member sees, plus members &amp; roles, approvals, resources, and workspace settings.</p>
+        <span class="rv-link">Preview dashboard →</span>
+      </a>
+      <a class="role-view" href="dashboard.html?role=sysadmin" data-od-id="view-sysadmin">
+        <div class="rv-head"><span class="role-pill role-sysadmin">Superadmin</span></div>
+        <h3>Sysadmin</h3>
+        <p>System-wide: all orgs &amp; workspaces, system health, feature flags, and cross-org approvals.</p>
+        <span class="rv-link">Preview dashboard →</span>
+      </a>
     </div>
 
     <p class="muted center" style="font-size:13px;margin-top:var(--space-12)">High-fidelity prototype · Apple visual system (neutral base + single blue accent). Every interaction works — tabs, kanban drag, feedback modals, terminal streaming.</p>

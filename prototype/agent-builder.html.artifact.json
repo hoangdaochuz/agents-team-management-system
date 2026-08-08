@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "prototype/agent-builder.html",
+  "entry": "prototype/agent-builder.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-08T08:17:38.993Z",
+  "updatedAt": "2026-08-08T08:17:38.993Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}
