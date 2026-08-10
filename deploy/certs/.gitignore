@@ -1,0 +1,5 @@
+# Dev-only mTLS private material. Regenerate with ./generate.sh after clone.
+# Only the CA cert, leaf certs, and the generator script are tracked.
+*.key
+*.csr
+*.srl
