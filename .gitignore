@@ -21,3 +21,6 @@ frontend/dist/
 
 # opendesign tooling scaffolding (local only)
 .od-skills/
+
+# opencode local session state
+.opencode/
