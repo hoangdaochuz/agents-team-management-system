@@ -4,6 +4,7 @@ import { tasks, agents } from "../api/client";
 import type { Task, Agent } from "../api/types";
 import { Avatar, Badge, Card, CardHead, KPI, Progress, Sparkline, StatusBadge } from "../components/ui";
 import { relativeTime, shortId } from "../lib/format";
+import { useActiveWorkspaceId } from "../lib/workspace";
 
 /** Map an agent status string to a display tone. */
 function agentTone(status?: string): "success" | "warn" | "muted" {
@@ -14,26 +15,28 @@ function agentTone(status?: string): "success" | "warn" | "muted" {
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  // Scope cached data to the active workspace so switching refetches (design D3).
+  const wid = useActiveWorkspaceId();
 
   const tasksQuery = useQuery({
-    queryKey: ["tasks", { status: "doing" }],
+    queryKey: ["tasks", wid, { status: "doing" }],
     queryFn: () => tasks.listTasks({ status: "doing" }),
   });
 
   const reviewQuery = useQuery({
-    queryKey: ["tasks", { status: "review" }],
+    queryKey: ["tasks", wid, { status: "review" }],
     queryFn: () => tasks.listTasks({ status: "review" }),
   });
 
   const agentsQuery = useQuery({
-    queryKey: ["agents"],
+    queryKey: ["agents", wid],
     queryFn: () => agents.listAgents(),
   });
 
   // Activity feed is derived from recent tasks (newest first) since the backend
   // has no dedicated activity endpoint yet. Wrapped in AsyncBoundary.
   const activityQuery = useQuery({
-    queryKey: ["tasks", "recent"],
+    queryKey: ["tasks", wid, "recent"],
     queryFn: () => tasks.listTasks(),
   });
 

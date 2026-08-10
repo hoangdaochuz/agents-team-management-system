@@ -12,6 +12,7 @@ import {
 import { Icon } from "../lib/icons";
 import { KanbanBoard } from "../components/tasks/KanbanBoard";
 import { CreateTaskModal } from "../components/tasks/CreateTaskModal";
+import { useActiveWorkspaceId } from "../lib/workspace";
 
 export function KanbanPage() {
   const qc = useQueryClient();
@@ -19,16 +20,18 @@ export function KanbanPage() {
   const [search, setSearch] = useState("");
   const [view, setView] = useState<"board" | "list" | "timeline">("board");
   const [creating, setCreating] = useState(false);
+  // Scope cached data to the active workspace so switching refetches (design D3).
+  const wid = useActiveWorkspaceId();
 
   const { data, isLoading, isError, error } = useQuery<Task[]>({
-    queryKey: ["tasks"],
+    queryKey: ["tasks", wid],
     queryFn: () => tasks.listTasks(),
   });
 
   // Assignee names for the toolbar avatar stack. Best-effort — tolerates the
   // agents endpoint being absent (the kanban still renders).
   const { data: agentList } = useQuery({
-    queryKey: ["agents"],
+    queryKey: ["agents", wid],
     queryFn: () => agents.listAgents(),
   });
 
@@ -36,7 +39,7 @@ export function KanbanPage() {
     mutationFn: ({ id, status }: { id: string; status: TaskStatus }) =>
       tasks.patchStatus(id, status),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["tasks", wid] });
     },
     onError: (e: unknown) => {
       const msg = e instanceof Error ? e.message : "Move failed";

@@ -131,6 +131,84 @@ const P: Record<string, ReactElement> = {
     />
   ),
   sparkle: <path d="M12 3v6M12 15v6M3 12h6M15 12h6M6 6l3 3M15 15l3 3M18 6l-3 3M9 15l-3 3" {...stroke} />,
+  // ── icons added for auth / workspaces / admin / builder ──
+  lock: (
+    <>
+      <rect x="4" y="11" width="16" height="9" rx="2" {...stroke} />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" {...stroke} />
+    </>
+  ),
+  building: (
+    <>
+      <rect x="4" y="3" width="16" height="18" rx="1.5" {...stroke} />
+      <path d="M8 7h2M14 7h2M8 11h2M14 11h2M8 15h2M14 15h2M10 21v-3h4v3" {...stroke} />
+    </>
+  ),
+  shield: <path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6z" {...stroke} />,
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3" {...stroke} />
+      <path d="M3 20a6 6 0 0 1 12 0M16 5.5a3 3 0 0 1 0 5M21 20a6 6 0 0 0-4-5.6" {...stroke} />
+    </>
+  ),
+  flag: <path d="M5 21V4h11l-2 4 2 4H5" {...stroke} />,
+  database: (
+    <>
+      <ellipse cx="12" cy="5" rx="8" ry="3" {...stroke} />
+      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" {...stroke} />
+    </>
+  ),
+  puzzle: (
+    <path
+      d="M9 4a1.5 1.5 0 0 1 3 0c0 .8.7 1.4 1.5 1.4H16a1 1 0 0 1 1 1v2.5c0 .8.6 1.5 1.4 1.5a1.5 1.5 0 0 1 0 3c-.8 0-1.4.7-1.4 1.5V19a1 1 0 0 1-1 1h-2.5c-.8 0-1.5.6-1.5 1.4a1.5 1.5 0 0 1-3 0c0-.8-.7-1.4-1.5-1.4H5a1 1 0 0 1-1-1v-2.6c0-.8-.6-1.4-1.4-1.4a1.5 1.5 0 0 1 0-3c.8 0 1.4-.6 1.4-1.4V5a1 1 0 0 1 1-1h2.6c.8 0 1.4-.7 1.4-1.5Z"
+      {...stroke}
+    />
+  ),
+  book: (
+    <>
+      <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z" {...stroke} />
+      <path d="M4 19a2 2 0 0 1 2-2h13" {...stroke} />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 3 9 5-9 5-9-5z" {...stroke} />
+      <path d="m3 13 9 5 9-5" {...stroke} />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="3" y="4" width="18" height="6" rx="1.5" {...stroke} />
+      <rect x="3" y="14" width="18" height="6" rx="1.5" {...stroke} />
+      <path d="M7 7h.01M7 17h.01" {...stroke} />
+    </>
+  ),
+  refresh: <path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" {...stroke} />,
+  wrench: (
+    <path d="M15 4a5 5 0 0 0-6.5 6.5L3 16l4 4 7.5-5.5A5 5 0 0 0 15 4z" {...stroke} />
+  ),
+  key: (
+    <>
+      <circle cx="8" cy="8" r="4" {...stroke} />
+      <path d="m11 11 9 9M17 17l2-2M14 14l2-2" {...stroke} />
+    </>
+  ),
+  globe: (
+    <>
+      <circle cx="12" cy="12" r="9" {...stroke} />
+      <path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18" {...stroke} />
+    </>
+  ),
+  upload: <path d="M12 21V9m-5 5 5-5 5 5M5 3h14" {...stroke} />,
+  folder: (
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" {...stroke} />
+  ),
+  logout: (
+    <>
+      <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" {...stroke} />
+      <path d="M10 12H3m0 0 4-4M3 12l4 4" {...stroke} />
+    </>
+  ),
 };
 
 export type IconName = keyof typeof P;

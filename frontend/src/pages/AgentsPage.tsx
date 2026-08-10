@@ -5,13 +5,16 @@ import type { Agent } from "../api/types";
 import { AsyncBoundary, Button } from "../components/ui";
 import { AgentCard } from "../components/agents/AgentCard";
 import { AgentFormModal } from "../components/agents/AgentFormModal";
+import { useActiveWorkspaceId } from "../lib/workspace";
 
 export function AgentsPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Agent | undefined>(undefined);
+  // Scope cached data to the active workspace so switching refetches (design D3).
+  const wid = useActiveWorkspaceId();
 
   const { data, isLoading, isError, error } = useQuery<Agent[]>({
-    queryKey: ["agents"],
+    queryKey: ["agents", wid],
     queryFn: () => agents.listAgents(),
   });
 

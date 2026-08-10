@@ -9,13 +9,7 @@ export function getAgent(id: ID) {
   return request<Agent>(`/agents/${id}`);
 }
 
-export function createAgent(input: {
-  name: string;
-  role: string;
-  system_prompt?: string;
-  default_model?: string;
-  allowed_tools?: string[];
-}) {
+export function createAgent(input: Partial<Agent> & { name: string }) {
   return request<Agent>("/agents", {
     method: "POST",
     body: JSON.stringify(input),

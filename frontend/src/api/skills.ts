@@ -27,4 +27,24 @@ export function deleteSkill(id: ID) {
   return request<void>(`/skills/${id}`, { method: "DELETE" });
 }
 
-export const skills = { listSkills, getSkill, createSkill, updateSkill, deleteSkill };
+// ── Workspace-scoped (resources screen) ───────────────────────────
+export function listForWorkspace(workspaceId: ID) {
+  return request<Skill[]>(`/workspaces/${workspaceId}/skills`);
+}
+
+export function setEnabled(workspaceId: ID, id: ID, enabled: boolean) {
+  return request<Skill>(`/workspaces/${workspaceId}/skills/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export const skills = {
+  listSkills,
+  getSkill,
+  createSkill,
+  updateSkill,
+  deleteSkill,
+  listForWorkspace,
+  setEnabled,
+};

@@ -51,6 +51,16 @@ export * as mcpServers from "./mcpServers";
 export * as providerKeys from "./providerKeys";
 export * as feedback from "./feedback";
 export * as runs from "./runs";
+export * as auth from "./auth";
+export * as workspaces from "./workspaces";
+export * as members from "./members";
+export * as invites from "./invites";
+export * as audit from "./audit";
+export * as knowledgeSources from "./knowledgeSources";
+export * as plugins from "./plugins";
+export * as rules from "./rules";
+export * as workspaceMcp from "./workspaceMcp";
+export * as sysadmin from "./sysadmin";
 
 // Health probe — the Phase 0 backend already implements this.
 export type Health = { status: string };

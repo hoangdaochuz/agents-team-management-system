@@ -16,6 +16,7 @@ import { Icon } from "../lib/icons";
 import { betweenMs, formatDuration, relativeTime, shortId } from "../lib/format";
 import { agents, tasks } from "../api/client";
 import type { Agent, Task } from "../api/types";
+import { useActiveWorkspaceId } from "../lib/workspace";
 
 // ── Filters ──────────────────────────────────────────────────────────
 type StatusFilter = "all" | "success" | "revised" | "failed";
@@ -74,6 +75,8 @@ interface HistoryRow {
 
 export function HistoryPage() {
   const navigate = useNavigate();
+  // Scope cached data to the active workspace so switching refetches (design D3).
+  const wid = useActiveWorkspaceId();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [agentFilter, setAgentFilter] = useState<string>("all");
@@ -86,12 +89,12 @@ export function HistoryPage() {
   const [applied, setApplied] = useState(0);
 
   const tasksQuery = useQuery({
-    queryKey: ["tasks", "history"],
+    queryKey: ["tasks", wid, "history"],
     queryFn: () => tasks.listTasks(),
   });
 
   const agentsQuery = useQuery({
-    queryKey: ["agents", "history"],
+    queryKey: ["agents", wid, "history"],
     queryFn: () => agents.listAgents(),
   });
 
