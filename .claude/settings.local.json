@@ -13,7 +13,10 @@
       "Bash(openspec init *)",
       "Bash(rtk read *)",
       "Bash(openspec new *)",
-      "Bash(openspec status *)"
+      "Bash(openspec status *)",
+      "Bash(openspec validate *)",
+      "Bash(echo \"---exit:$?---\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('isComplete:', d.get\\('isComplete'\\)\\); print\\(json.dumps\\([{'id':a['id'],'status':a['status']} for a in d['artifacts']], indent=2\\)\\)\")"
     ]
   }
 }

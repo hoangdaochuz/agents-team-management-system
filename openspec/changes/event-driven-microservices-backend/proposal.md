@@ -1,7 +1,7 @@
 ## Why
 
 The frontend SPA is fully built against a declared API contract (`frontend/src/api/*.ts`:
-~40 endpoints across 8 domains plus one SSE stream), but the backend is still Phase 0
+~60 endpoints across 17 modules plus one SSE stream), but the backend is still Phase 0
 (only `GET /healthz`). The current `docs/design.md` prescribes a single Go binary with
 in-process pub/sub for realtime. We want the backend that fulfills the frontend contract
 to be **microservices**, **event-driven**, with **Kafka** as the message-broker backbone —
@@ -10,11 +10,22 @@ frontend contract is preserved unchanged.
 
 ## What Changes
 
-- **Introduce a service topology of 6 bounded-context services + a Gateway/BFF**, all in
+- **Introduce a service topology of 10 bounded-context services + a Gateway/BFF**, all in
   Go, each owning its own logical database: Project, Task, Agent, Catalog (Skills + MCP),
-  Settings (provider keys + secrets), and Agent-Runner (the agent loop, LLM/MCP/git,
-  worktree + sandbox; owns Run/Step/Finding/Artifact). **BREAKING** vs. the current
-  single-binary design.
+  Settings (provider keys + secrets), Agent-Runner (the agent loop, LLM/MCP/git,
+  worktree + sandbox; owns Run/Step/Finding/Artifact), Auth, Orgs/Workspaces, Resources,
+  and Admin/Sysadmin. **BREAKING** vs. the current single-binary design.
+- **Add 4 multi-tenant services (new)**: Auth/Identity (users, sessions, signup +
+  approval), Orgs/Workspaces/Members (organizations, workspaces, roles, invites,
+  membership), Resources (per-workspace knowledge, plugins, rules, MCP connection
+  state), and Admin/Sysadmin (workspace audit, cross-org oversight, feature flags,
+  system health). The SPA's `auth`, `workspaces`, `workspace-resources`, and
+  `admin-console` domains are fulfilled by these services rather than 404/501ing.
+- **Workspace scoping of core entities (new).** `Project`, `Task`, `Agent`, `Skill`,
+  and `McpServer` carry a `workspace_id`; list/create mutations resolve the workspace
+  context from the session (the frontend never sends a workspace param — the Gateway
+  resolves it per design D8: optional `X-Workspace-ID` header, else the session's single
+  workspace, else the membership union; explicit `/workspaces/:id/...` paths win).
 - **Introduce an API Gateway/BFF** as the frontend's sole entrypoint: it serves the exact
   REST surface the frontend declares, performs synchronous fan-out to compose
   cross-service reads, and serves the SSE stream (replay persisted steps, then tail Kafka).
@@ -32,13 +43,31 @@ frontend contract is preserved unchanged.
 - **Realtime (SSE)** moves from in-process pub/sub to Kafka-backed: the Gateway subscribes
   to `step.*` (keyed by `task_id`), replays persisted steps, then tails live events; the
   SSE event is named `step` carrying the full `Step` shape, with reconnect/dedup by `step.id`.
-- **Deployment topology**: one Postgres container with 6 logical databases; the frontend
+- **Deployment topology**: one Postgres container with 10 logical databases; the frontend
   served as a separate static build (not embedded in the Gateway); Kafka in KRaft mode;
-  no auth (single-operator MVP).
+  single-operator MVP with real multi-user auth and roles (`owner | admin | member` +
+  superadmin) replacing the no-auth assumption.
 - **Supersedes** the single-binary / in-process-pubsub portions of `docs/design.md`
-  (architecture, realtime, and secret-handling ADRs). All load-bearing invariants are
-  preserved: PRs never auto-merged (ADR-05), worktree-per-task, credential-less sandbox,
-  reviewer ≤5 rounds.
+  (architecture, realtime, and secret-handling ADRs), and overturns D7's "no auth"
+  assumption — auth and multi-tenancy are now in scope for this backend. All load-bearing
+  invariants are preserved: PRs never auto-merged (ADR-05), worktree-per-task,
+  credential-less sandbox, reviewer ≤5 rounds.
+
+## Out of Scope
+
+- **SSO provider integration.** `POST /api/auth/sso/begin` returns a configured
+  `redirect_url`; the actual Google/SAML exchange (callback, token verification) is
+  stubbed and deferred.
+- **RAG indexing engine.** Knowledge sources are managed (create, list, index-status,
+  re-index trigger); the embedding/chunking pipeline is deferred.
+- **Billing / plan enforcement.** Seats/plan are stored and displayed; billing is not.
+- **Polyglot services** (all Go) or Zookeeper (KRaft only).
+
+**Folded into THIS change (additive, in-scope entities that grew):**
+- `agent-management` gains builder fields (`provider, temperature, max_output_tokens,
+  autonomy_mode, user_prompt_template, knowledge_source_ids, role_title`) + `guardrails`.
+- `skill-mcp-catalog` gains `enabled, trigger, step_count`.
+- Core entities (`Project`, `Task`, `Agent`, `Skill`, `McpServer`) gain `workspace_id`.
 
 ## Capabilities
 
@@ -60,6 +89,16 @@ frontend contract is preserved unchanged.
   at-least-once delivery with idempotency, KRaft deployment.
 - `realtime-streaming`: SSE `step` event contract, replay-then-tail semantics, reconnect,
   and dedup by `step.id`.
+- `auth`: User/session lifecycle, email/password sign-in, signup (join-workspace or
+  create-org), signup status + resend, approval transition, logout, SSO begin stub.
+- `workspaces`: Organization + Workspace CRUD, membership and roles
+  (`owner | admin | member`), invites, pending-request approve/decline, active-workspace
+  session scoping of all core entities.
+- `workspace-resources`: Per-workspace knowledge sources (index status, re-index),
+  plugins and rules (enable/disable), and MCP connection state (status, reconnect).
+- `admin-console`: Workspace members, roles, audit log + export, and the sysadmin surface
+  (cross-org signups, organizations suspend/restore, feature flags, system KPIs/health/
+  audit, maintenance).
 
 ### Modified Capabilities
 - None. No `openspec/specs/` exist yet; this change establishes the baseline specs.
@@ -67,15 +106,18 @@ frontend contract is preserved unchanged.
 ## Impact
 
 - **Code (new):** Go services under `backend/services/{gateway,project,task,agent,catalog,
-  settings,runner}/`; shared `backend/internal/{contracts,kafka,db}`; the existing
-  `backend/cmd/server` + `internal/{config,httpapi}` become the Gateway base; the existing
-  `backend/runner/Dockerfile` (credential-less sandbox) is reused by Agent-Runner.
+  settings,runner,auth,orgs,resources,admin}/`; shared `backend/internal/{contracts,kafka,db}`
+  (contracts grows the new domains' DTOs/events); the existing `backend/cmd/server` +
+  `internal/{config,httpapi}` become the Gateway base; the existing `backend/runner/Dockerfile`
+  (credential-less sandbox) is reused by Agent-Runner.
 - **APIs:** the frontend-facing REST/SSE contract is **unchanged**; all change is behind
-  the Gateway. New internal REST/JSON service APIs and Kafka topic contracts are introduced.
+  the Gateway, whose route table now covers all 17 `frontend/src/api/*.ts` modules (the
+  previous 501s for the auth/workspaces/resources/sysadmin domains are replaced with real
+  handlers). New internal REST/JSON service APIs and Kafka topic contracts are introduced.
 - **Dependencies (new):** Kafka (KRaft), `sarama` Go client, mTLS CA for Settings↔Runner,
-  per-service Postgres logical DBs + migrations.
+  per-service Postgres logical DBs + migrations (10 total).
 - **Deploy:** `deploy/docker-compose.yml` and `deploy/.env.example` grow to include Kafka
-  and the service fleet (frontend served separately).
+  and the 10-service fleet (frontend served separately).
 - **Docs:** `docs/design.md` architecture/realtime/secret ADRs are superseded by this
   change's `design.md`; `docs/tasks.md` phased scope is replaced by this change's `tasks.md`.
 - **Security:** the core property ("backend owns everything sensitive; container is a pure

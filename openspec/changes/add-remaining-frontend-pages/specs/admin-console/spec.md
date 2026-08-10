@@ -55,6 +55,11 @@ role.
 - **WHEN** a superadmin suspends an active organization
 - **THEN** the org's status updates to suspended via the API and the row offers a "Restore" action
 
+#### Scenario: Suspend fails
+- **WHEN** the suspend API call fails
+- **THEN** the org's status is unchanged (the row reverts to its previous state) and an
+  error is surfaced
+
 #### Scenario: Unauthorized access
 - **WHEN** a non-superadmin navigates to `/sysadmin`
 - **THEN** the system shows a "no access" state

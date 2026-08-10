@@ -7,12 +7,13 @@ exposes the Project resource the frontend manipulates via `/projects`.
 
 ### Requirement: List projects
 The Project service SHALL return all registered projects via `GET /api/projects`, each
-matching the `Project` shape (`id, name, repo_source, repo_type, cloned_path,
+matching the `Project` shape (`id, workspace_id, name, repo_source, repo_type, cloned_path,
 default_branch, created_at`).
 
 #### Scenario: Fetching the project list
 - **WHEN** the frontend calls `listProjects`
-- **THEN** the service returns a JSON array of `Project` objects
+- **THEN** the service returns a JSON array of `Project` objects scoped to the session's
+  workspace context, each carrying its `workspace_id`
 
 ### Requirement: Get a single project
 The service SHALL return one project via `GET /api/projects/:id`, returning 404 when the id
@@ -52,3 +53,14 @@ and 404 when absent.
 #### Scenario: Deleting an existing project
 - **WHEN** the frontend deletes a known project
 - **THEN** the service removes it and responds 204
+
+### Requirement: Workspace scoping of projects
+Every project SHALL carry a `workspace_id` and SHALL bind one workspace to its repository
+(a workspace's `repo_source` and its project's `repo_source` are the same repository, per
+the workspaces capability). `listProjects`, `getProject`, `createProject`, and updates
+SHALL be scoped to the session's workspace context; `createProject` SHALL inherit the
+workspace from it, and access to projects outside the context SHALL be rejected (404).
+
+#### Scenario: Creating a scoped project
+- **WHEN** the frontend creates a project in a single-workspace session
+- **THEN** the created `Project` carries the session workspace's `workspace_id`

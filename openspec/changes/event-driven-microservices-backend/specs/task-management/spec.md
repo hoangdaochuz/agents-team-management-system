@@ -11,10 +11,10 @@ consuming execution facts over the event bus. Exposes the task surface the front
 The service SHALL implement `listTasks` (with the `TaskQuery` filters: `project_id, status,
 type, priority, assignee, label, q`), `getTask`, `createTask` (accepting `project_id, title,
 prompt, description?, type?, priority?, labels?, points?, agent_id?, due_at?`), `updateTask`
-(partial), and `deleteTask`, returning the full `Task` shape (`id, project_id, agent_id,
-model_override, title, prompt, description, status, type, priority, labels, points, due_at,
-progress, branch_name, worktree_path, comments_count, attachments_count, created_at,
-updated_at`).
+(partial), and `deleteTask`, returning the full `Task` shape (`id, workspace_id, project_id,
+agent_id, model_override, title, prompt, description, status, type, priority, labels,
+points, due_at, progress, branch_name, worktree_path, comments_count, attachments_count,
+created_at, updated_at`).
 
 #### Scenario: Creating a task
 - **WHEN** the frontend calls `createTask` with required fields
@@ -101,3 +101,17 @@ created_at`).
 #### Scenario: Adding feedback
 - **WHEN** the frontend calls `addFeedback(taskId, body)`
 - **THEN** a `Feedback` record is created and returned with a generated id and timestamp
+
+### Requirement: Workspace scoping of tasks
+Every task SHALL carry a `workspace_id`. `listTasks`, `getTask`, `createTask`, and all
+task actions SHALL be scoped to the session's workspace context (see the workspaces
+capability for the resolution contract); `createTask` SHALL inherit the workspace from
+that context, and the service SHALL reject access to tasks outside it.
+
+#### Scenario: Listing scoped tasks
+- **WHEN** the frontend calls `listTasks` in a single-workspace session
+- **THEN** only that workspace's tasks are returned, each carrying its `workspace_id`
+
+#### Scenario: Cross-workspace task access
+- **WHEN** a caller requests a task whose `workspace_id` is outside their workspace context
+- **THEN** the service responds 404 and the task is not exposed

@@ -10,23 +10,29 @@ Hard constraints that shape the approach:
   synchronous; we must not break it.
 - The security property is load-bearing: the per-task sandbox container holds no API keys
   and no git credentials; all sensitive work happens in backend processes.
-- Single-operator MVP, no auth, deployable via docker-compose.
-
-See the capability `specs/` for the behavioral requirements this design implements.
+- Single-operator MVP, deployable via docker-compose — but with real multi-user auth,
+  workspace membership, and roles, since the SPA gates every route behind a session.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Decompose the backend into 6 bounded-context Go services + a Gateway, each owning its DB.
+- Decompose the backend into 10 bounded-context Go services + a Gateway, each owning its DB.
 - Make execution (agent loop, review rounds, stop, PR) event-driven over Kafka, while CRUD
   stays synchronous so the frontend contract is unchanged.
 - Preserve and sharpen the credential boundary across process boundaries (Settings is the
   sole decryptor; mTLS handoff to the runner; container stays pure).
 - Serve realtime SSE from the Gateway backed by replay + Kafka tail.
+- Provide auth (sessions), multi-tenancy (orgs/workspaces/members, roles), workspace-scoped
+  resources, and the sysadmin surface, all behind the Gateway, so the entire SPA contract
+  is fulfilled.
 - Keep everything runnable by one operator in docker-compose (Kafka KRaft, one Postgres).
 
 **Non-Goals:**
-- Multi-tenant isolation, authentication/authorization (single-operator MVP).
+- SSO provider integration — `/auth/sso/begin` returns a configured `redirect_url`; the
+  Google/SAML exchange is stubbed.
+- RAG indexing engine — knowledge sources are managed and index-statused; the
+  embedding/chunking pipeline is deferred.
+- Billing / plan enforcement — seats/plans are stored and displayed; billing is not.
 - Polyglot services (all Go) or Zookeeper (KRaft only).
 - Auto-merging pull requests — PRs are human-initiated only (ADR-05 preserved).
 - Frontend changes — the SPA is untouched; all change is behind the Gateway.
@@ -34,10 +40,13 @@ See the capability `specs/` for the behavioral requirements this design implemen
 
 ## Decisions
 
-### D1. Six bounded-context services + Gateway, DB-per-service
+### D1. Ten bounded-context services + Gateway, DB-per-service
 **Choice:** Project, Task, Agent, Catalog (Skills+MCP), Settings (keys+secrets), Agent-Runner
-(loop/LLM/MCP/git/worktree/sandbox; owns Run/Step/Finding/Artifact), plus an API Gateway/BFF.
-Each service owns one logical Postgres database.
+(loop/LLM/MCP/git/worktree/sandbox; owns Run/Step/Finding/Artifact), Auth (users, sessions,
+signup/approval), Orgs/Workspaces (organizations, workspaces, membership, roles, invites),
+Resources (knowledge, plugins, rules, MCP connection state), and Admin/Sysadmin (audit,
+feature flags, system KPIs/health), plus an API Gateway/BFF. Each service owns one logical
+Postgres database.
 
 **Rationale / alternatives:** This isolates the credential-sensitive runtime (Runner +
 Settings) from the CRUD-heavy domains, keeps services small, and matches the frontend's
@@ -46,10 +55,14 @@ too coarse, re-couples unrelated CRUD; (b) one-service-per-entity (~10+) — exc
 cost for one operator; (c) modular monolith with internal Kafka — not actually
 microservices, contradicts the stated goal.
 
-Entity ownership mirrors the frontend types 1:1 (`Project→Project`, `Task,Feedback→Task`,
-`Agent→Agent`, `Skill,McpServer→Catalog`, `ProviderKey`+git token→`Settings`,
-`Run,Step,Finding,Artifact→Runner`). Feedback lives in Task because
-`/tasks/:id/feedback` is task-coupled.
+Entity ownership mirrors the frontend types 1:1 (`Project→Project`,
+`Task,Feedback→Task`, `Agent→Agent`, `Skill,McpServer→Catalog`,
+`ProviderKey`+git token→`Settings`, `Run,Step,Finding,Artifact→Runner`,
+`User,Session→Auth`, `Organization,Workspace,Member,Invite,SignupRequest→Orgs`,
+`KnowledgeSource,Plugin,Rule,McpConnection→Resources`,
+`AuditEntry,FeatureFlag→Admin`). Feedback lives in Task because
+`/tasks/:id/feedback` is task-coupled. Every core entity carries `workspace_id`; the
+workspace is the tenancy boundary enforced by every owning service.
 
 ### D2. CRUD synchronous, execution async over Kafka
 **Choice:** The Gateway handles CRUD synchronously (forward or fan-out → service → DB →
@@ -67,9 +80,11 @@ event-driven execution.
 
 ### D3. Gateway = sole synchronous caller; fan-out composition; SSE owner
 **Choice:** Only the Gateway makes synchronous calls into services. Cross-service reads are
-composed by synchronous fan-out (e.g. list tasks → batch-fetch agent names). The Gateway
-also owns the SSE connection: on connect it replays persisted steps from the Runner, then
-tails the Kafka `step.*` topic filtered by `task_id`.
+composed by synchronous fan-out (e.g. list tasks → batch-fetch agent names; `me()` →
+assemble user + memberships into a `Session`; workspace cards → agent/task counts;
+`/sysadmin/health` → per-service probes). The Gateway also owns the SSE connection: on
+connect it replays persisted steps from the Runner, then tails the Kafka `step.*` topic
+filtered by `task_id`.
 
 **Rationale / alternatives:** Centralizing composition in the Gateway keeps services
 decoupled (no service-to-service sync calls — a core microservices goal) and gives the
@@ -119,16 +134,43 @@ internally — proto codegen + a second transport for no MVP gain; (b) polyglot 
 multiplies CI/tooling for a CRUD+execution system; (c) Zookeeper + sarama-legacy —
 Zookeeper is Kafka-deprecated. (User-specified preference: `sarama` over `franz-go`.)
 
-### D7. Topology: 1 Postgres / 6 logical DBs, separate frontend, no auth
-**Choice:** One Postgres container with six logical databases (`project_db`, `task_db`,
-`agent_db`, `catalog_db`, `settings_db`, `runner_db`) for isolation without six DB
-processes. The frontend is served as a separate static build (not embedded in the Gateway).
-No auth (single-operator).
+### D7. Topology: 1 Postgres / 10 logical DBs, separate frontend, session auth
+**Choice:** One Postgres container with ten logical databases (`project_db`, `task_db`,
+`agent_db`, `catalog_db`, `settings_db`, `runner_db`, `auth_db`, `orgs_db`, `resources_db`,
+`admin_db`) for isolation without ten DB processes. The frontend is served as a separate
+static build (not embedded in the Gateway). Auth is session-cookie based (httpOnly cookie,
+no auth header exists in the SPA client); `/healthz`, `/auth/login`, `/auth/signup`, and
+`/auth/signup-status` are unauthenticated, everything else requires a session.
 
 **Rationale / alternatives:** Logical-DB-per-service keeps schema/migration independence
-cheaply. *Alternatives rejected:* (a) six Postgres containers — heavy for local dev;
+cheaply. *Alternatives rejected:* (a) ten Postgres containers — heavy for local dev;
 (b) one shared DB/schema — reintroduces coupling and violates DB-per-service; (c) embedded
-frontend in Gateway — user explicitly chose a separate static frontend.
+frontend in Gateway — user explicitly chose a separate static frontend; (d) bearer-token
+auth — the SPA sends no Authorization header, so a cookie is the only contract-compatible
+mechanism.
+
+### D8. Session-derived workspace scoping (contract-compatible)
+**Choice:** The SPA never sends a workspace parameter — `active_workspace_id` is a
+client-side preference in its session store. The Gateway therefore resolves the workspace
+context for unscoped endpoints (`/tasks`, `/agents`, `/skills`, `/projects`) as:
+(1) an optional `X-Workspace-ID` header (forward-compatible extension; the SPA does not
+send it today), (2) the session's single workspace, (3) the union of the session's
+workspaces. Explicit `/workspaces/:id/...` paths are authoritative and membership-checked.
+The resolved context is forwarded to services as part of the internal call (header/param),
+and every entity carries `workspace_id` so services enforce the boundary independently of
+the Gateway.
+
+**Rationale / alternatives:** Honoring the fixed contract: the SPA is already built and
+cannot be asked to send scope. *Alternatives rejected:* (a) requiring the client to send
+`active_workspace_id` — breaks the unchanged-contract constraint; (b) server-side "last
+active workspace" persisted at login — the SPA switches workspaces without any backend
+call, so the server would be stale; (c) no scoping at all — multi-tenant isolation
+requires it.
+
+Consequences: single-workspace users get precise scoping for free; multi-workspace users
+see the union on unscoped lists (their explicit scoped paths are always precise). This
+matches today's SPA behavior (it renders whatever the endpoint returns) and is recorded
+in the workspaces capability.
 
 ## Risks / Trade-offs
 
@@ -145,9 +187,21 @@ frontend in Gateway — user explicitly chose a separate static frontend.
 - **[Stop is best-effort against an in-flight provider call]** a mid-LLM-call stop cannot
   interrupt instantly. → Mitigation: runner cancels context at the next boundary and emits
   a terminal `run.completed`; stop status is set synchronously regardless.
-- **[Supersedes current design doc]** `docs/design.md` (monolith, in-process pub/sub) will
-  diverge. → Mitigation: this change's design is the new source; a docs-sync task is in
-  `tasks.md`.
+- **[Auth is a real security surface]** session cookies, passwords, and approval flows
+  replace the no-auth assumption. → Mitigation: httpOnly session cookies, server-side
+  session store, 401/403 enforced at the Gateway and re-validated per service; no
+  plaintext passwords stored (hashed); secrets still never reach the sandbox.
+- **[Multi-workspace unscoped lists mix workspaces]** the SPA sends no scope, so
+  multi-workspace users get the union on unscoped lists. → Mitigation: documented in D8
+  and the workspaces capability; every entity carries `workspace_id`, explicit
+  `/workspaces/:id/...` paths stay precise, and a forward-compatible `X-Workspace-ID`
+  header exists for clients that adopt it.
+- **[Sysadmin health needs cross-service data]** `SystemHealth` reports per-service
+  status. → Mitigation: the Gateway (the only permitted synchronous caller) fans out
+  health probes and composes the response; no service-to-service health coupling.
+- **[Supersedes current design doc]** `docs/design.md` (monolith, in-process pub/sub, no
+  auth) will diverge. → Mitigation: this change's design is the new source; a docs-sync
+  task is in `tasks.md`.
 
 ## Migration Plan
 

@@ -191,3 +191,16 @@ Legend: `[P]` parallelizable within its phase · `[S]` sequential (blocks the ph
 ## Dependency summary (critical path)
 T0.1 → T1.1 → T1.2/T1.3 → T2.x & T3.x (parallel) → T4.1 → {T5.1, T6.x, T8.x} → T7.1 → T7.2 → T10.1.
 Frontend (Phase 9) can proceed in parallel against the API contract from Phase 2.
+
+## Follow-up note (frontend SPA completion)
+
+The frontend SPA now ports all 15 prototype pages, including auth (login/signup/pending-approval),
+workspaces, workspace resources, the agent builder, and the admin/sysadmin consoles
+(OpenSpec change `add-remaining-frontend-pages`). This expands the SPA beyond the earlier
+"Single-operator MVP, no auth" scope described in `CLAUDE.md`.
+
+- The new pages declare their API contract in `frontend/src/api/*.ts`; the backend is still Phase 0
+  and 404s all of them. The app boots in a "dev-fallback" synthetic session so every screen remains
+  navigable until the backend catches up.
+- **Doc update needed once backend lands auth:** revise `CLAUDE.md`'s "Current state" / "no auth MVP"
+  wording to reflect the multi-workspace, role-based model the SPA now depicts.

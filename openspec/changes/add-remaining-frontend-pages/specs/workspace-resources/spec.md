@@ -43,6 +43,11 @@ status, and SHALL offer a reconnect action for offline servers.
 - **WHEN** the admin clicks "Reconnect" on an offline MCP server
 - **THEN** the system attempts reconnection via the API and updates the status badge accordingly
 
+#### Scenario: Reconnect fails
+- **WHEN** the reconnect attempt fails
+- **THEN** the connection's status SHALL remain (or return to) `offline` and an error is
+  surfaced, so the badge never falsely reads `connected`
+
 ### Requirement: Add affordances
 The system SHALL provide an "add" affordance per resource type (add source, add skill, install
 plugin, connect server, add rule) that opens the corresponding create flow.

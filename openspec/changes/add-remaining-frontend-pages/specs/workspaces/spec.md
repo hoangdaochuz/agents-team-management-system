@@ -51,3 +51,17 @@ scoped agents & skills, per-workspace members).
 #### Scenario: First-time view
 - **WHEN** the workspace grid renders
 - **THEN** the isolation guidance panel is visible so users understand scoping
+
+### Requirement: Task detail workspace scoping
+The task detail view SHALL resolve its data within the session's workspace context:
+detail queries SHALL be keyed by the active workspace so switching workspaces invalidates
+stale detail state, and opening a task id outside the context SHALL surface the
+not-found/error state rather than rendering another workspace's data.
+
+#### Scenario: Opening detail from a scoped list
+- **WHEN** the user opens a task from the kanban board
+- **THEN** the detail queries are scoped by the active workspace (e.g. `["task", wid, id]`-style keys), so switching the active workspace does not keep stale detail state
+
+#### Scenario: Cross-workspace deep link
+- **WHEN** a task id outside the active workspace context is opened directly
+- **THEN** the detail view shows the not-found/error state instead of leaking another workspace's data
