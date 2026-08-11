@@ -4,4 +4,4 @@ Reach for this when `git blame` points at a PR and you need to know what could h
 
 | PR | Title | Date | Headline risk |
 |----|-------|------|---------------|
-| TBD | Event-driven microservices backend | 2026-08-12 | credential-less sandbox invariant; workspace scoping; Kafka per-task ordering |
+| #1 | Event-driven microservices backend | 2026-08-12 | credential-less sandbox invariant; workspace scoping; Kafka per-task ordering |

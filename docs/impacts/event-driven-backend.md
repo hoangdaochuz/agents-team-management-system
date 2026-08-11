@@ -1,6 +1,6 @@
 ---
-pr: TBD
-pr_url: TBD
+pr: 1
+pr_url: https://github.com/hoangdaochuz/agents-team-management-system/pull/1
 branch: feat/event-driven-backend
 base: master
 date: 2026-08-12
