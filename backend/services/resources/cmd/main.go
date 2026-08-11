@@ -1,5 +1,5 @@
-// Package main is the Workspace-Resources service entrypoint: knowledge sources,
-// plugins, rules, and workspace MCP connections. Implemented in phase 12.
+// Package main is the Resources service entrypoint: workspace knowledge
+// sources, plugins, rules, and MCP connections.
 package main
 
 import (

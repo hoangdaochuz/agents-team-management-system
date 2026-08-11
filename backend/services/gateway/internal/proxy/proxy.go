@@ -4,6 +4,7 @@ package proxy
 
 import (
 	"log/slog"
+	"sync"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -36,5 +37,18 @@ func New(upstream string) (*httputil.ReverseProxy, error) {
 		slog.Error("upstream proxy error", "upstream", upstream, "error", err)
 		apiutil.Error(w, http.StatusBadGateway, "upstream unavailable")
 	}
+	baseURLs.Store(rp, strings.TrimSuffix(target.String(), "/"))
 	return rp, nil
+}
+
+// baseURLs lets the Gateway learn each proxy's target for internal composition
+// calls (session identity, KPIs, health probes, SSE replay).
+var baseURLs sync.Map // *httputil.ReverseProxy -> string
+
+// BaseURL returns the upstream base URL a proxy targets ("" when unknown).
+func BaseURL(rp *httputil.ReverseProxy) string {
+	if v, ok := baseURLs.Load(rp); ok {
+		return v.(string)
+	}
+	return ""
 }

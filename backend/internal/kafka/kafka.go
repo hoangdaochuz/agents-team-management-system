@@ -103,11 +103,26 @@ func NewConsumerGroup(brokers Brokers, groupID string, log *slog.Logger) (*Consu
 }
 
 // Run consumes topics until ctx is cancelled, dispatching each message to handler.
+// Transient consumer errors (e.g. group coordinator not available while Kafka
+// elects) are retried with a capped backoff instead of killing the goroutine.
 func (g *ConsumerGroup) Run(ctx context.Context, topics []string, handler Handler) error {
 	disp := &dispatcher{handler: handler, log: g.log}
+	backoff := time.Second
 	for {
 		if err := g.cg.Consume(ctx, topics, disp); err != nil {
-			return fmt.Errorf("kafka: consume (%s): %w", g.groupID, err)
+			if ctx.Err() != nil {
+				return nil
+			}
+			g.log.Warn("kafka: consume error, retrying", "group", g.groupID, "err", err, "backoff", backoff)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(backoff):
+			}
+			if backoff < 30*time.Second {
+				backoff *= 2
+			}
+			continue
 		}
 		if ctx.Err() != nil {
 			return nil

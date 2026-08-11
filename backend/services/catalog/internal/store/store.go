@@ -45,16 +45,37 @@ func (s *Store) Close() { s.pool.Close() }
 
 // ── Skills ──────────────────────────────────────────────────────────────────
 
-const skillCols = `id, name, description, body_md, resources_path, created_at`
+const skillCols = `id, workspace_id, name, description, body_md, resources_path, enabled, trigger, step_count, created_at`
 
 func scanSkill(row pgx.Row) (contracts.Skill, error) {
 	var sk contracts.Skill
-	err := row.Scan(&sk.ID, &sk.Name, &sk.Description, &sk.BodyMd, &sk.ResourcesPath, &sk.CreatedAt)
-	return sk, err
+	var enabled *bool
+	var stepCount *int
+	err := row.Scan(&sk.ID, &sk.WorkspaceID, &sk.Name, &sk.Description, &sk.BodyMd, &sk.ResourcesPath,
+		&enabled, &sk.Trigger, &stepCount, &sk.CreatedAt)
+	if err != nil {
+		return contracts.Skill{}, err
+	}
+	sk.Enabled = enabled
+	sk.StepCount = stepCount
+	return sk, nil
 }
 
-func (s *Store) ListSkills(ctx context.Context) ([]contracts.Skill, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+skillCols+` FROM skills ORDER BY created_at DESC`)
+// whereScopedAt returns `AND workspace_id = ANY($start)` scoping plus args.
+func whereScopedAt(start int, ws []contracts.ID) (string, []any) {
+	if len(ws) == 0 {
+		return " AND false", nil
+	}
+	ids := make([]string, len(ws))
+	for i, id := range ws {
+		ids[i] = string(id)
+	}
+	return fmt.Sprintf(" AND workspace_id = ANY($%d::uuid[])", start), []any{ids}
+}
+
+func (s *Store) ListSkills(ctx context.Context, ws []contracts.ID) ([]contracts.Skill, error) {
+	where, args := whereScopedAt(1, ws)
+	rows, err := s.pool.Query(ctx, `SELECT `+skillCols+` FROM skills WHERE 1=1`+where+` ORDER BY created_at DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +91,18 @@ func (s *Store) ListSkills(ctx context.Context) ([]contracts.Skill, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) GetSkill(ctx context.Context, id contracts.ID) (contracts.Skill, error) {
+func (s *Store) GetSkill(ctx context.Context, id contracts.ID, ws []contracts.ID) (contracts.Skill, error) {
+	where, args := whereScopedAt(2, ws)
+	row := s.pool.QueryRow(ctx, `SELECT `+skillCols+` FROM skills WHERE id = $1`+where, append([]any{id}, args...)...)
+	sk, err := scanSkill(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return contracts.Skill{}, ErrSkillNotFound
+	}
+	return sk, err
+}
+
+// GetSkillUnscoped returns a skill without workspace filtering (event emission).
+func (s *Store) GetSkillUnscoped(ctx context.Context, id contracts.ID) (contracts.Skill, error) {
 	row := s.pool.QueryRow(ctx, `SELECT `+skillCols+` FROM skills WHERE id = $1`, id)
 	sk, err := scanSkill(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -83,13 +115,14 @@ type SkillCreateInput struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	BodyMd      string `json:"body_md"`
+	Trigger     string `json:"trigger,omitempty"`
 }
 
-func (s *Store) CreateSkill(ctx context.Context, in SkillCreateInput) (contracts.Skill, error) {
+func (s *Store) CreateSkill(ctx context.Context, workspaceID contracts.ID, in SkillCreateInput) (contracts.Skill, error) {
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO skills (name, description, body_md)
-		VALUES ($1, $2, $3)
-		RETURNING `+skillCols, in.Name, in.Description, in.BodyMd)
+		INSERT INTO skills (workspace_id, name, description, body_md, trigger)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING `+skillCols, workspaceID, in.Name, in.Description, in.BodyMd, in.Trigger)
 	return scanSkill(row)
 }
 
@@ -98,11 +131,18 @@ type SkillUpdateInput struct {
 	Description   *string `json:"description,omitempty"`
 	BodyMd        *string `json:"body_md,omitempty"`
 	ResourcesPath *string `json:"resources_path,omitempty"`
+	Enabled       *bool   `json:"enabled,omitempty"`
+	Trigger       *string `json:"trigger,omitempty"`
+	StepCount     *int    `json:"step_count,omitempty"`
 }
 
-func (s *Store) UpdateSkill(ctx context.Context, id contracts.ID, in SkillUpdateInput) (contracts.Skill, error) {
-	sets, args := []string{}, []any{id}
-	idx := 2
+func (s *Store) UpdateSkill(ctx context.Context, id contracts.ID, ws []contracts.ID, in SkillUpdateInput) (contracts.Skill, error) {
+	where, scopeArgs := whereScopedAt(2, ws)
+	if len(scopeArgs) == 0 {
+		return contracts.Skill{}, ErrSkillNotFound
+	}
+	sets, args := []string{}, append([]any{id}, scopeArgs...)
+	idx := 2 + len(scopeArgs)
 	add := func(col string, v any) { sets = append(sets, fmt.Sprintf("%s = $%d", col, idx)); args = append(args, v); idx++ }
 	if in.Name != nil {
 		add("name", *in.Name)
@@ -116,10 +156,19 @@ func (s *Store) UpdateSkill(ctx context.Context, id contracts.ID, in SkillUpdate
 	if in.ResourcesPath != nil {
 		add("resources_path", *in.ResourcesPath)
 	}
-	if len(sets) == 0 {
-		return s.GetSkill(ctx, id)
+	if in.Enabled != nil {
+		add("enabled", *in.Enabled)
 	}
-	q := `UPDATE skills SET ` + strings.Join(sets, ", ") + ` WHERE id = $1 RETURNING ` + skillCols
+	if in.Trigger != nil {
+		add("trigger", *in.Trigger)
+	}
+	if in.StepCount != nil {
+		add("step_count", *in.StepCount)
+	}
+	if len(sets) == 0 {
+		return s.GetSkill(ctx, id, ws)
+	}
+	q := `UPDATE skills SET ` + strings.Join(sets, ", ") + ` WHERE id = $1` + where + ` RETURNING ` + skillCols
 	row := s.pool.QueryRow(ctx, q, args...)
 	sk, err := scanSkill(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -128,8 +177,12 @@ func (s *Store) UpdateSkill(ctx context.Context, id contracts.ID, in SkillUpdate
 	return sk, err
 }
 
-func (s *Store) DeleteSkill(ctx context.Context, id contracts.ID) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM skills WHERE id = $1`, id)
+func (s *Store) DeleteSkill(ctx context.Context, id contracts.ID, ws []contracts.ID) error {
+	where, args := whereScopedAt(2, ws)
+	if len(args) == 0 {
+		return ErrSkillNotFound
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM skills WHERE id = $1`+where, append([]any{id}, args...)...)
 	if err != nil {
 		return err
 	}
@@ -139,14 +192,44 @@ func (s *Store) DeleteSkill(ctx context.Context, id contracts.ID) error {
 	return nil
 }
 
+// ListSkillsByWorkspace lists skills of exactly one workspace (scoped path).
+func (s *Store) ListSkillsByWorkspace(ctx context.Context, workspaceID contracts.ID) ([]contracts.Skill, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+skillCols+` FROM skills WHERE workspace_id = $1 ORDER BY created_at DESC`, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []contracts.Skill{}
+	for rows.Next() {
+		sk, err := scanSkill(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sk)
+	}
+	return out, rows.Err()
+}
+
+// SetSkillEnabled toggles the workspace-level enable state (scoped path).
+func (s *Store) SetSkillEnabled(ctx context.Context, workspaceID, id contracts.ID, enabled bool) (contracts.Skill, error) {
+	row := s.pool.QueryRow(ctx, `
+		UPDATE skills SET enabled = $3 WHERE id = $1 AND workspace_id = $2
+		RETURNING `+skillCols, id, workspaceID, enabled)
+	sk, err := scanSkill(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return contracts.Skill{}, ErrSkillNotFound
+	}
+	return sk, err
+}
+
 // ── MCP servers ─────────────────────────────────────────────────────────────
 
-const mcpCols = `id, name, command, args, env, created_at`
+const mcpCols = `id, workspace_id, name, command, args, env, created_at`
 
 func scanMcp(row pgx.Row) (contracts.McpServer, error) {
 	var m contracts.McpServer
 	var envRaw []byte
-	if err := row.Scan(&m.ID, &m.Name, &m.Command, &m.Args, &envRaw, &m.CreatedAt); err != nil {
+	if err := row.Scan(&m.ID, &m.WorkspaceID, &m.Name, &m.Command, &m.Args, &envRaw, &m.CreatedAt); err != nil {
 		return contracts.McpServer{}, err
 	}
 	m.Env = map[string]string{}
@@ -156,8 +239,9 @@ func scanMcp(row pgx.Row) (contracts.McpServer, error) {
 	return m, nil
 }
 
-func (s *Store) ListMcp(ctx context.Context) ([]contracts.McpServer, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+mcpCols+` FROM mcp_servers ORDER BY created_at DESC`)
+func (s *Store) ListMcp(ctx context.Context, ws []contracts.ID) ([]contracts.McpServer, error) {
+	where, args := whereScopedAt(1, ws)
+	rows, err := s.pool.Query(ctx, `SELECT `+mcpCols+` FROM mcp_servers WHERE 1=1`+where+` ORDER BY created_at DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -173,8 +257,36 @@ func (s *Store) ListMcp(ctx context.Context) ([]contracts.McpServer, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) GetMcp(ctx context.Context, id contracts.ID) (contracts.McpServer, error) {
-	row := s.pool.QueryRow(ctx, `SELECT `+mcpCols+` FROM mcp_servers WHERE id = $1`, id)
+// ListMcpByIDs returns MCP server definitions for the given IDs (internal,
+// trusted callers — e.g. the Agent service hydrating an agent's attached
+// servers). Empty ids returns nil.
+func (s *Store) ListMcpByIDs(ctx context.Context, ids []contracts.ID) ([]contracts.McpServer, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	raw := make([]string, len(ids))
+	for i, id := range ids {
+		raw[i] = string(id)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT `+mcpCols+` FROM mcp_servers WHERE id = ANY($1::uuid[]) ORDER BY created_at DESC`, raw)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []contracts.McpServer{}
+	for rows.Next() {
+		m, err := scanMcp(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) GetMcp(ctx context.Context, id contracts.ID, ws []contracts.ID) (contracts.McpServer, error) {
+	where, args := whereScopedAt(2, ws)
+	row := s.pool.QueryRow(ctx, `SELECT `+mcpCols+` FROM mcp_servers WHERE id = $1`+where, append([]any{id}, args...)...)
 	m, err := scanMcp(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return contracts.McpServer{}, ErrMcpNotFound
@@ -189,15 +301,15 @@ type McpCreateInput struct {
 	Env     map[string]string `json:"env,omitempty"`
 }
 
-func (s *Store) CreateMcp(ctx context.Context, in McpCreateInput) (contracts.McpServer, error) {
+func (s *Store) CreateMcp(ctx context.Context, workspaceID contracts.ID, in McpCreateInput) (contracts.McpServer, error) {
 	if in.Args == nil {
 		in.Args = []string{}
 	}
 	envJSON, _ := json.Marshal(orDefault(in.Env, map[string]string{}))
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO mcp_servers (name, command, args, env)
-		VALUES ($1, $2, $3, $4)
-		RETURNING `+mcpCols, in.Name, in.Command, in.Args, envJSON)
+		INSERT INTO mcp_servers (workspace_id, name, command, args, env)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING `+mcpCols, workspaceID, in.Name, in.Command, in.Args, envJSON)
 	return scanMcp(row)
 }
 
@@ -208,9 +320,13 @@ type McpUpdateInput struct {
 	Env     *map[string]string `json:"env,omitempty"`
 }
 
-func (s *Store) UpdateMcp(ctx context.Context, id contracts.ID, in McpUpdateInput) (contracts.McpServer, error) {
-	sets, args := []string{}, []any{id}
-	idx := 2
+func (s *Store) UpdateMcp(ctx context.Context, id contracts.ID, ws []contracts.ID, in McpUpdateInput) (contracts.McpServer, error) {
+	where, scopeArgs := whereScopedAt(2, ws)
+	if len(scopeArgs) == 0 {
+		return contracts.McpServer{}, ErrMcpNotFound
+	}
+	sets, args := []string{}, append([]any{id}, scopeArgs...)
+	idx := 2 + len(scopeArgs)
 	if in.Name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", idx)); args = append(args, *in.Name); idx++
 	}
@@ -225,9 +341,9 @@ func (s *Store) UpdateMcp(ctx context.Context, id contracts.ID, in McpUpdateInpu
 		sets = append(sets, fmt.Sprintf("env = $%d", idx)); args = append(args, envJSON); idx++
 	}
 	if len(sets) == 0 {
-		return s.GetMcp(ctx, id)
+		return s.GetMcp(ctx, id, ws)
 	}
-	q := `UPDATE mcp_servers SET ` + strings.Join(sets, ", ") + ` WHERE id = $1 RETURNING ` + mcpCols
+	q := `UPDATE mcp_servers SET ` + strings.Join(sets, ", ") + ` WHERE id = $1` + where + ` RETURNING ` + mcpCols
 	row := s.pool.QueryRow(ctx, q, args...)
 	m, err := scanMcp(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -236,8 +352,12 @@ func (s *Store) UpdateMcp(ctx context.Context, id contracts.ID, in McpUpdateInpu
 	return m, err
 }
 
-func (s *Store) DeleteMcp(ctx context.Context, id contracts.ID) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM mcp_servers WHERE id = $1`, id)
+func (s *Store) DeleteMcp(ctx context.Context, id contracts.ID, ws []contracts.ID) error {
+	where, args := whereScopedAt(2, ws)
+	if len(args) == 0 {
+		return ErrMcpNotFound
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM mcp_servers WHERE id = $1`+where, append([]any{id}, args...)...)
 	if err != nil {
 		return err
 	}

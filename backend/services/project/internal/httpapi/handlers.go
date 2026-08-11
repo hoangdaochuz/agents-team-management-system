@@ -1,3 +1,12 @@
+// Package httpapi wires the Project CRUD endpoints, matching the frontend
+// contract in frontend/src/api/projects.ts. Routes are registered without the
+// /api prefix; the Gateway strips /api, resolves the workspace context, and
+// forwards it via X-Workspace-ID / X-Workspace-IDs.
+//
+// Scoping (design D8): every project carries workspace_id; reads filter by the
+// session's workspace set and mutations reject rows outside it (404), so a
+// tenant can never observe or touch another tenant's projects even if the
+// Gateway were misconfigured.
 package httpapi
 
 import (
@@ -9,12 +18,9 @@ import (
 	"github.com/aaks/server/services/project/internal/store"
 )
 
-// handlers.go wires the Project CRUD endpoints, matching the frontend contract
-// in frontend/src/api/projects.ts. Routes are registered without the /api
-// prefix; the Gateway strips /api and proxies.
-
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
-	ps, err := a.store.List(r.Context())
+	ws := httputil.WorkspaceIDs(r)
+	ps, err := a.store.List(r.Context(), ws)
 	if err != nil {
 		httputil.ServerError(w, a.log, "project.List", err)
 		return
@@ -24,7 +30,7 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, err := a.store.Get(r.Context(), id)
+	p, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -37,6 +43,11 @@ func (a *App) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) create(w http.ResponseWriter, r *http.Request) {
+	ws := httputil.WorkspaceID(r)
+	if ws == "" {
+		httputil.Error(w, http.StatusBadRequest, "no workspace context")
+		return
+	}
 	var in store.CreateInput
 	if err := httputil.ReadJSON(r, &in); err != nil {
 		httputil.Error(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
@@ -46,7 +57,7 @@ func (a *App) create(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "name, repo_source and repo_type are required")
 		return
 	}
-	p, err := a.store.Create(r.Context(), in)
+	p, err := a.store.Create(r.Context(), ws, in)
 	if err != nil {
 		httputil.ServerError(w, a.log, "project.Create", err)
 		return
@@ -61,7 +72,7 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	p, err := a.store.Update(r.Context(), id, in)
+	p, err := a.store.Update(r.Context(), id, httputil.WorkspaceIDs(r), in)
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -75,7 +86,7 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	err := a.store.Delete(r.Context(), id)
+	err := a.store.Delete(r.Context(), id, httputil.WorkspaceIDs(r))
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "project not found")
 		return

@@ -1,6 +1,5 @@
-// Package main is the Admin/Sysadmin service entrypoint: workspace audit,
-// sysadmin organizations, feature flags, system KPIs/health/audit, maintenance.
-// Implemented in phase 13.
+// Package main is the Admin service entrypoint: workspace audit log, feature
+// flags, and the admin half of the sysadmin surface.
 package main
 
 import (

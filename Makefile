@@ -1,5 +1,5 @@
 ## AI Agent Kanban System — developer commands
-.PHONY: build test vet lint run tidy compose-up compose-down runner clean web-install web-dev web-build web-typecheck
+.PHONY: build test vet lint run tidy compose-up compose-down e2e runner clean web-install web-dev web-build web-typecheck
 
 ## Go targets live in backend/.
 build:
@@ -25,6 +25,12 @@ compose-up:
 
 compose-down:
 	docker compose -f deploy/docker-compose.yml down
+
+## E2E: boot the stack (detached) and run the lifecycle/isolation assertions.
+## Requires curl + jq. See deploy/e2e/e2e.sh for the covered assertions.
+e2e:
+	docker compose -f deploy/docker-compose.yml up --build -d
+	./deploy/e2e/e2e.sh
 
 ## Build the per-task runner base image (credential-less sandbox).
 runner:

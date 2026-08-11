@@ -8,7 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
+	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/kafka"
 	"github.com/aaks/server/services/project/internal/store"
 )
 
@@ -31,7 +34,52 @@ func Register(mux *http.ServeMux, log *slog.Logger) error {
 	mux.HandleFunc("PUT /projects/{id}", app.update)
 	mux.HandleFunc("DELETE /projects/{id}", app.delete)
 
+	app.startConsumers()
+
 	log.Info("project routes registered", "endpoints", 5)
+	return nil
+}
+
+// startConsumers subscribes to workspace.created so a default repo binding
+// (project) is established for every new workspace (idempotent, best-effort).
+func (a *App) startConsumers() {
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		return
+	}
+	bs := kafka.Brokers(strings.Split(brokers, ","))
+	cg, err := kafka.NewConsumerGroup(bs, "project-workspaces", a.log)
+	if err != nil {
+		a.log.Warn("project consumers unavailable", "error", err)
+		return
+	}
+	go func() {
+		if err := cg.Run(context.Background(), []string{contracts.TopicWorkspaceCreated}, a.consume); err != nil {
+			a.log.Error("project consumer stopped", "error", err)
+		}
+	}()
+}
+
+// consume projects a default repo binding for a new workspace.
+func (a *App) consume(ctx context.Context, env contracts.EventEnvelope) error {
+	var d contracts.WorkspaceCreatedData
+	if err := env.DecodeData(&d); err != nil {
+		return err
+	}
+	if d.RepoSource == "" {
+		return nil // no repo to bind; the user creates projects manually
+	}
+	name := d.Name
+	if name == "" {
+		name = "default"
+	}
+	if _, err := a.store.Create(ctx, d.WorkspaceID, store.CreateInput{
+		Name: name, RepoSource: d.RepoSource, RepoType: "git", DefaultBranch: d.DefaultBranch,
+	}); err != nil {
+		// Duplicate project name per workspace is possible on redelivery; the
+		// binding is best-effort so a failure is logged, not fatal.
+		a.log.Warn("workspace repo binding failed", "workspace", d.WorkspaceID, "error", err)
+	}
 	return nil
 }
 
