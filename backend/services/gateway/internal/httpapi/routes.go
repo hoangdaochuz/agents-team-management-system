@@ -157,6 +157,13 @@ func newGateway(log *slog.Logger) (*gateway, error) {
 
 // serve routes a single /api/... request.
 func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
+	// Identity/scoping headers must never survive a round trip from the
+	// client: an attacker could spoof another user, workspace membership, or
+	// superadmin status. Strip them at the gateway boundary BEFORE injection
+	// below — only injectIdentity may set them afterwards (the proxy Director
+	// runs after this handler and must not strip again).
+	stripInboundIdentity(r)
+
 	rest := strings.TrimPrefix(r.URL.Path, "/api/")
 	rest = strings.TrimPrefix(rest, "/")
 	segs := strings.Split(rest, "/")
@@ -311,6 +318,7 @@ func (g *gateway) injectIdentity(w http.ResponseWriter, r *http.Request, require
 	r.Header.Del("X-User-Name")
 	r.Header.Del("X-User-Email")
 	r.Header.Del("X-User-Superadmin")
+	r.Header.Del("X-User-Role")
 	r.Header.Del("X-Workspace-ID")
 	r.Header.Del("X-Workspace-IDs")
 	r.Header.Set("X-User-ID", id.UserID)
@@ -329,7 +337,45 @@ func (g *gateway) injectIdentity(w http.ResponseWriter, r *http.Request, require
 	if len(ids) > 0 {
 		r.Header.Set("X-Workspace-IDs", strings.Join(ids, ","))
 	}
+	// X-User-Role is the strongest role the session holds across its workspace
+	// union (owner > admin > member). Trustworthy because it is derived from
+	// the Orgs memberships the Gateway resolved — never from the client.
+	if role := strongestRole(id.Workspaces); role != "" {
+		r.Header.Set("X-User-Role", string(role))
+	}
 	return true
+}
+
+// strongestRole returns the highest-privilege role in the workspace union.
+func strongestRole(workspaces []contracts.Workspace) contracts.Role {
+	role := contracts.Role("")
+	for _, ws := range workspaces {
+		switch ws.Role {
+		case contracts.RoleOwner:
+			return contracts.RoleOwner
+		case contracts.RoleAdmin:
+			if role != contracts.RoleAdmin {
+				role = contracts.RoleAdmin
+			}
+		case contracts.RoleMember:
+			if role == "" {
+				role = contracts.RoleMember
+			}
+		}
+	}
+	return role
+}
+
+// stripInboundIdentity removes any identity/scoping header the client supplied
+// so no forged value can reach the upstream services. Only injectIdentity (via
+// resolveIdentity against Auth + Orgs) may populate them.
+func stripInboundIdentity(r *http.Request) {
+	for _, h := range []string{
+		"X-User-ID", "X-User-Name", "X-User-Email", "X-User-Superadmin",
+		"X-User-Role", "X-Workspace-ID", "X-Workspace-IDs",
+	} {
+		r.Header.Del(h)
+	}
 }
 
 // resolveIdentity returns the cached identity or fetches it (Auth + Orgs).

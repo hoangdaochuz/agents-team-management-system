@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/IBM/sarama/mocks"
 
 	"github.com/aaks/server/internal/contracts"
 )
@@ -33,6 +34,44 @@ func testLogger(t *testing.T) *slog.Logger {
 	t.Helper()
 	var buf bytes.Buffer
 	return slog.New(slog.NewJSONHandler(&buf, nil))
+}
+
+// TestPublishEmptyTaskIDGating verifies that task-partitioned topics reject an
+// empty TaskID (the partition key), while non-task topics (signup, catalog
+// projections, audit) are exempt — they key on their own correlation id.
+func TestPublishEmptyTaskIDGating(t *testing.T) {
+	log := testLogger(t)
+
+	if contracts.IsTaskPartitioned(contracts.TopicTaskRunRequested) != true {
+		t.Fatalf("%s should be task-partitioned", contracts.TopicTaskRunRequested)
+	}
+	if contracts.IsTaskPartitioned(contracts.TopicSignupRequested) {
+		t.Fatalf("%s should NOT be task-partitioned", contracts.TopicSignupRequested)
+	}
+	if contracts.IsTaskPartitioned(contracts.TopicSkillDeleted) {
+		t.Fatalf("%s should NOT be task-partitioned", contracts.TopicSkillDeleted)
+	}
+
+	// A mock producer lets us assert both branches without a broker: the
+	// empty-key guard for task-partitioned topics fails before any send, and
+	// the exempt topics must reach the producer.
+	mockProd := mocks.NewSyncProducer(t, sarama.NewConfig())
+
+	// Task-partitioned topic without a TaskID → hard error, no send attempted.
+	err := Publish(context.Background(), mockProd, contracts.TopicTaskRunRequested,
+		contracts.EventEnvelope{EventType: contracts.TopicTaskRunRequested}, log)
+	if err == nil {
+		t.Fatalf("task-partitioned publish with empty TaskID should fail, got nil")
+	}
+
+	// Non-task topic without a TaskID → must reach the producer (the send
+	// succeeds on a mock producer), proving the TopicID guard exempts it.
+	mockProd.ExpectSendMessageAndSucceed()
+	err = Publish(context.Background(), mockProd, contracts.TopicSignupRequested,
+		contracts.EventEnvelope{EventType: contracts.TopicSignupRequested}, log)
+	if err != nil {
+		t.Fatalf("signup.requested should not be blocked by the TaskID guard: %v", err)
+	}
 }
 
 // TestPublishConsumeRoundTrip verifies the producer partitions by task_id and

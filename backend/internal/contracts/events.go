@@ -87,6 +87,29 @@ func AllTopics() []string {
 	}
 }
 
+// taskPartitionedTopics are the topics keyed by TaskID for per-task ordered
+// delivery. Every other topic (signup, invite, workspace, catalog projections,
+// audit) keys on its own correlation id and must not require a TaskID.
+var taskPartitionedTopics = map[string]bool{
+	TopicTaskRunRequested:    true,
+	TopicTaskReviewRequested: true,
+	TopicTaskStopRequested:   true,
+	TopicPrOpenRequested:     true,
+	TopicStep:                true,
+	TopicRunCompleted:        true,
+	TopicFinding:             true,
+	TopicVerdict:             true,
+	TopicPrOpened:            true,
+	TopicTaskStatusChanged:   true,
+	TopicRunStarted:          true,
+}
+
+// IsTaskPartitioned reports whether a topic is partitioned by TaskID (and thus
+// requires every published envelope to carry a non-empty TaskID key).
+func IsTaskPartitioned(topic string) bool {
+	return taskPartitionedTopics[topic]
+}
+
 // EventEnvelope wraps every Kafka message. Key fields support idempotency and
 // partitioning: TaskID is the partition key; EventID lets consumers dedup on
 // at-least-once redelivery.

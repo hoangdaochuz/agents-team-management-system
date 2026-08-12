@@ -63,10 +63,12 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env contr
 	if env.EventType == "" {
 		env.EventType = topic
 	}
-	if env.TaskID == "" {
-		// All topics are partitioned by task_id to preserve per-task ordering.
-		// An empty key would silently collapse every such event onto a single
-		// partition, degrading the invariant — fail fast instead.
+	if env.TaskID == "" && contracts.IsTaskPartitioned(topic) {
+		// Task-partitioned topics preserve per-task ordering; an empty key would
+		// silently collapse every such event onto a single partition, degrading
+		// the invariant — fail fast instead. Non-task topics (signup, invite,
+		// workspace, catalog projections, audit) key on their own correlation id
+		// and are unaffected.
 		return fmt.Errorf("kafka: publish to %s: TaskID is required for task-partitioned topics", topic)
 	}
 	buf, err := json.Marshal(env)

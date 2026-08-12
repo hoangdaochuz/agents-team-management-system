@@ -363,3 +363,118 @@ func TestKpisComposition(t *testing.T) {
 		t.Logf("kpis: %+v", k)
 	}
 }
+
+// startHeaderRecordingBackend returns an httptest server that records the
+// identity/scoping headers it received and echoes the request path, so tests
+// can assert that injected identity actually survives the proxy round trip.
+func startHeaderRecordingBackend(t *testing.T, headers *http.Header) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*headers = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestInjectedIdentityReachesUpstream locks in the fix for the review blocker:
+// the identity headers the Gateway injects (X-User-*/X-Workspace-*) must arrive
+// at the upstream service, and client-supplied values must not survive.
+func TestInjectedIdentityReachesUpstream(t *testing.T) {
+	var got http.Header
+	catalog := startHeaderRecordingBackend(t, &got)
+	project := startBackend(t)
+	task := startTaskBackend(t)
+	agent := startBackend(t)
+	settings := startBackend(t)
+	runner := startBackend(t)
+	auth := startAuthBackend(t)
+	orgs := startOrgsBackend(t)
+	resources := startHeaderRecordingBackend(t, &got)
+	admin := startBackend(t)
+
+	t.Setenv("UPSTREAM_PROJECT", project.URL)
+	t.Setenv("UPSTREAM_TASK", task.URL)
+	t.Setenv("UPSTREAM_AGENT", agent.URL)
+	t.Setenv("UPSTREAM_CATALOG", catalog.URL)
+	t.Setenv("UPSTREAM_SETTINGS", settings.URL)
+	t.Setenv("UPSTREAM_RUNNER", runner.URL)
+	t.Setenv("UPSTREAM_AUTH", auth.URL)
+	t.Setenv("UPSTREAM_ORGS", orgs.URL)
+	t.Setenv("UPSTREAM_RESOURCES", resources.URL)
+	t.Setenv("UPSTREAM_ADMIN", admin.URL)
+
+	gw, err := newGateway(nil)
+	if err != nil {
+		t.Fatalf("newGateway: %v", err)
+	}
+
+	// Simulate an attacker who forges identity headers on every request.
+	mk := func(path string) *http.Request {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-User-ID", "attacker")
+		req.Header.Set("X-User-Role", "owner")
+		req.Header.Set("X-User-Superadmin", "true")
+		req.Header.Set("X-Workspace-ID", "w999")
+		req.Header.Set("X-Workspace-IDs", "w999")
+		req.AddCookie(&http.Cookie{Name: sessionCookie, Value: "tok"})
+		return req
+	}
+
+	// Tenant route /workspaces/w1/rules
+	rec := httptest.NewRecorder()
+	gw.serve(rec, mk("/api/workspaces/w1/rules"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got.Get("X-User-ID") != "u1" {
+		t.Errorf("resources backend X-User-ID: got %q want u1", got.Get("X-User-ID"))
+	}
+	if got.Get("X-User-Superadmin") != "" {
+		t.Errorf("forged X-User-Superadmin survived: %q", got.Get("X-User-Superadmin"))
+	}
+	if got.Get("X-User-Role") != "owner" {
+		t.Errorf("resources backend X-User-Role: got %q want owner (from ws union)", got.Get("X-User-Role"))
+	}
+	if got.Get("X-Workspace-ID") != "w1" {
+		t.Errorf("resources backend X-Workspace-ID: got %q want w1", got.Get("X-Workspace-ID"))
+	}
+	if strings.Contains(got.Get("X-Workspace-IDs"), "w999") {
+		t.Errorf("forged w999 survived in X-Workspace-IDs: %q", got.Get("X-Workspace-IDs"))
+	}
+
+	// Catalog route /workspaces/w1/skills — different upstream, same guarantees.
+	rec = httptest.NewRecorder()
+	gw.serve(rec, mk("/api/workspaces/w1/skills"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog status: got %d want 200 (body %s)", rec.Code, rec.Body.String())
+	}
+	if got.Get("X-User-ID") != "u1" {
+		t.Errorf("catalog backend X-User-ID: got %q want u1", got.Get("X-User-ID"))
+	}
+	if got.Get("X-User-Superadmin") != "" {
+		t.Errorf("catalog: forged X-User-Superadmin survived: %q", got.Get("X-User-Superadmin"))
+	}
+}
+
+// TestStripInboundIdentity verifies stripInboundIdentity removes every
+// identity/scoping header the client supplied.
+func TestStripInboundIdentity(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/api/whatever", nil)
+	for _, h := range []string{
+		"X-User-ID", "X-User-Name", "X-User-Email", "X-User-Superadmin",
+		"X-User-Role", "X-Workspace-ID", "X-Workspace-IDs",
+	} {
+		r.Header.Set(h, "forged")
+	}
+	stripInboundIdentity(r)
+	for _, h := range []string{
+		"X-User-ID", "X-User-Name", "X-User-Email", "X-User-Superadmin",
+		"X-User-Role", "X-Workspace-ID", "X-Workspace-IDs",
+	} {
+		if v := r.Header.Get(h); v != "" {
+			t.Errorf("stripInboundIdentity left %s=%q", h, v)
+		}
+	}
+}
