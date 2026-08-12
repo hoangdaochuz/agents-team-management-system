@@ -69,6 +69,7 @@ func Register(mux *http.ServeMux, log *slog.Logger) error {
 
 	// Internal surface used only by the Gateway (workspace stats composition).
 	mux.HandleFunc("GET /internal/workspace/{wid}/open-task-count", app.openTaskCount)
+	mux.HandleFunc("GET /internal/tasks/{id}/workspace", app.taskWorkspace)
 
 	app.startConsumers()
 
@@ -326,6 +327,21 @@ func (a *App) openTaskCount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]int{"open_task_count": n})
+}
+
+// taskWorkspace returns the owning workspace of a task so the Gateway can gate
+// task sub-routes (runs/artifacts) against the session's workspace union.
+func (a *App) taskWorkspace(w http.ResponseWriter, r *http.Request) {
+	t, err := a.store.GetUnscoped(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrTaskNotFound) {
+		httputil.Error(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if err != nil {
+		httputil.ServerError(w, a.log, "task.TaskWorkspace", err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"workspace_id": string(t.WorkspaceID)})
 }
 
 func (a *App) list(w http.ResponseWriter, r *http.Request) {

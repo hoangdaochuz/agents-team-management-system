@@ -65,6 +65,9 @@ func (a *App) listKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) setKey(w http.ResponseWriter, r *http.Request) {
+	if !a.allowWrite(w, r) {
+		return
+	}
 	var body struct {
 		Provider string `json:"provider"`
 		APIKey   string `json:"api_key"`
@@ -85,6 +88,9 @@ func (a *App) setKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) updateKey(w http.ResponseWriter, r *http.Request) {
+	if !a.allowWrite(w, r) {
+		return
+	}
 	var body struct {
 		APIKey string `json:"api_key"`
 	}
@@ -105,6 +111,9 @@ func (a *App) updateKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) deleteKey(w http.ResponseWriter, r *http.Request) {
+	if !a.allowWrite(w, r) {
+		return
+	}
 	provider := r.PathValue("provider")
 	if !validProvider(provider) {
 		httputil.Error(w, http.StatusBadRequest, "invalid provider")
@@ -153,6 +162,22 @@ func validProvider(p string) bool {
 	case "openai", "anthropic", "gemini", "glm":
 		return true
 	}
+	return false
+}
+
+// allowWrite gates the provider-key write path. Keys are a single global row
+// set scoped by neither workspace nor org, so only superadmins (or an
+// owner/admin of any workspace) may set/update/delete them — otherwise any
+// authenticated user could overwrite or delete the deployment's provider keys.
+func (a *App) allowWrite(w http.ResponseWriter, r *http.Request) bool {
+	if httputil.UserSuperadmin(r) {
+		return true
+	}
+	switch httputil.UserRole(r) {
+	case contracts.RoleOwner, contracts.RoleAdmin:
+		return true
+	}
+	httputil.Error(w, http.StatusForbidden, "superadmin or workspace owner/admin required")
 	return false
 }
 

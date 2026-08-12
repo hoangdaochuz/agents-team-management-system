@@ -112,13 +112,19 @@ type Driver interface {
 	Execute(ctx context.Context, rc RunContext, sink StepSink) (Result, error)
 }
 
-// New returns the configured driver (RUNNER_DRIVER: simulated | llm).
+// New returns the configured driver (RUNNER_DRIVER: simulated | llm). An
+// unset (or unknown) value defaults to "llm": a silent no-op simulated driver
+// in production is worse than a hard failure, so the real driver is the safe
+// default — dev/E2E must set RUNNER_DRIVER=simulated explicitly.
 func New(driverName string, log *slog.Logger) Driver {
 	switch driverName {
-	case "llm":
+	case "simulated":
+		return &Simulated{log: log}
+	case "llm", "":
 		return &LLMDriver{log: log}
 	default:
-		return &Simulated{log: log}
+		log.Warn("unknown RUNNER_DRIVER; defaulting to llm", "driver", driverName)
+		return &LLMDriver{log: log}
 	}
 }
 

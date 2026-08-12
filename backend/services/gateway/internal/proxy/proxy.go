@@ -31,6 +31,12 @@ func New(upstream string) (*httputil.ReverseProxy, error) {
 				req.URL.Path = "/"
 			}
 		}
+		// Identity/scoping headers must never be forwarded verbatim from the
+		// client: only the Gateway's injectIdentity may set them. Strip anything
+		// an attacker supplied so it cannot spoof another user or workspace.
+		for _, h := range identityHeaders {
+			req.Header.Del(h)
+		}
 		req.Host = target.Host
 	}
 	rp.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -39,6 +45,14 @@ func New(upstream string) (*httputil.ReverseProxy, error) {
 	}
 	baseURLs.Store(rp, strings.TrimSuffix(target.String(), "/"))
 	return rp, nil
+}
+
+// identityHeaders are the Gateway-owned headers that no upstream may accept
+// from the client. They are stripped on every proxied request; only
+// injectIdentity (gateway) may populate them afterwards.
+var identityHeaders = []string{
+	"X-User-ID", "X-User-Name", "X-User-Email", "X-User-Superadmin",
+	"X-Workspace-ID", "X-Workspace-IDs",
 }
 
 // baseURLs lets the Gateway learn each proxy's target for internal composition

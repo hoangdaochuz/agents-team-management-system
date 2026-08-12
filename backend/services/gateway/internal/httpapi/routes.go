@@ -23,6 +23,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -148,7 +150,7 @@ func newGateway(log *slog.Logger) (*gateway, error) {
 		tenantDomains: map[string]bool{
 			"workspaces": true, "sysadmin": true, "tasks": true, "agents": true,
 			"projects": true, "skills": true, "mcp-servers": true, "provider-keys": true,
-			"runs": true, "auth": true,
+			"runs": true, "auth": true, "orgs": true, "resources": true, "admin": true,
 		},
 	}, nil
 }
@@ -183,11 +185,17 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 			if !g.injectIdentity(w, r, true) {
 				return
 			}
+			if !g.requireWorkspaceMember(w, r, segs[1]) {
+				return
+			}
 			r.Header.Set("X-Workspace-ID", segs[1])
 			g.domains["skills"].ServeHTTP(w, r)
 			return
 		case "knowledge", "plugins", "rules", "mcp":
 			if !g.injectIdentity(w, r, true) {
+				return
+			}
+			if !g.requireWorkspaceMember(w, r, segs[1]) {
 				return
 			}
 			r.Header.Set("X-Workspace-ID", segs[1])
@@ -197,12 +205,18 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 			if !g.injectIdentity(w, r, true) {
 				return
 			}
+			if !g.requireWorkspaceMember(w, r, segs[1]) {
+				return
+			}
 			r.Header.Set("X-Workspace-ID", segs[1])
 			g.domains["admin"].ServeHTTP(w, r)
 			return
 		default:
 			// Workspace sub-routes owned by orgs (members, invites, requests).
 			if !g.injectIdentity(w, r, true) {
+				return
+			}
+			if !g.requireWorkspaceMember(w, r, segs[1]) {
 				return
 			}
 			r.Header.Set("X-Workspace-ID", segs[1])
@@ -216,6 +230,9 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 		switch segs[2] {
 		case "runs", "artifacts":
 			if !g.injectIdentity(w, r, true) {
+				return
+			}
+			if !g.requireTaskWorkspace(w, r, segs[1]) {
 				return
 			}
 			g.domains["runs"].ServeHTTP(w, r)
@@ -271,6 +288,8 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 // injectIdentity resolves the session cookie (via Auth) and the workspace
 // union (via Orgs), then sets the X-User-* / X-Workspace-* headers. Returns
 // false after writing a 401 when the session is missing and required=true.
+// Any inbound X-User-*/X-Workspace-* values are deleted first so a stale or
+// forged value can never survive into the upstream request.
 func (g *gateway) injectIdentity(w http.ResponseWriter, r *http.Request, required bool) bool {
 	token := sessionValue(r)
 	if token == "" {
@@ -288,6 +307,12 @@ func (g *gateway) injectIdentity(w http.ResponseWriter, r *http.Request, require
 		}
 		return true
 	}
+	r.Header.Del("X-User-ID")
+	r.Header.Del("X-User-Name")
+	r.Header.Del("X-User-Email")
+	r.Header.Del("X-User-Superadmin")
+	r.Header.Del("X-Workspace-ID")
+	r.Header.Del("X-Workspace-IDs")
 	r.Header.Set("X-User-ID", id.UserID)
 	r.Header.Set("X-User-Name", id.Name)
 	r.Header.Set("X-User-Email", id.Email)
@@ -314,6 +339,9 @@ func (g *gateway) resolveIdentity(ctx context.Context, token string) (identity, 
 		if time.Since(id.resolvedAt) < 60*time.Second {
 			return id, id.UserID != ""
 		}
+		// Stale entry: evict it now so the cache cannot grow without bound
+		// (each distinct token is only ever held for one TTL window).
+		g.sessionCache.Delete(token)
 	}
 	id := identity{resolvedAt: time.Now()}
 	// 1. Auth: session cookie → user identity.
@@ -341,6 +369,39 @@ func (g *gateway) resolveIdentity(ctx context.Context, token string) (identity, 
 	}
 	g.sessionCache.Store(token, id)
 	return id, true
+}
+
+// requireWorkspaceMember returns false after writing a 403 when wid is not in
+// the caller's resolved workspace union. The identity headers must already be
+// injected (injectIdentity) so X-Workspace-IDs reflects the session.
+func (g *gateway) requireWorkspaceMember(w http.ResponseWriter, r *http.Request, wid string) bool {
+	for _, id := range apiutil.WorkspaceIDs(r) {
+		if string(id) == wid {
+			return true
+		}
+	}
+	apiutil.Error(w, http.StatusForbidden, "not a member of workspace "+wid)
+	return false
+}
+
+// requireTaskWorkspace returns false after writing a 403/404 when the task does
+// not belong to a workspace in the caller's union. It resolves the task's
+// owning workspace from the Task service (internal, unscoped).
+func (g *gateway) requireTaskWorkspace(w http.ResponseWriter, r *http.Request, taskID string) bool {
+	var res struct {
+		WorkspaceID string `json:"workspace_id"`
+	}
+	if !g.internalJSON(g.domains["tasks"], "/internal/tasks/"+taskID+"/workspace", &res) || res.WorkspaceID == "" {
+		apiutil.Error(w, http.StatusNotFound, "task not found")
+		return false
+	}
+	for _, id := range apiutil.WorkspaceIDs(r) {
+		if string(id) == res.WorkspaceID {
+			return true
+		}
+	}
+	apiutil.Error(w, http.StatusForbidden, "task is not in an accessible workspace")
+	return false
 }
 
 // doJSON is internalJSON with an already-built request (cookie case).
@@ -479,6 +540,7 @@ func (g *gateway) serveHealth(w http.ResponseWriter, r *http.Request) {
 		{"agent", g.domains["agents"]}, {"catalog", g.domains["skills"]},
 		{"settings", g.domains["provider-keys"]}, {"runner", g.domains["runs"]},
 		{"auth", g.auth}, {"orgs", g.orgs},
+		{"resources", g.domains["resources"]}, {"admin", g.domains["admin"]},
 	}
 	out := contracts.SystemHealth{Services: []contracts.ServiceHealth{}}
 	for _, p := range probes {
@@ -517,6 +579,9 @@ func (g *gateway) serveStream(w http.ResponseWriter, r *http.Request, taskID str
 	if !g.injectIdentity(w, r, true) {
 		return
 	}
+	if !g.requireTaskWorkspace(w, r, taskID) {
+		return
+	}
 	brokers := os.Getenv("KAFKA_BROKERS")
 	if brokers == "" {
 		apiutil.Error(w, http.StatusServiceUnavailable, "kafka is not configured; SSE unavailable")
@@ -543,8 +608,11 @@ func (g *gateway) serveStream(w http.ResponseWriter, r *http.Request, taskID str
 		}
 	}
 
-	// 2. Tail Kafka step.* events for this task (dedup by step id).
-	cg, err := kafka.NewConsumerGroup(kafka.Brokers(strings.Split(brokers, ",")), "gateway-sse-"+taskID, g.log)
+	// 2. Tail Kafka step.* events for this task (dedup by step id). Each
+	// connection gets its own consumer group so concurrent viewers (tabs) don't
+	// rebalance each other out of the partition, and reads from the newest
+	// offset since history is already covered by the replay above.
+	cg, err := kafka.NewConsumerGroupFrom(kafka.Brokers(strings.Split(brokers, ",")), "gateway-sse-"+taskID+"-"+connID(), true, g.log)
 	if err != nil {
 		g.log.Warn("sse tail unavailable", "error", err)
 		writeSSE(w, fl, "error", []byte(`{"message":"live tail unavailable; replayed history only"}`))
@@ -595,6 +663,14 @@ func writeSSE(w http.ResponseWriter, fl http.Flusher, event string, data []byte)
 	_, _ = w.Write(append([]byte("data: "), append(data, '\n')...))
 	_, _ = w.Write([]byte("\n"))
 	fl.Flush()
+}
+
+// connID returns a random short identifier for a single SSE connection, used
+// to give each connection its own consumer group.
+func connID() string {
+	var b [6]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

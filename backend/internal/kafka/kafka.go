@@ -63,6 +63,12 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env contr
 	if env.EventType == "" {
 		env.EventType = topic
 	}
+	if env.TaskID == "" {
+		// All topics are partitioned by task_id to preserve per-task ordering.
+		// An empty key would silently collapse every such event onto a single
+		// partition, degrading the invariant — fail fast instead.
+		return fmt.Errorf("kafka: publish to %s: TaskID is required for task-partitioned topics", topic)
+	}
 	buf, err := json.Marshal(env)
 	if err != nil {
 		return fmt.Errorf("kafka: marshal event: %w", err)
@@ -90,23 +96,38 @@ type ConsumerGroup struct {
 	groupID string
 	cg      sarama.ConsumerGroup
 	log     *slog.Logger
+	// fromNewest starts the group at the topic's current offset rather than
+	// the oldest, for one-shot tailers (e.g. the Gateway's SSE live tail) that
+	// already replayed history via another path.
+	fromNewest bool
 }
 
 // NewConsumerGroup builds a consumer group bound to brokers and groupID.
 func NewConsumerGroup(brokers Brokers, groupID string, log *slog.Logger) (*ConsumerGroup, error) {
-	cg, err := sarama.NewConsumerGroup(brokers, groupID, NewConfig())
+	return NewConsumerGroupFrom(brokers, groupID, false, log)
+}
+
+// NewConsumerGroupFrom builds a consumer group that reads from the oldest
+// offset, or the newest when fromNewest is set.
+func NewConsumerGroupFrom(brokers Brokers, groupID string, fromNewest bool, log *slog.Logger) (*ConsumerGroup, error) {
+	cfg := NewConfig()
+	cfg.Consumer.Offsets.Initial = sarama.OffsetOldest
+	if fromNewest {
+		cfg.Consumer.Offsets.Initial = sarama.OffsetNewest
+	}
+	cg, err := sarama.NewConsumerGroup(brokers, groupID, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("kafka: new consumer group %s: %w", groupID, err)
 	}
-	log.Info("kafka consumer group ready", "group", groupID, "brokers", brokers)
-	return &ConsumerGroup{groupID: groupID, cg: cg, log: log}, nil
+	log.Info("kafka consumer group ready", "group", groupID, "brokers", brokers, "from_newest", fromNewest)
+	return &ConsumerGroup{groupID: groupID, cg: cg, log: log, fromNewest: fromNewest}, nil
 }
 
 // Run consumes topics until ctx is cancelled, dispatching each message to handler.
 // Transient consumer errors (e.g. group coordinator not available while Kafka
 // elects) are retried with a capped backoff instead of killing the goroutine.
 func (g *ConsumerGroup) Run(ctx context.Context, topics []string, handler Handler) error {
-	disp := &dispatcher{handler: handler, log: g.log}
+	disp := newDispatcher(handler, g.log)
 	backoff := time.Second
 	for {
 		if err := g.cg.Consume(ctx, topics, disp); err != nil {
@@ -133,10 +154,22 @@ func (g *ConsumerGroup) Run(ctx context.Context, topics []string, handler Handle
 // Close releases the consumer group.
 func (g *ConsumerGroup) Close() error { return g.cg.Close() }
 
+// maxRedeliveries is how many times a handler failure is retried
+// (at-least-once) before the message is treated as poison and parked. Without
+// this a persistently failing message stalls its task partition forever.
+const maxRedeliveries = 5
+
 // dispatcher implements sarama.ConsumerGroupHandler.
 type dispatcher struct {
 	handler Handler
 	log     *slog.Logger
+	// failures counts handler errors per event id across redeliveries so a
+	// poison message is parked (log-and-mark) instead of retried forever.
+	failures map[string]int
+}
+
+func newDispatcher(handler Handler, log *slog.Logger) *dispatcher {
+	return &dispatcher{handler: handler, log: log, failures: map[string]int{}}
 }
 
 func (d *dispatcher) Setup(sarama.ConsumerGroupSession) error   { return nil }
@@ -151,13 +184,36 @@ func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama
 			continue
 		}
 		if err := d.handler(sess.Context(), env); err != nil {
-			d.log.Error("kafka: handler error (will NOT advance; at-least-once)", "topic", msg.Topic, "event_id", env.EventID, "err", err)
+			key := eventKey(env)
+			d.failures[key]++
+			if d.failures[key] >= maxRedeliveries {
+				// Park the poison message: log-and-mark so the partition keeps
+				// progressing instead of stalling on a permanent failure.
+				d.log.Error("kafka: parking poison message after repeated failures",
+					"topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID,
+					"attempts", d.failures[key], "err", err)
+				delete(d.failures, key)
+				sess.MarkMessage(msg, "")
+				continue
+			}
+			d.log.Error("kafka: handler error (will NOT advance; at-least-once)", "topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID, "attempts", d.failures[key], "err", err)
 			// Do not mark the message: it will be redelivered.
 			return err
 		}
+		delete(d.failures, eventKey(env))
 		sess.MarkMessage(msg, "")
 	}
 	return nil
+}
+
+// eventKey identifies a delivery for poison tracking. Fall back to the raw
+// offset when the envelope has no EventID, so every redelivery of a malformed
+// (but JSON-parsable) envelope is still accounted for.
+func eventKey(env contracts.EventEnvelope) string {
+	if env.EventID != "" {
+		return env.EventID
+	}
+	return env.OccurredAt.String() + ":" + env.EventType
 }
 
 // newID returns a short random hex id for event dedup. Not a UUID, but unique

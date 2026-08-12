@@ -23,6 +23,24 @@ func startBackend(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// startTaskBackend fakes the Task service: it echoes ordinary paths (routing
+// assertions) and resolves the internal task→workspace endpoint like the real
+// service, which the Gateway's ownership check depends on.
+func startTaskBackend(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/internal/tasks/") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"workspace_id":"w1"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, r.URL.Path)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 // startAuthBackend fakes the Auth service: user JSON for /auth/* session
 // routes and an identity for /internal/identity.
 func startAuthBackend(t *testing.T) *httptest.Server {
@@ -68,7 +86,7 @@ func startOrgsBackend(t *testing.T) *httptest.Server {
 func newTestGateway(t *testing.T) (*gateway, *httptest.Server) {
 	t.Helper()
 	project := startBackend(t)
-	task := startBackend(t)
+	task := startTaskBackend(t)
 	agent := startBackend(t)
 	catalog := startBackend(t)
 	settings := startBackend(t)
@@ -155,7 +173,9 @@ func TestGatewayRouting(t *testing.T) {
 }
 
 // newTaggedGateway builds a gateway whose admin/resources/orgs backends echo
-// their role + path, so ownership of a route can be asserted exactly.
+// their role + path, so ownership of a route can be asserted exactly. The
+// orgs/task fakes additionally answer the internal membership/ownership
+// endpoints that the Gateway's scoping checks depend on.
 func newTaggedGateway(t *testing.T) *gateway {
 	t.Helper()
 	tag := func(role string) *httptest.Server {
@@ -166,15 +186,35 @@ func newTaggedGateway(t *testing.T) *gateway {
 		t.Cleanup(srv.Close)
 		return srv
 	}
+	taggedOrgs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/internal/users/u1/workspaces" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `[{"id":"w1","name":"A","role":"owner"},{"id":"w2","name":"B","role":"member"}]`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "orgs:"+r.URL.Path)
+	}))
+	t.Cleanup(taggedOrgs.Close)
+	taggedTask := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/internal/tasks/") {
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"workspace_id":"w1"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "task:"+r.URL.Path)
+	}))
+	t.Cleanup(taggedTask.Close)
 	auth := startAuthBackend(t)
 	t.Setenv("UPSTREAM_PROJECT", tag("project").URL)
-	t.Setenv("UPSTREAM_TASK", tag("task").URL)
+	t.Setenv("UPSTREAM_TASK", taggedTask.URL)
 	t.Setenv("UPSTREAM_AGENT", tag("agent").URL)
 	t.Setenv("UPSTREAM_CATALOG", tag("catalog").URL)
 	t.Setenv("UPSTREAM_SETTINGS", tag("settings").URL)
 	t.Setenv("UPSTREAM_RUNNER", tag("runner").URL)
 	t.Setenv("UPSTREAM_AUTH", auth.URL)
-	t.Setenv("UPSTREAM_ORGS", tag("orgs").URL)
+	t.Setenv("UPSTREAM_ORGS", taggedOrgs.URL)
 	t.Setenv("UPSTREAM_RESOURCES", tag("resources").URL)
 	t.Setenv("UPSTREAM_ADMIN", tag("admin").URL)
 	gw, err := newGateway(nil)

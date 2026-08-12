@@ -15,9 +15,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -40,6 +42,22 @@ type App struct {
 	prod   sarama.SyncProducer
 	log    *slog.Logger
 	ssoCfg map[string]string // provider -> redirect url
+	// loginRate limits login attempts per IP+email; key -> first-failure time.
+	loginRate sync.Map
+}
+
+// loginLimit is the max allowed login failures for an IP+email (and per IP)
+// within loginWindow before the client is throttled (credential-stuffing
+// hardening).
+const (
+	loginLimit  = 5
+	loginWindow = 15 * time.Minute
+)
+
+// loginRateEntry tracks consecutive failures for a throttle key.
+type loginRateEntry struct {
+	first time.Time
+	count int
 }
 
 // Register wires auth routes + the signup/invite Kafka consumers.
@@ -170,16 +188,27 @@ func sessionToken(r *http.Request) string {
 	return c.Value
 }
 
-// setSessionCookie writes the session cookie on the response.
-func setSessionCookie(w http.ResponseWriter, token string, maxAge int) {
+// setSessionCookie writes the session cookie on the response. Secure is only
+// set when the request arrived over TLS (direct or via X-Forwarded-Proto), so
+// the cookie never rides plaintext on a downgrade path.
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   isSecure(r),
 		MaxAge:   maxAge,
 	})
+}
+
+// isSecure reports whether the request arrived over TLS.
+func isSecure(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 func clearCookie(w http.ResponseWriter, name string) {
@@ -189,6 +218,9 @@ func clearCookie(w http.ResponseWriter, name string) {
 // login validates credentials and issues a session cookie. Returns the user
 // identity; the Gateway assembles the full Session (auth + memberships).
 func (a *App) login(w http.ResponseWriter, r *http.Request) {
+	if a.loginThrottled(w, r) {
+		return
+	}
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
@@ -203,11 +235,11 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := a.store.GetUserByEmail(r.Context(), body.Email)
 	if err != nil {
-		a.failLogin(w)
+		a.failLogin(w, r, body.Email)
 		return
 	}
 	if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(body.Password)) != nil {
-		a.failLogin(w)
+		a.failLogin(w, r, body.Email)
 		return
 	}
 	if !u.Active {
@@ -229,13 +261,77 @@ func (a *App) login(w http.ResponseWriter, r *http.Request) {
 		httputil.ServerError(w, a.log, "auth.Login", err)
 		return
 	}
-	setSessionCookie(w, token, maxAge)
+	setSessionCookie(w, r, token, maxAge)
+	a.loginRate.Delete(loginKey(r, body.Email))
+	a.loginRate.Delete(loginKey(r, ""))
 	httputil.WriteJSON(w, http.StatusOK, u.User)
 }
 
-// failLogin returns a generic 401 without leaking which field was wrong.
-func (a *App) failLogin(w http.ResponseWriter) {
+// failLogin records the failure for throttling, then returns a generic 401
+// without leaking which field was wrong.
+func (a *App) failLogin(w http.ResponseWriter, r *http.Request, email string) {
+	a.recordLoginFailure(r, email)
 	httputil.Error(w, http.StatusUnauthorized, "invalid email or password")
+}
+
+// loginThrottled rejects the request with 429 when the client IP has exceeded
+// the failure limit within the window (pre-body per-IP gate).
+func (a *App) loginThrottled(w http.ResponseWriter, r *http.Request) bool {
+	return a.throttled(loginKey(r, ""), w)
+}
+
+// recordLoginFailure counts one failure for the IP+email pair and its IP.
+func (a *App) recordLoginFailure(r *http.Request, email string) {
+	a.recordFailure(loginKey(r, email))
+	a.recordFailure(loginKey(r, ""))
+}
+
+// throttled reports whether the given key has hit the failure limit within the
+// window, writing 429 when it has.
+func (a *App) throttled(key string, w http.ResponseWriter) bool {
+	if v, ok := a.loginRate.Load(key); ok {
+		if e, ok := v.(loginRateEntry); ok && time.Since(e.first) < loginWindow && e.count >= loginLimit {
+			httputil.Error(w, http.StatusTooManyRequests, "too many login attempts, try again later")
+			return true
+		}
+	}
+	return false
+}
+
+// recordFailure bumps the failure count for a key, resetting the window when it
+// has expired.
+func (a *App) recordFailure(key string) {
+	v, _ := a.loginRate.LoadOrStore(key, loginRateEntry{first: time.Now(), count: 0})
+	entry := v.(loginRateEntry)
+	if time.Since(entry.first) >= loginWindow {
+		a.loginRate.Store(key, loginRateEntry{first: time.Now(), count: 1})
+		return
+	}
+	entry.count++
+	a.loginRate.Store(key, entry)
+}
+
+// loginKey keys the throttle by client IP + attempt email. The email-less form
+// (pre-body) throttles per IP only.
+func loginKey(r *http.Request, email string) string {
+	ip := clientIP(r)
+	if email == "" {
+		return "ip:" + ip
+	}
+	return "ip:" + ip + "|email:" + strings.ToLower(email)
+}
+
+// clientIP extracts the client address, honoring X-Forwarded-For (the gateway
+// terminates TLS/connects, so the real client is in the forwarded header).
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		return strings.TrimSpace(strings.Split(fwd, ",")[0])
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // me returns the session user or 401.
