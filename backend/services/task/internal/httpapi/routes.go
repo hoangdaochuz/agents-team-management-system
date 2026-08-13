@@ -62,12 +62,177 @@ func Register(mux *http.ServeMux, log *slog.Logger) error {
 	mux.HandleFunc("PATCH /tasks/{id}/status", app.patchStatus)
 	mux.HandleFunc("GET /tasks/{id}/feedback", app.listFeedback)
 	mux.HandleFunc("POST /tasks/{id}/feedback", app.addFeedback)
-	// Async actions — full runner-driven flow lands in phase 6.
-	mux.HandleFunc("POST /tasks/{id}/re-run", app.notImplemented)
-	mux.HandleFunc("POST /tasks/{id}/stop", app.notImplemented)
-	mux.HandleFunc("POST /tasks/{id}/open-pr", app.notImplemented)
+	// Async actions driving the saga (phase 6).
+	mux.HandleFunc("POST /tasks/{id}/re-run", app.reRun)
+	mux.HandleFunc("POST /tasks/{id}/stop", app.stop)
+	mux.HandleFunc("POST /tasks/{id}/open-pr", app.openPr)
 
-	log.Info("task routes registered", "endpoints", 11, "saga_enabled", app.prod != nil)
+	// Internal surface used only by the Gateway (workspace stats composition).
+	mux.HandleFunc("GET /internal/workspace/{wid}/open-task-count", app.openTaskCount)
+	mux.HandleFunc("GET /internal/tasks/{id}/workspace", app.taskWorkspace)
+
+	app.startConsumers()
+
+	log.Info("task routes registered", "endpoints", 12, "saga_enabled", app.prod != nil)
+	return nil
+}
+
+// startConsumers subscribes the saga coordinator to execution facts
+// (best-effort). Idempotency: each (task_id, run_id) is processed once.
+func (a *App) startConsumers() {
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		return
+	}
+	bs := kafka.Brokers(strings.Split(brokers, ","))
+	cg, err := kafka.NewConsumerGroup(bs, "task-saga", a.log)
+	if err != nil {
+		a.log.Warn("task saga consumers unavailable", "error", err)
+		return
+	}
+	go func() {
+		if err := cg.Run(context.Background(),
+			[]string{contracts.TopicRunCompleted, contracts.TopicVerdict, contracts.TopicPrOpened},
+			a.consume); err != nil {
+			a.log.Error("task saga consumer stopped", "error", err)
+		}
+	}()
+}
+
+// consume drives the saga state machine (tasks 6.2–6.6):
+//
+//	run.completed (implementer, done) → review + task.review-requested
+//	verdict APPROVE              → done
+//	verdict REQUEST_CHANGES      → round < 5 → doing + task.run-requested(round+1)
+//	                              → round ≥ 5 → blocked (review rounds exhausted)
+func (a *App) consume(ctx context.Context, env contracts.EventEnvelope) error {
+	switch env.EventType {
+	case contracts.TopicRunCompleted:
+		var d contracts.RunCompletedData
+		if err := env.DecodeData(&d); err != nil {
+			return err
+		}
+		if d.Role != contracts.RunRoleImplementer || d.Status != contracts.RunDone {
+			return nil // reviewer/aborted runs do not advance the task
+		}
+		return a.onImplementerDone(ctx, d)
+	case contracts.TopicVerdict:
+		var d contracts.VerdictData
+		if err := env.DecodeData(&d); err != nil {
+			return err
+		}
+		return a.onVerdict(ctx, d)
+	case contracts.TopicPrOpened:
+		var d contracts.PrOpenedData
+		if err := env.DecodeData(&d); err != nil {
+			return err
+		}
+		a.log.Info("pr opened for task", "task_id", d.TaskID, "run_id", d.RunID, "url", d.URL)
+	}
+	return nil
+}
+
+// onImplementerDone moves the task to review and requests a reviewer run.
+func (a *App) onImplementerDone(ctx context.Context, d contracts.RunCompletedData) error {
+	ok, err := a.store.SagaNew(ctx, d.TaskID, d.RunID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil // already processed (redelivery)
+	}
+	t, err := a.store.GetUnscoped(ctx, d.TaskID)
+	if err != nil {
+		return err
+	}
+	if t.Status != contracts.TaskDoing {
+		a.log.Info("implementer done ignored: task not in doing", "task_id", d.TaskID, "status", t.Status)
+		return nil
+	}
+	if _, err := a.store.SetStatus(ctx, d.TaskID, contracts.TaskReview); err != nil {
+		return err
+	}
+	a.publish(ctx, contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+		TaskID: d.TaskID, From: contracts.TaskDoing, To: contracts.TaskReview, RoundNo: d.RoundNo,
+	}, d.TaskID)
+	if t.AgentID == nil {
+		a.log.Warn("no agent to review; task stuck in review", "task_id", d.TaskID)
+		return nil
+	}
+	a.publish(ctx, contracts.TopicTaskReviewRequested, contracts.ReviewRequestedData{
+		TaskID: d.TaskID, AgentID: *t.AgentID, RunID: d.RunID, WorkspaceID: t.WorkspaceID,
+		RoundNo: d.RoundNo, Prompt: t.Prompt,
+	}, d.TaskID)
+	return nil
+}
+
+// onVerdict advances the task on the reviewer's decision.
+func (a *App) onVerdict(ctx context.Context, d contracts.VerdictData) error {
+	ok, err := a.store.SagaNew(ctx, d.TaskID, d.RunID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	t, err := a.store.GetUnscoped(ctx, d.TaskID)
+	if err != nil {
+		return err
+	}
+	if t.Status != contracts.TaskReview {
+		a.log.Info("verdict ignored: task not in review", "task_id", d.TaskID, "status", t.Status)
+		return nil
+	}
+	switch d.Decision {
+	case contracts.VerdictApprove:
+		if _, err := a.store.SetStatus(ctx, d.TaskID, contracts.TaskDone); err != nil {
+			return err
+		}
+		return a.publishErr(ctx, contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+			TaskID: d.TaskID, From: contracts.TaskReview, To: contracts.TaskDone, RoundNo: d.RoundNo,
+		}, d.TaskID)
+	case contracts.VerdictRequestChanges:
+		next := d.RoundNo + 1
+		if next > maxReviewRounds {
+			if _, err := a.store.SetStatus(ctx, d.TaskID, contracts.TaskBlocked); err != nil {
+				return err
+			}
+			a.log.Warn("review rounds exhausted; task blocked", "task_id", d.TaskID, "rounds", next)
+			return a.publishErr(ctx, contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+				TaskID: d.TaskID, From: contracts.TaskReview, To: contracts.TaskBlocked, RoundNo: d.RoundNo,
+			}, d.TaskID)
+		}
+		if _, err := a.store.SetStatus(ctx, d.TaskID, contracts.TaskDoing); err != nil {
+			return err
+		}
+		if err := a.store.SetRoundNo(ctx, d.TaskID, next); err != nil {
+			return err
+		}
+		a.publish(ctx, contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+			TaskID: d.TaskID, From: contracts.TaskReview, To: contracts.TaskDoing, RoundNo: next,
+		}, d.TaskID)
+		a.publish(ctx, contracts.TopicTaskRunRequested, contracts.RunRequestedData{
+			TaskID: d.TaskID, AgentID: derefAgentID(t.AgentID), ProjectID: t.ProjectID,
+			WorkspaceID: t.WorkspaceID, RoundNo: next, Prompt: t.Prompt, ModelOverride: derefStr(t.ModelOverride),
+		}, d.TaskID)
+	}
+	return nil
+}
+
+// derefAgentID flattens the agent pointer; the caller already validated it.
+func derefAgentID(p *contracts.ID) contracts.ID {
+	if p != nil {
+		return *p
+	}
+	return ""
+}
+
+// maxReviewRounds caps the review loop (task 6.3).
+const maxReviewRounds = 5
+
+// publishErr publishes and returns the error (for tail-call convenience).
+func (a *App) publishErr(ctx context.Context, topic string, data any, taskID contracts.ID) error {
+	a.publish(ctx, topic, data, taskID)
 	return nil
 }
 
@@ -83,8 +248,100 @@ func (a *App) publish(ctx context.Context, topic string, data any, taskID contra
 	}
 }
 
-func (a *App) notImplemented(w http.ResponseWriter, _ *http.Request) {
-	httputil.Error(w, http.StatusNotImplemented, "async action lands with the runner in phase 6")
+// reRun requests a fresh implementer run (saga action; task 6.4).
+func (a *App) reRun(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	t, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	if err != nil {
+		httputil.RespondOK(w, a.log, "task.ReRun.get", nil, err, store.ErrTaskNotFound)
+		return
+	}
+	if t.AgentID == nil || *t.AgentID == "" {
+		httputil.Error(w, http.StatusBadRequest, "task has no assigned agent")
+		return
+	}
+	next := t.RoundNo + 1
+	if err := a.store.SetRoundNo(r.Context(), id, next); err != nil {
+		httputil.ServerError(w, a.log, "task.ReRun.round", err)
+		return
+	}
+	if _, err := a.store.SetStatus(r.Context(), id, contracts.TaskDoing); err != nil {
+		httputil.ServerError(w, a.log, "task.ReRun.status", err)
+		return
+	}
+	a.publish(r.Context(), contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+		TaskID: id, From: t.Status, To: contracts.TaskDoing, RoundNo: next,
+	}, id)
+	a.publish(r.Context(), contracts.TopicTaskRunRequested, contracts.RunRequestedData{
+		TaskID: id, AgentID: *t.AgentID, ProjectID: t.ProjectID,
+		WorkspaceID: t.WorkspaceID, RoundNo: next, Prompt: t.Prompt, ModelOverride: derefStr(t.ModelOverride),
+	}, id)
+	out, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	httputil.RespondOK(w, a.log, "task.ReRun", out, err)
+}
+
+// stop sets the task stopped synchronously and requests an abort (task 6.4).
+func (a *App) stop(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	prev, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	if err != nil {
+		httputil.RespondOK(w, a.log, "task.Stop.get", nil, err, store.ErrTaskNotFound)
+		return
+	}
+	out, err := a.store.SetStatus(r.Context(), id, contracts.TaskStopped)
+	if err != nil {
+		httputil.RespondOK(w, a.log, "task.Stop.set", nil, err, store.ErrTaskNotFound)
+		return
+	}
+	if prev.Status != out.Status {
+		a.publish(r.Context(), contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+			TaskID: out.ID, From: prev.Status, To: out.Status, RoundNo: out.RoundNo,
+		}, out.ID)
+	}
+	a.publish(r.Context(), contracts.TopicTaskStopRequested, contracts.StopRequestedData{TaskID: id}, id)
+	httputil.WriteJSON(w, http.StatusOK, out)
+}
+
+// openPr requests PR creation from the Runner (task 6.5); the PR is never
+// auto-created anywhere else.
+func (a *App) openPr(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	t, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	if err != nil {
+		httputil.RespondOK(w, a.log, "task.OpenPr.get", nil, err, store.ErrTaskNotFound)
+		return
+	}
+	if t.Status != contracts.TaskDone {
+		httputil.Error(w, http.StatusConflict, "open-pr is only allowed on done tasks")
+		return
+	}
+	a.publish(r.Context(), contracts.TopicPrOpenRequested, contracts.PrOpenRequestedData{TaskID: id}, id)
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// openTaskCount serves the open-task count for the Gateway's workspace list.
+func (a *App) openTaskCount(w http.ResponseWriter, r *http.Request) {
+	n, err := a.store.CountOpenByWorkspace(r.Context(), r.PathValue("wid"))
+	if err != nil {
+		httputil.ServerError(w, a.log, "task.OpenTaskCount", err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]int{"open_task_count": n})
+}
+
+// taskWorkspace returns the owning workspace of a task so the Gateway can gate
+// task sub-routes (runs/artifacts) against the session's workspace union.
+func (a *App) taskWorkspace(w http.ResponseWriter, r *http.Request) {
+	t, err := a.store.GetUnscoped(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrTaskNotFound) {
+		httputil.Error(w, http.StatusNotFound, "task not found")
+		return
+	}
+	if err != nil {
+		httputil.ServerError(w, a.log, "task.TaskWorkspace", err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"workspace_id": string(t.WorkspaceID)})
 }
 
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
@@ -97,12 +354,13 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 		Label:     r.URL.Query().Get("label"),
 		Q:         r.URL.Query().Get("q"),
 	}
+	q.Workspaces = httputil.WorkspaceIDs(r)
 	out, err := a.store.List(r.Context(), q)
 	httputil.RespondOK(w, a.log, "task.List", out, err)
 }
 
 func (a *App) get(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.Get(r.Context(), r.PathValue("id"))
+	out, err := a.store.Get(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "task.Get", out, err, store.ErrTaskNotFound)
 }
 
@@ -115,7 +373,12 @@ func (a *App) create(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "project_id, title and prompt are required")
 		return
 	}
-	out, err := a.store.Create(r.Context(), in)
+	ws := httputil.WorkspaceID(r)
+	if ws == "" {
+		httputil.Error(w, http.StatusBadRequest, "no workspace context")
+		return
+	}
+	out, err := a.store.Create(r.Context(), ws, in)
 	httputil.RespondCreated(w, a.log, "task.Create", out, err)
 }
 
@@ -124,12 +387,12 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 	if httputil.Decode(w, r, &fields) {
 		return
 	}
-	out, err := a.store.Update(r.Context(), r.PathValue("id"), fields)
+	out, err := a.store.Update(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), fields)
 	httputil.RespondOK(w, a.log, "task.Update", out, err, store.ErrTaskNotFound)
 }
 
 func (a *App) delete(w http.ResponseWriter, r *http.Request) {
-	err := a.store.Delete(r.Context(), r.PathValue("id"))
+	err := a.store.Delete(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
 	httputil.RespondDelete(w, a.log, "task.Delete", err, store.ErrTaskNotFound)
 }
 
@@ -150,7 +413,7 @@ func (a *App) patchStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	status := contracts.TaskStatus(body.Status)
 
-	prev, err := a.store.Get(r.Context(), id)
+	prev, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
 	if err != nil {
 		httputil.RespondOK(w, a.log, "task.PatchStatus.get", nil, err, store.ErrTaskNotFound)
 		return
@@ -161,30 +424,45 @@ func (a *App) patchStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Saga: emit commands + the status-changed fact on real transitions.
+	// Saga: emit commands + the status-changed fact only on real transitions
+	// (task 6.7 — an idempotent PATCH must not re-emit).
 	if prev.Status != status {
 		a.publish(r.Context(), contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
 			TaskID: out.ID, From: prev.Status, To: status, RoundNo: out.RoundNo,
 		}, out.ID)
-	}
-	switch status {
-	case contracts.TaskStatus("doing"):
-		a.publish(r.Context(), contracts.TopicTaskRunRequested, contracts.RunRequestedData{
-			TaskID:        out.ID,
-			AgentID:       derefID(out.AgentID),
-			ProjectID:     out.ProjectID,
-			RoundNo:       out.RoundNo,
-			ModelOverride: derefStr(out.ModelOverride),
-		}, out.ID)
-	case contracts.TaskStatus("stopped"), contracts.TaskStatus("cancelled"):
-		a.publish(r.Context(), contracts.TopicTaskStopRequested, contracts.StopRequestedData{TaskID: out.ID}, out.ID)
+		switch status {
+		case contracts.TaskDoing:
+			// Skip the run request when the task has no assigned agent
+			// (task 6.8): surface the un-runnable task as blocked instead.
+			if out.AgentID == nil || *out.AgentID == "" {
+				if _, err := a.store.SetStatus(r.Context(), id, contracts.TaskBlocked); err != nil {
+					httputil.ServerError(w, a.log, "task.PatchStatus.blocked", err)
+					return
+				}
+				a.publish(r.Context(), contracts.TopicTaskStatusChanged, contracts.TaskStatusChangedData{
+					TaskID: id, From: status, To: contracts.TaskBlocked, RoundNo: out.RoundNo,
+				}, id)
+				httputil.WriteJSON(w, http.StatusOK, out)
+				return
+			}
+			a.publish(r.Context(), contracts.TopicTaskRunRequested, contracts.RunRequestedData{
+				TaskID:        out.ID,
+				AgentID:       *out.AgentID,
+				ProjectID:     out.ProjectID,
+				RoundNo:       out.RoundNo,
+				Prompt:        out.Prompt,
+				ModelOverride: derefStr(out.ModelOverride),
+			}, out.ID)
+		case contracts.TaskStopped, contracts.TaskCancelled:
+			a.publish(r.Context(), contracts.TopicTaskStopRequested, contracts.StopRequestedData{TaskID: out.ID}, out.ID)
+		}
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, out)
 }
 
 func (a *App) listFeedback(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.ListFeedback(r.Context(), r.PathValue("id"))
+	out, err := a.store.ListFeedback(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "feedback.List", out, err)
 }
 
@@ -199,15 +477,8 @@ func (a *App) addFeedback(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "body is required")
 		return
 	}
-	out, err := a.store.AddFeedback(r.Context(), r.PathValue("id"), body.Body)
+	out, err := a.store.AddFeedback(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), body.Body)
 	httputil.RespondCreated(w, a.log, "feedback.Add", out, err)
-}
-
-func derefID(p *contracts.ID) contracts.ID {
-	if p != nil {
-		return *p
-	}
-	return ""
 }
 
 func derefStr(p *string) string {

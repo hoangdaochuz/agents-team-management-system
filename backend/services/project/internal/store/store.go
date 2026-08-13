@@ -42,17 +42,36 @@ func New(ctx context.Context, dsn string, log *slog.Logger) (*ProjectStore, erro
 // Close releases the pool.
 func (s *ProjectStore) Close() { s.pool.Close() }
 
-const projectCols = `id, name, repo_source, repo_type, cloned_path, default_branch, created_at`
+const projectCols = `id, workspace_id, name, repo_source, repo_type, cloned_path, default_branch, created_at`
 
 func scanProject(row pgx.Row) (contracts.Project, error) {
 	var p contracts.Project
-	err := row.Scan(&p.ID, &p.Name, &p.RepoSource, &p.RepoType, &p.ClonedPath, &p.DefaultBranch, &p.CreatedAt)
+	err := row.Scan(&p.ID, &p.WorkspaceID, &p.Name, &p.RepoSource, &p.RepoType, &p.ClonedPath, &p.DefaultBranch, &p.CreatedAt)
 	return p, err
 }
 
-// List returns all projects, newest first.
-func (s *ProjectStore) List(ctx context.Context) ([]contracts.Project, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+projectCols+` FROM projects ORDER BY created_at DESC`)
+// whereScoped builds `AND workspace_id = ANY($n)` style scoping for a workspace set.
+func whereScopedAt(start int, ws []contracts.ID) (string, []any) {
+	if len(ws) == 0 {
+		return " AND false", nil
+	}
+	ids := make([]string, len(ws))
+	for i, id := range ws {
+		ids[i] = string(id)
+	}
+	return fmt.Sprintf(" AND workspace_id = ANY($%d::uuid[])", start), []any{ids}
+}
+
+// whereScoped is whereScopedAt at parameter index 1.
+func whereScoped(ws []contracts.ID) (string, []any) {
+	return whereScopedAt(1, ws)
+}
+
+// List returns all projects in the workspace set, newest first. An empty
+// workspace set returns no rows (fail closed).
+func (s *ProjectStore) List(ctx context.Context, ws []contracts.ID) ([]contracts.Project, error) {
+	where, args := whereScoped(ws)
+	rows, err := s.pool.Query(ctx, `SELECT `+projectCols+` FROM projects WHERE 1=1`+where+` ORDER BY created_at DESC`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("project list: %w", err)
 	}
@@ -68,9 +87,10 @@ func (s *ProjectStore) List(ctx context.Context) ([]contracts.Project, error) {
 	return out, rows.Err()
 }
 
-// Get returns one project by id.
-func (s *ProjectStore) Get(ctx context.Context, id contracts.ID) (contracts.Project, error) {
-	row := s.pool.QueryRow(ctx, `SELECT `+projectCols+` FROM projects WHERE id = $1`, id)
+// Get returns one project by id, scoped to the workspace set.
+func (s *ProjectStore) Get(ctx context.Context, id contracts.ID, ws []contracts.ID) (contracts.Project, error) {
+	where, args := whereScopedAt(2, ws) // $1=id, $2=ws ids
+	row := s.pool.QueryRow(ctx, `SELECT `+projectCols+` FROM projects WHERE id = $1`+where, append([]any{id}, args...)...)
 	p, err := scanProject(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return contracts.Project{}, ErrNotFound
@@ -86,16 +106,16 @@ type CreateInput struct {
 	DefaultBranch string                `json:"default_branch,omitempty"`
 }
 
-// Create inserts a project and returns it.
-func (s *ProjectStore) Create(ctx context.Context, in CreateInput) (contracts.Project, error) {
+// Create inserts a project in the given workspace and returns it.
+func (s *ProjectStore) Create(ctx context.Context, workspaceID contracts.ID, in CreateInput) (contracts.Project, error) {
 	if in.DefaultBranch == "" {
 		in.DefaultBranch = "main"
 	}
 	row := s.pool.QueryRow(ctx, `
-		INSERT INTO projects (name, repo_source, repo_type, default_branch)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO projects (workspace_id, name, repo_source, repo_type, default_branch)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING `+projectCols,
-		in.Name, in.RepoSource, in.RepoType, in.DefaultBranch)
+		workspaceID, in.Name, in.RepoSource, in.RepoType, in.DefaultBranch)
 	return scanProject(row)
 }
 
@@ -108,11 +128,16 @@ type UpdateInput struct {
 	ClonedPath     *string             `json:"cloned_path,omitempty"`
 }
 
-// Update partially updates a project.
-func (s *ProjectStore) Update(ctx context.Context, id contracts.ID, in UpdateInput) (contracts.Project, error) {
+// Update partially updates a project, scoped to the workspace set.
+func (s *ProjectStore) Update(ctx context.Context, id contracts.ID, ws []contracts.ID, in UpdateInput) (contracts.Project, error) {
+	where, scopeArgs := whereScoped(ws)
+	if len(scopeArgs) == 0 {
+		return contracts.Project{}, ErrNotFound
+	}
+	args := append(scopeArgs, id) // [$1..$n = workspace ids, then id]
+	idIdx := len(args)
 	sets := []string{}
-	args := []any{id}
-	idx := 2
+	idx := idIdx + 1
 	if in.Name != nil {
 		sets = append(sets, fmt.Sprintf("name = $%d", idx)); args = append(args, *in.Name); idx++
 	}
@@ -130,9 +155,10 @@ func (s *ProjectStore) Update(ctx context.Context, id contracts.ID, in UpdateInp
 	}
 	if len(sets) == 0 {
 		// Nothing to update; return current.
-		return s.Get(ctx, id)
+		return s.Get(ctx, id, ws)
 	}
-	q := `UPDATE projects SET ` + strings.Join(sets, ", ") + ` WHERE id = $1 RETURNING ` + projectCols
+	// id binds to $idIdx (the last placeholder) since whereScoped($1..) precedes it.
+	q := `UPDATE projects SET ` + strings.Join(sets, ", ") + ` WHERE id = $` + fmt.Sprint(idIdx) + where + ` RETURNING ` + projectCols
 	row := s.pool.QueryRow(ctx, q, args...)
 	p, err := scanProject(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -141,9 +167,14 @@ func (s *ProjectStore) Update(ctx context.Context, id contracts.ID, in UpdateInp
 	return p, err
 }
 
-// Delete removes a project. Returns ErrNotFound if absent.
-func (s *ProjectStore) Delete(ctx context.Context, id contracts.ID) error {
-	tag, err := s.pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`, id)
+// Delete removes a project, scoped to the workspace set. Returns ErrNotFound
+// if absent or outside the workspace context.
+func (s *ProjectStore) Delete(ctx context.Context, id contracts.ID, ws []contracts.ID) error {
+	where, args := whereScopedAt(2, ws) // $1=id, $2=ws ids
+	if len(args) == 0 {
+		return ErrNotFound
+	}
+	tag, err := s.pool.Exec(ctx, `DELETE FROM projects WHERE id = $1`+where, append([]any{id}, args...)...)
 	if err != nil {
 		return err
 	}

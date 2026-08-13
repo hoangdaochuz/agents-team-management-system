@@ -1,5 +1,10 @@
 # Implementation Tasks — AI Agent Kanban System (MVP)
 
+> **STATUS: SUPERSEDED.** The backend is implemented as an event-driven microservices system
+> driven by the OpenSpec change `openspec/changes/event-driven-microservices-backend/tasks.md`
+> (phases 1–14, authoritative). This file is the original single-binary task plan; it is kept
+> for history. `AGENTS.md` documents the verified current state.
+
 Ordered by dependency. Each task has a **goal**, **acceptance criteria**, and a **disjoint file
 scope** so the work can later be parallelized (e.g. via `parallel-team-executor`). Phases are
 sequential; tasks within a phase are mostly parallelizable where scopes don't overlap.

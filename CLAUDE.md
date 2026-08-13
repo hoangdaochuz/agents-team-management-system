@@ -6,13 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An **AI Agent Kanban System**: a kanban board where each ticket is a task an autonomous AI agent
 executes inside a registered repo, plus a management layer for agents, skills, and MCP servers.
-Single-operator MVP, no auth. See `docs/spec.md` (requirements) and `docs/design.md` (architecture,
-data model, ADRs) for the full picture.
+See `docs/spec.md` (requirements), `docs/design.md` (architecture, data model, ADRs), and
+`AGENTS.md` (authoritative current state).
 
-**Current state:** the **frontend SPA is fully built** against the *declared* API contract, but the
-**backend is Phase 0** — it implements only `GET /healthz`. Every other endpoint 404s. This is
-intentional: the frontend declares the contract now and the Go backend fills it in phase by phase
-(see `docs/tasks.md`). UI must always render its full layout in the error/empty state, never crash.
+**Current state:** the **frontend SPA is fully built** against the declared API contract
+(`frontend/src/api/*.ts`), and the **backend is an event-driven microservices implementation**
+(see the OpenSpec change `event-driven-microservices-backend`, `AGENTS.md`): 11 Go services,
+Kafka event bus, Gateway BFF, multi-tenant Auth/Orgs/Resources/Admin plane, plus the Docker
+sandbox driver, MCP client bridging, and the sandbox secret-leak test — all 70 change tasks
+checked. UI must always render its full layout in
+the error/empty state, never crash.
 
 ## Repository layout
 
@@ -77,11 +80,12 @@ step`. Capped by steps (~50), tokens, and 30-min wall-clock. A separate **review
 an `APPROVE`/`REQUEST_CHANGES` verdict; on changes the task returns to `Doing` (≤5 rounds) before a
 human-initiated PR. PRs are **never auto-merged** (ADR-05).
 
-**Realtime (SSE).** Each run writes steps to Postgres *and* an in-process pub/sub channel keyed by
-`task_id`. `GET /api/tasks/:id/stream` replays persisted steps then tails the channel. The SSE
-**event is named `step`** and carries the full `Step` shape `{id, run_id, seq, kind, payload,
-created_at}` — `kind` is `message|tool_call|tool_result|reasoning`. (The `message`/`tool_call`/etc.
-in the design doc are `kind` values, not separate SSE event names.)
+**Realtime (SSE).** The Runner persists steps to Postgres *and* publishes them to Kafka
+(`step.*` topics, partitioned by `task_id`). `GET /api/tasks/:id/stream` (Gateway) replays
+persisted steps from the Runner's internal endpoint, then tails the Kafka topic, deduping by
+`step.id`. The SSE **event is named `step`** and carries the full `Step` shape `{id, run_id,
+seq, kind, payload, created_at}` — `kind` is `message|tool_call|tool_result|reasoning`. (The
+`message`/`tool_call`/etc. in the design doc are `kind` values, not separate SSE event names.)
 
 ## Frontend conventions
 

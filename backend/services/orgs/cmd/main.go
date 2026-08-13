@@ -1,6 +1,6 @@
-// Package main is the Orgs/Workspaces service entrypoint: organizations,
-// workspaces, memberships, invites, and the workspace-scoping contract.
-// Implemented in phase 11.
+// Package main is the Orgs/Workspaces service entrypoint: serves workspace
+// CRUD, members, invites, and the orgs half of the sysadmin surface, and
+// emits workspace.created / invite.created / signup approval events.
 package main
 
 import (
