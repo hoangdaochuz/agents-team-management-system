@@ -9,15 +9,15 @@ func TestResolveRouting(t *testing.T) {
 	tbl := NewRouteTable()
 
 	cases := []struct {
-		name    string
-		segs    []string
-		method  string
-		kind    RouteKind
+		name     string
+		segs     []string
+		method   string
+		kind     RouteKind
 		upstream Upstream
-		wsID    string
-		taskID  string
-		require bool
-		err     error
+		wsID     string
+		taskID   string
+		require  bool
+		err      error
 	}{
 		{"empty path", []string{""}, "GET", 0, "", "", "", false, ErrNotFound},
 		{"no segments", nil, "GET", 0, "", "", "", false, ErrNotFound},
