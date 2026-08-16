@@ -11,7 +11,7 @@ not done until its gate passes.
 - [x] 1.3 Delete dead code: `internal/httpapi.Server` scaffold, unused `db.Config` struct.
 - [x] 1.4 Collapse the two near-identical migrators (`MigrateDir`/`MigrateFS`) into one; keep embedded-FS behavior.
 - [x] 1.5 Decompose `internal/contracts` into per-domain subpackages (`identity`, `workspaces`, `tasks`, `agentexec`, `events`, …); add temporary re-export aliases at the old `contracts` path so unconverted services still compile.
-- [ ] 1.6 Add the import-direction lint: a `go test`-based check asserting no `domain` package imports `application`/`infrastructure`/`interfaces`/platform-infra, plus a `golangci-lint` `depguard` config.
+- [x] 1.6 Add the import-direction lint: a `go test`-based check asserting no `domain` package imports `application`/`infrastructure`/`interfaces`/platform-infra, plus a `golangci-lint` `depguard` config.
 - [ ] 1.7 Add a REST + Kafka contract-conformance check (golden snapshot of endpoint paths/methods/JSON shapes and topic/payload shapes) as a CI test; baseline it against the current system.
 - [ ] 1.8 Gate: `make build test vet lint` green; contract-conformance check unchanged; mixed layout interoperates.
 
