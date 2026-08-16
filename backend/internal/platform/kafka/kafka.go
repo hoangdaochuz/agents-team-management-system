@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -192,13 +193,15 @@ func (g *ConsumerGroup) Close() error {
 // this a persistently failing message stalls its task partition forever.
 const maxRedeliveries = 5
 
-// dispatcher implements sarama.ConsumerGroupHandler.
+// dispatcher implements sarama.ConsumerGroupHandler. ConsumeClaim runs one
+// goroutine per claimed partition, so failures must be mutex-guarded.
 type dispatcher struct {
 	handler Handler
 	dlq     sarama.SyncProducer // nil = log-and-mark only
 	log     *slog.Logger
 	// failures counts handler errors per event id across redeliveries so a
 	// poison message is routed to the DLQ (then ACKed) instead of retried forever.
+	mu       sync.Mutex
 	failures map[string]int
 }
 
@@ -222,25 +225,33 @@ func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama
 		}
 		if err := d.handler(sess.Context(), env); err != nil {
 			key := eventKey(env)
+			d.mu.Lock()
 			d.failures[key]++
-			if d.failures[key] >= maxRedeliveries {
+			attempts := d.failures[key]
+			poison := attempts >= maxRedeliveries
+			if poison {
+				delete(d.failures, key)
+			}
+			d.mu.Unlock()
+			if poison {
 				// Poison message after max retries: route to the DLQ, then ACK.
 				// The partition keeps progressing and the message is recoverable
 				// for offline inspection/replay rather than silently dropped.
 				d.log.Error("kafka: poison message after max retries; routing to DLQ",
 					"topic", msg.Topic, "dlq_topic", DLQTopic(msg.Topic),
 					"event_id", env.EventID, "task_id", env.TaskID,
-					"attempts", d.failures[key], "err", err)
+					"attempts", attempts, "err", err)
 				d.routeToDLQ(sess.Context(), msg, env, err.Error())
-				delete(d.failures, key)
 				sess.MarkMessage(msg, "")
 				continue
 			}
-			d.log.Error("kafka: handler error (will NOT advance; at-least-once)", "topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID, "attempts", d.failures[key], "err", err)
+			d.log.Error("kafka: handler error (will NOT advance; at-least-once)", "topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID, "attempts", attempts, "err", err)
 			// Do not mark the message: it will be redelivered.
 			return err
 		}
+		d.mu.Lock()
 		delete(d.failures, eventKey(env))
+		d.mu.Unlock()
 		sess.MarkMessage(msg, "")
 	}
 	return nil
