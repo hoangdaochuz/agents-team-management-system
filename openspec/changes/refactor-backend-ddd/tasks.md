@@ -31,15 +31,15 @@ not done until its gate passes.
 
 ## 3. Phase 2a — Complex validation: `runner` service
 
-- [ ] 3.1 Create the `services/runner/internal/{domain,application,infrastructure,interfaces}` skeleton; preserve existing `driver`, `sandbox`, `mcp` leaf packages and their ports untouched.
-- [ ] 3.2 Define domain ports: `RunRepository`/`StepRepository`/`FindingRepository`/`ArtifactRepository`; move `store.Store` SQL into `infrastructure/store` adapters.
-- [ ] 3.3 Extract the `httpapi.App` orchestration (`runImplementer`, `runReviewer`, `executeAndFinish`, `openPr`, `cancelTask`) into `application` handlers depending only on domain ports.
-- [ ] 3.4 Introduce ACL port interfaces (`SettingsKeyClient`, `ResourcesRulesClient`, `AgentMcpClient`) in `domain`/`application`; implement HTTP adapters in `infrastructure`, replacing inline `http.DefaultClient` calls. Also introduce an `EventPublisher` port (DIP) wrapping the sarama producer, so the orchestration handlers publish through the abstraction.
-- [ ] 3.5 Add `interfaces/http` (query endpoints + SSE replay) and `interfaces/messaging` (command consumers) delegating to application handlers; wire the lifecycle context for consumer drain.
-- [ ] 3.6 Wire the explicit composition root: driver (`Simulated`/`LLM`), sandbox manager, MCP bridge, repositories, publisher, ACL clients → application handlers.
-- [ ] 3.7 Add mock-based `application` unit tests for run orchestration and PR-open flow (no Docker/Kafka required).
-- [ ] 3.8 Remove temporary `contracts` re-export usage from `runner`; import per-domain subpackages directly.
-- [ ] 3.9 Gate: parity (incl. `sandbox/secret_leak_test.go` and the opt-in container E2E suite `make e2e`), import-lint green, contract-conformance unchanged.
+- [x] 3.1 Create the `services/runner/internal/{domain,application,infrastructure,interfaces}` skeleton; preserve existing `driver`, `sandbox`, `mcp` leaf packages and their ports untouched.
+- [x] 3.2 Define domain ports: `RunRepository`/`StepRepository`/`FindingRepository`/`ArtifactRepository`; move `store.Store` SQL into `infrastructure/store` adapters.
+- [x] 3.3 Extract the `httpapi.App` orchestration (`runImplementer`, `runReviewer`, `executeAndFinish`, `openPr`, `cancelTask`) into `application` handlers depending only on domain ports.
+- [x] 3.4 Introduce ACL port interfaces (`SettingsKeyClient`, `ResourcesRulesClient`, `AgentMcpClient`) in `domain`/`application`; implement HTTP adapters in `infrastructure`, replacing inline `http.DefaultClient` calls. Also introduce an `EventPublisher` port (DIP) wrapping the sarama producer, so the orchestration handlers publish through the abstraction.
+- [x] 3.5 Add `interfaces/http` (query endpoints + SSE replay) and `interfaces/messaging` (command consumers) delegating to application handlers; wire the lifecycle context for consumer drain.
+- [x] 3.6 Wire the explicit composition root: driver (`Simulated`/`LLM`), sandbox manager, MCP bridge, repositories, publisher, ACL clients → application handlers.
+- [x] 3.7 Add mock-based `application` unit tests for run orchestration and PR-open flow (no Docker/Kafka required).
+- [x] 3.8 Remove temporary `contracts` re-export usage from `runner`; import per-domain subpackages directly.
+- [x] 3.9 Gate: parity (incl. `sandbox/secret_leak_test.go` and the opt-in container E2E suite `make e2e`), import-lint green, contract-conformance unchanged.
 
 ## 4. Phase 2b — Roll-out waves (each service independently gated)
 
