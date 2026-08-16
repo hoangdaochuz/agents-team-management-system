@@ -11,6 +11,7 @@ import (
 
 	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/auth/internal/application"
+	"github.com/aaks/server/services/auth/internal/infrastructure/bus"
 	"github.com/aaks/server/services/auth/internal/infrastructure/repository"
 	interfacehttp "github.com/aaks/server/services/auth/internal/interfaces/http"
 	"github.com/aaks/server/services/auth/internal/interfaces/messaging"
@@ -39,7 +40,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		SignupRequests: st.SignupRequests,
 		Invites:        st.Invites,
 	}
-	pub := repository.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
+	pub := bus.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
 	app := application.New(repo, pub, log)
 
 	if email, pass := os.Getenv("AUTH_SEED_SUPERADMIN_EMAIL"), os.Getenv("AUTH_SEED_SUPERADMIN_PASSWORD"); email != "" && pass != "" {

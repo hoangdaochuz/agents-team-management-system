@@ -12,15 +12,46 @@ import (
 	"github.com/aaks/server/services/auth/internal/application"
 )
 
+// handler decodes and forwards one event envelope to the application.
+type handler func(ctx context.Context, msg events.EventEnvelope) error
+
 // Consumer subscribes to signup.approved/declined (approval transitions) and
 // invite.created (join-mode invite-code projection).
 type Consumer struct {
 	app *application.App
 	log *slog.Logger
+	// handlers registers one entry per subscribed event type; extending the
+	// subscription means one map entry (plus its topic in Start), never
+	// another branch in consume.
+	handlers map[string]handler
 }
 
 // New builds the messaging adapter.
-func New(app *application.App, log *slog.Logger) *Consumer { return &Consumer{app: app, log: log} }
+func New(app *application.App, log *slog.Logger) *Consumer {
+	return &Consumer{app: app, log: log, handlers: map[string]handler{
+		events.TopicSignupApproved: func(ctx context.Context, msg events.EventEnvelope) error {
+			var d events.SignupApprovedData
+			if err := msg.DecodeData(&d); err != nil {
+				return err
+			}
+			return app.HandleSignupApproved(ctx, d)
+		},
+		events.TopicSignupDeclined: func(ctx context.Context, msg events.EventEnvelope) error {
+			var d events.SignupDeclinedData
+			if err := msg.DecodeData(&d); err != nil {
+				return err
+			}
+			return app.HandleSignupDeclined(ctx, d)
+		},
+		events.TopicInviteCreated: func(ctx context.Context, msg events.EventEnvelope) error {
+			var d events.InviteCreatedData
+			if err := msg.DecodeData(&d); err != nil {
+				return err
+			}
+			return app.HandleInviteCreated(ctx, d)
+		},
+	}}
+}
 
 // Start runs the consumer group on the lifecycle context until it is cancelled
 // (graceful drain: in-flight messages finish before the group exits).
@@ -42,25 +73,10 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 }
 
 func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
-	switch msg.EventType {
-	case events.TopicSignupApproved:
-		var d events.SignupApprovedData
-		if err := msg.DecodeData(&d); err != nil {
-			return err
-		}
-		return c.app.HandleSignupApproved(ctx, d)
-	case events.TopicSignupDeclined:
-		var d events.SignupDeclinedData
-		if err := msg.DecodeData(&d); err != nil {
-			return err
-		}
-		return c.app.HandleSignupDeclined(ctx, d)
-	case events.TopicInviteCreated:
-		var d events.InviteCreatedData
-		if err := msg.DecodeData(&d); err != nil {
-			return err
-		}
-		return c.app.HandleInviteCreated(ctx, d)
+	h, ok := c.handlers[msg.EventType]
+	if !ok {
+		c.log.Warn("auth consumer dropping unhandled event", "type", msg.EventType, "task_id", msg.TaskID)
+		return nil
 	}
-	return nil
+	return h(ctx, msg)
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/orgs/internal/application"
+	"github.com/aaks/server/services/orgs/internal/infrastructure/bus"
 	"github.com/aaks/server/services/orgs/internal/infrastructure/repository"
 	interfacehttp "github.com/aaks/server/services/orgs/internal/interfaces/http"
 	"github.com/aaks/server/services/orgs/internal/interfaces/messaging"
@@ -42,7 +43,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		JoinRequests:  st.JoinRequests,
 		OrgRequests:   st.OrgRequests,
 	}
-	pub := repository.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
+	pub := bus.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
 	app := application.New(repo, repository.NewUnitOfWork(st), pub, log)
 
 	interfacehttp.New(app, log).Register(mux)

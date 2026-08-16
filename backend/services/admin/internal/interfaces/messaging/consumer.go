@@ -18,10 +18,27 @@ import (
 type Consumer struct {
 	app *application.App
 	log *slog.Logger
+	// handlers registers one entry per subscribed event type; extending the
+	// subscription means one map entry (plus its topic in Start), never
+	// another branch in consume.
+	handlers map[string]handler
 }
 
+// handler decodes and forwards one event envelope to the application.
+type handler func(ctx context.Context, msg events.EventEnvelope) error
+
 // New builds the messaging adapter.
-func New(app *application.App, log *slog.Logger) *Consumer { return &Consumer{app: app, log: log} }
+func New(app *application.App, log *slog.Logger) *Consumer {
+	return &Consumer{app: app, log: log, handlers: map[string]handler{
+		events.TopicAuditRecorded: func(ctx context.Context, msg events.EventEnvelope) error {
+			var d events.AuditRecordedData
+			if err := msg.DecodeData(&d); err != nil {
+				return err
+			}
+			return app.RecordAudit(ctx, d)
+		},
+	}}
+}
 
 // Start runs the consumer group on the lifecycle context until it is cancelled
 // (graceful drain: in-flight messages finish before the group exits).
@@ -43,12 +60,10 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 }
 
 func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
-	if msg.EventType != events.TopicAuditRecorded {
+	h, ok := c.handlers[msg.EventType]
+	if !ok {
+		c.log.Warn("admin consumer dropping unhandled event", "type", msg.EventType, "task_id", msg.TaskID)
 		return nil
 	}
-	var d events.AuditRecordedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return c.app.RecordAudit(ctx, d)
+	return h(ctx, msg)
 }

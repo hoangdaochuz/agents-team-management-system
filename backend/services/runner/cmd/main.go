@@ -16,6 +16,7 @@ import (
 	"github.com/aaks/server/services/runner/internal/application"
 	"github.com/aaks/server/services/runner/internal/driver"
 	"github.com/aaks/server/services/runner/internal/infrastructure/acl"
+	"github.com/aaks/server/services/runner/internal/infrastructure/bus"
 	"github.com/aaks/server/services/runner/internal/infrastructure/repository"
 	"github.com/aaks/server/services/runner/internal/infrastructure/tools"
 	interfacehttp "github.com/aaks/server/services/runner/internal/interfaces/http"
@@ -58,7 +59,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		return servers
 	})
 
-	pub := repository.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
+	pub := bus.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
 	app := application.New(
 		st.Runs, st.Steps, st.Findings, st.Artifacts,
 		driver.New(os.Getenv("RUNNER_DRIVER"), log),

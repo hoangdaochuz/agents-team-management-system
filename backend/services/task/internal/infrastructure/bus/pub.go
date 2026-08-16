@@ -1,4 +1,4 @@
-package repository
+package bus
 
 import (
 	"context"
@@ -21,18 +21,22 @@ type Publisher struct {
 
 // NewPublisher builds the adapter from a KAFKA_BROKERS msg list. A nil/empty
 // broker list yields a no-op publisher (matches the pre-refactor behavior where
-// catalog emitted no definition events when Kafka was unavailable).
+// the task saga emitted no events when Kafka was unavailable).
 func NewPublisher(brokers string, log *slog.Logger) *Publisher {
 	if brokers == "" {
 		return &Publisher{log: log}
 	}
 	p, err := kafka.NewProducer(kafka.Brokers(strings.Split(brokers, ",")), log)
 	if err != nil {
-		log.Warn("kafka producer unavailable; catalog emits no definition events", "error", err)
+		log.Warn("kafka producer unavailable; task saga emits no events", "error", err)
 		return &Publisher{log: log}
 	}
 	return &Publisher{prod: p, log: log}
 }
+
+// Enabled reports whether a real producer is behind the adapter (for startup
+// logging of saga availability).
+func (p *Publisher) Enabled() bool { return p.prod != nil }
 
 // Publish emits one event; non-fatal when the producer is unavailable.
 func (p *Publisher) Publish(ctx context.Context, topic string, data any, key identity.ID) {
@@ -41,7 +45,7 @@ func (p *Publisher) Publish(ctx context.Context, topic string, data any, key ide
 	}
 	msg := events.EventEnvelope{TaskID: key, Data: data}
 	if err := kafka.Publish(ctx, p.prod, topic, msg, p.log); err != nil {
-		p.log.Error("publish definition event failed", "topic", topic, "error", err)
+		p.log.Error("publish event failed", "topic", topic, "task_id", key, "error", err)
 	}
 }
 

@@ -1,4 +1,4 @@
-package repository
+package bus
 
 import (
 	"context"
@@ -21,14 +21,14 @@ type Publisher struct {
 
 // NewPublisher builds the adapter from a KAFKA_BROKERS msg list. A nil/empty
 // broker list yields a no-op publisher (matches the pre-refactor behavior where
-// auth emitted no signup events when Kafka was unavailable).
+// orgs emitted no events when Kafka was unavailable).
 func NewPublisher(brokers string, log *slog.Logger) *Publisher {
 	if brokers == "" {
 		return &Publisher{log: log}
 	}
 	p, err := kafka.NewProducer(kafka.Brokers(strings.Split(brokers, ",")), log)
 	if err != nil {
-		log.Warn("kafka producer unavailable; auth emits no signup events", "error", err)
+		log.Warn("kafka producer unavailable; orgs emits no workspace/invite/signup events", "error", err)
 		return &Publisher{log: log}
 	}
 	return &Publisher{prod: p, log: log}

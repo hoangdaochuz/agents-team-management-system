@@ -65,9 +65,10 @@ CI (`.github/workflows/ci.yml`) runs the Go job in `working-directory: backend` 
 **All 11 services follow a DDD four-layer layout** (`backend/services/<name>/internal/`): `domain`
 (entity/aggregate value types + per-aggregate repository port interfaces + sentinel errors — imports
 nothing infrastructural), `application` (use-case orchestration, business rules, EventPublisher /
-UnitOfWork / ACL ports — no pgx/sarama/net-http), `infrastructure` (pgx repo adapters over a shared
-`querier` that serves both plain and tx paths, sarama publisher adapter, ACL HTTP clients, crypto,
-tool provisioning — plus `infrastructure/store/migrations/`), and `interfaces` (thin `http` handlers
+UnitOfWork / ACL ports — no pgx/sarama/net-http), `infrastructure` (pgx repo adapters as
+per-aggregate subpackages over a shared `querier` that serves both plain and tx paths, `bus` sarama
+publisher adapter, ACL HTTP clients, crypto, tool provisioning — plus
+`infrastructure/repository/migrations/`), and `interfaces` (thin `http` handlers
 + `messaging` Kafka consumers). Each `cmd/main.go` is an explicit **composition root**: config →
 platform deps → repos/publisher/ACL clients → application handlers → HTTP/Kafka adapters, with the
 `svcrun` lifecycle ctx threaded into consumers for graceful drain. `internal/archlint` enforces the
