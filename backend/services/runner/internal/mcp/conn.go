@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/resources"
 )
 
 // conn is one MCP stdio server connection. Requests are serialized per server
@@ -32,7 +32,7 @@ type conn struct {
 
 // dial launches the server process, runs the initialize handshake, and
 // enumerates tools.
-func dial(ctx context.Context, s contracts.McpServer, log *slog.Logger) (*conn, error) {
+func dial(ctx context.Context, s resources.McpServer, log *slog.Logger) (*conn, error) {
 	if s.Command == "" {
 		return nil, fmt.Errorf("mcp server %q: empty command", s.Name)
 	}
@@ -46,7 +46,7 @@ func dial(ctx context.Context, s contracts.McpServer, log *slog.Logger) (*conn, 
 	}
 	stdout, err := c.StdoutPipe()
 	if err != nil {
-		stdin.Close()
+		_ = stdin.Close()
 		return nil, err
 	}
 	if err := c.Start(); err != nil {
@@ -81,8 +81,8 @@ func envSlice(m map[string]string) []string {
 func (c *conn) initialize(ctx context.Context) error {
 	params := map[string]any{
 		"protocolVersion": "2024-11-05",
-		"capabilities":   struct{}{},
-		"clientInfo":     map[string]string{"name": "aaks-runner", "version": "1"},
+		"capabilities":    struct{}{},
+		"clientInfo":      map[string]string{"name": "aaks-runner", "version": "1"},
 	}
 	if _, err := c.call(ctx, "initialize", params, 10*time.Second); err != nil {
 		return fmt.Errorf("initialize: %w", err)

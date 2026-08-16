@@ -62,6 +62,22 @@ CI (`.github/workflows/ci.yml`) runs the Go job in `working-directory: backend` 
 
 ## Architecture (the load-bearing parts)
 
+**All 11 services follow a DDD four-layer layout** (`backend/services/<name>/internal/`): `domain`
+(entity/aggregate value types + per-aggregate repository port interfaces + sentinel errors — imports
+nothing infrastructural), `application` (use-case orchestration, business rules, EventPublisher /
+UnitOfWork / ACL ports — no pgx/sarama/net-http), `infrastructure` (pgx repo adapters as
+per-aggregate subpackages over a shared `querier` that serves both plain and tx paths, `bus` sarama
+publisher adapter, ACL HTTP clients, crypto, tool provisioning — plus
+`infrastructure/repository/migrations/`), and `interfaces` (thin `http` handlers
++ `messaging` Kafka consumers). Each `cmd/main.go` is an explicit **composition root**: config →
+platform deps → repos/publisher/ACL clients → application handlers → HTTP/Kafka adapters, with the
+`svcrun` lifecycle ctx threaded into consumers for graceful drain. `internal/archlint` enforces the
+dependency direction as a failing test (domain/application must not import infra, pgx, sarama, or
+platform transport packages). Contract types are **decomposed into per-domain subpackages**
+(`internal/contracts/{identity,workspaces,events,agentexec,resources,tasks,admin}`); there is no god
+package re-export. Repos without a multi-aggregate mutation skip the UnitOfWork (D8 proportional
+layering); mocks in application tests keep ports honest.
+
 **Backend owns everything sensitive; the container is a pure sandbox.** The agent loop, all LLM
 provider calls, the MCP client, and all git operations (commit/push/`gh pr create`) run **in the Go
 backend on the host**. Per-task containers exist only to run build/test/edit commands via the Docker

@@ -95,7 +95,9 @@ func TestDockerSandboxNoSecrets(t *testing.T) {
 	}
 
 	// 3. Container logs.
-	denv, ok := env.(interface{ Logs(context.Context) (string, error) })
+	denv, ok := env.(interface {
+		Logs(context.Context) (string, error)
+	})
 	if !ok {
 		t.Fatal("docker env does not expose Logs")
 	}

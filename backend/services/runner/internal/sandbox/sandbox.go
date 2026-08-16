@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/identity"
 )
 
 // ExecResult is the outcome of a sandbox command.
@@ -96,7 +96,7 @@ func (m *Manager) Enabled() bool {
 
 // Setup prepares a per-task execution environment. Returns (nil, nil) when the
 // sandbox is disabled so callers can branch once on the result.
-func (m *Manager) Setup(ctx context.Context, taskID contracts.ID, slug string) (Env, error) {
+func (m *Manager) Setup(ctx context.Context, taskID identity.ID, slug string) (Env, error) {
 	if !m.Enabled() {
 		return nil, nil
 	}

@@ -1,0 +1,3 @@
+# Normalize line endings: SQL migrations must be stored LF so diffs stay
+# readable regardless of the platform they were authored on.
+*.sql text eol=lf

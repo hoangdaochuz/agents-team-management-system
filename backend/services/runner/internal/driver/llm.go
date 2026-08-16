@@ -18,7 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/agentexec"
+	"github.com/aaks/server/internal/contracts/identity"
 )
 
 // LLMDriver drives chat-completions providers.
@@ -28,7 +29,7 @@ type LLMDriver struct {
 }
 
 func (d *LLMDriver) Execute(ctx context.Context, rc RunContext, sink StepSink) (Result, error) {
-	res := Result{Status: contracts.RunDone}
+	res := Result{Status: agentexec.RunDone}
 	caps := rc.Caps
 	if caps.MaxSteps <= 0 {
 		caps.MaxSteps = 50
@@ -41,20 +42,20 @@ func (d *LLMDriver) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 
 	base, ok := providerBase(rc.Provider)
 	if !ok {
-		return Result{Status: contracts.RunAborted, Error: "provider base URL not configured"}, nil
+		return Result{Status: agentexec.RunAborted, Error: "provider base URL not configured"}, nil
 	}
 	if rc.APIKey == "" {
-		return Result{Status: contracts.RunAborted, Error: "no API key for provider " + string(rc.Provider)}, nil
+		return Result{Status: agentexec.RunAborted, Error: "no API key for provider " + string(rc.Provider)}, nil
 	}
 
 	role := "implementer"
-	if rc.Role == contracts.RunRoleReviewer {
+	if rc.Role == agentexec.RunRoleReviewer {
 		role = "reviewer"
 	}
 	sys := fmt.Sprintf("You are a senior software %s. Implement the task precisely, respect repo conventions, and summarize with a short final message.", role)
 
 	seq := 0
-	emit := func(kind contracts.StepKind, payload any) error {
+	emit := func(kind agentexec.StepKind, payload any) error {
 		seq++
 		if seq > caps.MaxSteps {
 			return errStepCap
@@ -63,7 +64,7 @@ func (d *LLMDriver) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 		if err != nil {
 			return err
 		}
-		st := contracts.Step{ID: newStepID(), RunID: rc.RunID, Seq: seq, Kind: kind, Payload: buf, CreatedAt: time.Now().UTC()}
+		st := agentexec.Step{ID: newStepID(), RunID: rc.RunID, Seq: seq, Kind: kind, Payload: buf, CreatedAt: time.Now().UTC()}
 		if err := sink(st); err != nil {
 			return err
 		}
@@ -78,21 +79,21 @@ func (d *LLMDriver) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 	messages := []chatMsg{{Role: "user", Content: rc.Prompt}}
 	for i := 0; i < caps.MaxSteps; i++ {
 		if err := ctx.Err(); err != nil {
-			res.Status = contracts.RunStopped
+			res.Status = agentexec.RunStopped
 			return res, nil
 		}
 		reply, toolCalls, err := d.chat(ctx, rc, base, sys, messages)
 		if err != nil {
-			res.Status = contracts.RunAborted
+			res.Status = agentexec.RunAborted
 			res.Error = err.Error()
 			return res, nil
 		}
 		if toolCalls == nil {
 			// Final assistant turn.
-			if err := emit(contracts.StepMessage, map[string]string{"text": reply}); err != nil {
+			if err := emit(agentexec.StepMessage, map[string]string{"text": reply}); err != nil {
 				return d.finishOnStepErr(ctx, res, err)
 			}
-			if rc.Role == contracts.RunRoleReviewer {
+			if rc.Role == agentexec.RunRoleReviewer {
 				res.Verdict, res.VerdictSummary = decideVerdict(reply)
 				res.Findings = parseFindings(reply)
 			}
@@ -103,18 +104,18 @@ func (d *LLMDriver) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 		// is attached, built-in tools run for real against the worktree; MCP tools
 		// bridge to attached servers. Without a sandbox, the result is stubbed.
 		for _, tc := range toolCalls {
-			if err := emit(contracts.StepToolCall, map[string]any{"tool": tc.Name, "input": tc.Args}); err != nil {
+			if err := emit(agentexec.StepToolCall, map[string]any{"tool": tc.Name, "input": tc.Args}); err != nil {
 				return d.finishOnStepErr(ctx, res, err)
 			}
 			out := dispatchTool(ctx, rc, tc)
-			if err := emit(contracts.StepToolResult, map[string]any{"tool": tc.Name, "output": out}); err != nil {
+			if err := emit(agentexec.StepToolResult, map[string]any{"tool": tc.Name, "output": out}); err != nil {
 				return d.finishOnStepErr(ctx, res, err)
 			}
 			messages = append(messages, chatMsg{Role: "assistant", Content: tc.Name})
 			messages = append(messages, chatMsg{Role: "user", Content: "tool result: " + truncate(out, 4000)})
 		}
 	}
-	res.Status = contracts.RunAborted
+	res.Status = agentexec.RunAborted
 	res.Error = "step cap exceeded"
 	return res, nil
 }
@@ -123,10 +124,10 @@ var errStepCap = fmt.Errorf("step cap exceeded")
 
 func (d *LLMDriver) finishOnStepErr(ctx context.Context, res Result, err error) (Result, error) {
 	if ctx.Err() != nil {
-		res.Status = contracts.RunStopped
+		res.Status = agentexec.RunStopped
 		return res, nil
 	}
-	res.Status = contracts.RunAborted
+	res.Status = agentexec.RunAborted
 	res.Error = err.Error()
 	return res, nil
 }
@@ -163,7 +164,7 @@ func (d *LLMDriver) chat(ctx context.Context, rc RunContext, base string, sys st
 	if err != nil {
 		return "", nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", nil, err
@@ -232,7 +233,7 @@ func (d *LLMDriver) chatAnthropic(ctx context.Context, rc RunContext, base strin
 	if err != nil {
 		return "", nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", nil, err
@@ -260,7 +261,7 @@ func (d *LLMDriver) chatAnthropic(ctx context.Context, rc RunContext, base strin
 
 // providerBase returns the chat-completions base URL for a provider,
 // overridable per provider via RUNNER_LLM_BASE_URL_<PROVIDER>.
-func providerBase(p contracts.Provider) (string, bool) {
+func providerBase(p identity.Provider) (string, bool) {
 	if v := os.Getenv("RUNNER_LLM_BASE_URL_" + strings.ToUpper(string(p))); v != "" {
 		return strings.TrimSuffix(v, "/"), true
 	}
@@ -278,17 +279,17 @@ func providerBase(p contracts.Provider) (string, bool) {
 }
 
 // decideVerdict maps a reviewer's final message to a verdict.
-func decideVerdict(text string) (contracts.VerdictDecision, string) {
+func decideVerdict(text string) (agentexec.VerdictDecision, string) {
 	low := strings.ToLower(text)
 	if strings.Contains(low, "approve") || strings.Contains(low, "lgtm") {
-		return contracts.VerdictApprove, text
+		return agentexec.VerdictApprove, text
 	}
-	return contracts.VerdictRequestChanges, text
+	return agentexec.VerdictRequestChanges, text
 }
 
 // parseFindings extracts "FILE:LINE severity message" lines from a review text.
-func parseFindings(text string) []contracts.Finding {
-	out := []contracts.Finding{}
+func parseFindings(text string) []agentexec.Finding {
+	out := []agentexec.Finding{}
 	for _, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if !strings.Contains(line, ":") {
@@ -306,8 +307,8 @@ func parseFindings(text string) []contracts.Finding {
 		case strings.Contains(low, "info"):
 			sev = "info"
 		}
-		out = append(out, contracts.Finding{
-			File: parts[0], Line: 0, Severity: contracts.Severity(sev),
+		out = append(out, agentexec.Finding{
+			File: parts[0], Line: 0, Severity: agentexec.Severity(sev),
 			Issue: strings.TrimSpace(parts[2]), Status: "open",
 		})
 	}

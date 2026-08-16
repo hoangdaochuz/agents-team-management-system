@@ -1,7 +1,8 @@
 ## AI Agent Kanban System — developer commands
-.PHONY: build test vet lint run tidy compose-up compose-down e2e runner clean web-install web-dev web-build web-typecheck
+.PHONY: build test vet lint tidy compose-up compose-down e2e runner clean web-install web-dev web-build web-typecheck
 
-## Go targets live in backend/.
+## Go targets live in backend/. The backend is 11 services under backend/services —
+## run the stack with `make compose-up`, not a single binary.
 build:
 	cd backend && go build ./...
 
@@ -13,9 +14,6 @@ vet:
 
 lint:
 	cd backend && golangci-lint run
-
-run:
-	cd backend && go run ./cmd/server
 
 tidy:
 	cd backend && go mod tidy

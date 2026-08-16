@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/resources"
 	"github.com/aaks/server/services/runner/internal/driver"
 )
 
@@ -32,7 +32,7 @@ type Bridge struct {
 
 // New launches each server, performs the handshake, and enumerates tools.
 // Servers that fail to start or handshake are skipped (non-fatal).
-func New(ctx context.Context, servers []contracts.McpServer, log *slog.Logger) (*Bridge, error) {
+func New(ctx context.Context, servers []resources.McpServer, log *slog.Logger) (*Bridge, error) {
 	b := &Bridge{log: log}
 	for _, s := range servers {
 		c, err := dial(ctx, s, log)

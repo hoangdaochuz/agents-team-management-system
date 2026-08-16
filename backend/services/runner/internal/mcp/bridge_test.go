@@ -13,9 +13,8 @@ import (
 // fakeServer is a minimal in-process MCP stdio server: it reads JSON-RPC lines
 // from r, handles initialize/tools-list/tools-call, and writes responses to w.
 type fakeServer struct {
-	r   *bufio.Reader
-	w   io.Writer
-	idc int
+	r *bufio.Reader
+	w io.Writer
 }
 
 func (s *fakeServer) serve(ctx <-chan struct{}) {

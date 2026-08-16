@@ -1,0 +1,51 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - staticcheck  # v2: staticcheck subsumes gosimple
+    - govet
+    - ineffassign
+    - unused
+    - misspell
+    - revive
+    - depguard
+  settings:
+    # Complementary fast check to internal/archlint (the go test based import
+    # lint): blocks shared-infra imports from DDD inner layers. Same-service
+    # layer rules (domain→application etc.) are enforced by archlint, which
+    # understands per-service scoping.
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+    depguard:
+      rules:
+        domain-no-infra:
+          files:
+            - "**/internal/domain/**.go"
+          deny:
+            - pkg: "github.com/jackc/pgx"
+              desc: "domain must not import the database driver; use repository ports"
+            - pkg: "github.com/IBM/sarama"
+              desc: "domain must not import the Kafka client; use an EventPublisher port"
+            - pkg: "github.com/aaks/server/internal/platform"
+              desc: "domain must not import shared platform infrastructure"
+        application-no-infra:
+          files:
+            - "**/internal/application/**.go"
+          deny:
+            - pkg: "github.com/jackc/pgx"
+              desc: "application must not import the database driver; use repository ports + UnitOfWork"
+            - pkg: "github.com/IBM/sarama"
+              desc: "application must not import the Kafka client; use an EventPublisher port"
+            - pkg: "github.com/aaks/server/internal/platform/db"
+              desc: "application must not touch the DB pool directly"
+            - pkg: "github.com/aaks/server/internal/platform/kafka"
+              desc: "application must not touch Kafka directly"
