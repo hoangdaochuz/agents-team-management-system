@@ -14,12 +14,13 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/aaks/server/internal/httputil"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
 	"github.com/aaks/server/services/project/internal/store"
 )
 
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
-	ws := httputil.WorkspaceIDs(r)
+	ws := tenancy.WorkspaceIDs(r)
 	ps, err := a.store.List(r.Context(), ws)
 	if err != nil {
 		httputil.ServerError(w, a.log, "project.List", err)
@@ -30,7 +31,7 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	p, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	p, err := a.store.Get(r.Context(), id, tenancy.WorkspaceIDs(r))
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -43,7 +44,7 @@ func (a *App) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) create(w http.ResponseWriter, r *http.Request) {
-	ws := httputil.WorkspaceID(r)
+	ws := tenancy.WorkspaceID(r)
 	if ws == "" {
 		httputil.Error(w, http.StatusBadRequest, "no workspace context")
 		return
@@ -72,7 +73,7 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
-	p, err := a.store.Update(r.Context(), id, httputil.WorkspaceIDs(r), in)
+	p, err := a.store.Update(r.Context(), id, tenancy.WorkspaceIDs(r), in)
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "project not found")
 		return
@@ -86,7 +87,7 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	err := a.store.Delete(r.Context(), id, httputil.WorkspaceIDs(r))
+	err := a.store.Delete(r.Context(), id, tenancy.WorkspaceIDs(r))
 	if errors.Is(err, store.ErrNotFound) {
 		httputil.Error(w, http.StatusNotFound, "project not found")
 		return

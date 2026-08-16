@@ -21,8 +21,9 @@ import (
 	"github.com/IBM/sarama"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
-	"github.com/aaks/server/internal/kafka"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
+	"github.com/aaks/server/internal/platform/kafka"
 	"github.com/aaks/server/services/task/internal/store"
 )
 
@@ -251,7 +252,7 @@ func (a *App) publish(ctx context.Context, topic string, data any, taskID contra
 // reRun requests a fresh implementer run (saga action; task 6.4).
 func (a *App) reRun(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	t, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	t, err := a.store.Get(r.Context(), id, tenancy.WorkspaceIDs(r))
 	if err != nil {
 		httputil.RespondOK(w, a.log, "task.ReRun.get", nil, err, store.ErrTaskNotFound)
 		return
@@ -276,14 +277,14 @@ func (a *App) reRun(w http.ResponseWriter, r *http.Request) {
 		TaskID: id, AgentID: *t.AgentID, ProjectID: t.ProjectID,
 		WorkspaceID: t.WorkspaceID, RoundNo: next, Prompt: t.Prompt, ModelOverride: derefStr(t.ModelOverride),
 	}, id)
-	out, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	out, err := a.store.Get(r.Context(), id, tenancy.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "task.ReRun", out, err)
 }
 
 // stop sets the task stopped synchronously and requests an abort (task 6.4).
 func (a *App) stop(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	prev, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	prev, err := a.store.Get(r.Context(), id, tenancy.WorkspaceIDs(r))
 	if err != nil {
 		httputil.RespondOK(w, a.log, "task.Stop.get", nil, err, store.ErrTaskNotFound)
 		return
@@ -306,7 +307,7 @@ func (a *App) stop(w http.ResponseWriter, r *http.Request) {
 // auto-created anywhere else.
 func (a *App) openPr(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	t, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	t, err := a.store.Get(r.Context(), id, tenancy.WorkspaceIDs(r))
 	if err != nil {
 		httputil.RespondOK(w, a.log, "task.OpenPr.get", nil, err, store.ErrTaskNotFound)
 		return
@@ -354,13 +355,13 @@ func (a *App) list(w http.ResponseWriter, r *http.Request) {
 		Label:     r.URL.Query().Get("label"),
 		Q:         r.URL.Query().Get("q"),
 	}
-	q.Workspaces = httputil.WorkspaceIDs(r)
+	q.Workspaces = tenancy.WorkspaceIDs(r)
 	out, err := a.store.List(r.Context(), q)
 	httputil.RespondOK(w, a.log, "task.List", out, err)
 }
 
 func (a *App) get(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.Get(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	out, err := a.store.Get(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "task.Get", out, err, store.ErrTaskNotFound)
 }
 
@@ -373,7 +374,7 @@ func (a *App) create(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "project_id, title and prompt are required")
 		return
 	}
-	ws := httputil.WorkspaceID(r)
+	ws := tenancy.WorkspaceID(r)
 	if ws == "" {
 		httputil.Error(w, http.StatusBadRequest, "no workspace context")
 		return
@@ -387,12 +388,12 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 	if httputil.Decode(w, r, &fields) {
 		return
 	}
-	out, err := a.store.Update(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), fields)
+	out, err := a.store.Update(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r), fields)
 	httputil.RespondOK(w, a.log, "task.Update", out, err, store.ErrTaskNotFound)
 }
 
 func (a *App) delete(w http.ResponseWriter, r *http.Request) {
-	err := a.store.Delete(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	err := a.store.Delete(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	httputil.RespondDelete(w, a.log, "task.Delete", err, store.ErrTaskNotFound)
 }
 
@@ -413,7 +414,7 @@ func (a *App) patchStatus(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	status := contracts.TaskStatus(body.Status)
 
-	prev, err := a.store.Get(r.Context(), id, httputil.WorkspaceIDs(r))
+	prev, err := a.store.Get(r.Context(), id, tenancy.WorkspaceIDs(r))
 	if err != nil {
 		httputil.RespondOK(w, a.log, "task.PatchStatus.get", nil, err, store.ErrTaskNotFound)
 		return
@@ -462,7 +463,7 @@ func (a *App) patchStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) listFeedback(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.ListFeedback(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	out, err := a.store.ListFeedback(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "feedback.List", out, err)
 }
 
@@ -477,7 +478,7 @@ func (a *App) addFeedback(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "body is required")
 		return
 	}
-	out, err := a.store.AddFeedback(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), body.Body)
+	out, err := a.store.AddFeedback(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r), body.Body)
 	httputil.RespondCreated(w, a.log, "feedback.Add", out, err)
 }
 

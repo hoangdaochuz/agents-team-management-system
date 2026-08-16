@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"strings"
 
-	apiutil "github.com/aaks/server/internal/httputil"
+	apiutil "github.com/aaks/server/internal/platform/http"
 )
 
 // New returns a reverse proxy to upstream that strips the leading /api from the

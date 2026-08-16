@@ -12,7 +12,8 @@ import (
 	"os"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
 	"github.com/aaks/server/services/settings/internal/store"
 )
 
@@ -170,10 +171,10 @@ func validProvider(p string) bool {
 // owner/admin of any workspace) may set/update/delete them — otherwise any
 // authenticated user could overwrite or delete the deployment's provider keys.
 func (a *App) allowWrite(w http.ResponseWriter, r *http.Request) bool {
-	if httputil.UserSuperadmin(r) {
+	if tenancy.UserSuperadmin(r) {
 		return true
 	}
-	switch httputil.UserRole(r) {
+	switch contracts.Role(tenancy.UserRole(r)) {
 	case contracts.RoleOwner, contracts.RoleAdmin:
 		return true
 	}

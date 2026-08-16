@@ -14,8 +14,9 @@ import (
 	"github.com/IBM/sarama"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
-	"github.com/aaks/server/internal/kafka"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
+	"github.com/aaks/server/internal/platform/kafka"
 	"github.com/aaks/server/services/catalog/internal/store"
 )
 
@@ -81,12 +82,12 @@ func (a *App) publish(ctx context.Context, topic string, data any, workspaceID c
 // ── Skill handlers ──────────────────────────────────────────────────────────
 
 func (a *App) listSkills(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.ListSkills(r.Context(), httputil.WorkspaceIDs(r))
+	out, err := a.store.ListSkills(r.Context(), tenancy.WorkspaceIDs(r))
 	respond(w, a.log, "skill.List", out, err)
 }
 
 func (a *App) getSkill(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.GetSkill(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	out, err := a.store.GetSkill(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	respond(w, a.log, "skill.Get", out, err, store.ErrSkillNotFound)
 }
 
@@ -99,7 +100,7 @@ func (a *App) createSkill(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "name and body_md are required")
 		return
 	}
-	ws := httputil.WorkspaceID(r)
+	ws := tenancy.WorkspaceID(r)
 	if ws == "" {
 		httputil.Error(w, http.StatusBadRequest, "no workspace context")
 		return
@@ -117,12 +118,12 @@ func (a *App) updateSkill(w http.ResponseWriter, r *http.Request) {
 	if bad := decode(w, r, &in); bad {
 		return
 	}
-	out, err := a.store.UpdateSkill(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), in)
+	out, err := a.store.UpdateSkill(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r), in)
 	respond(w, a.log, "skill.Update", out, err, store.ErrSkillNotFound)
 }
 
 func (a *App) deleteSkill(w http.ResponseWriter, r *http.Request) {
-	err := a.store.DeleteSkill(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	err := a.store.DeleteSkill(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	if err == nil {
 		a.publish(r.Context(), contracts.TopicSkillDeleted,
 			contracts.SkillDeletedData{SkillID: r.PathValue("id")}, "")
@@ -155,7 +156,7 @@ func (a *App) setSkillEnabled(w http.ResponseWriter, r *http.Request) {
 // ── MCP handlers ────────────────────────────────────────────────────────────
 
 func (a *App) listMcp(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.ListMcp(r.Context(), httputil.WorkspaceIDs(r))
+	out, err := a.store.ListMcp(r.Context(), tenancy.WorkspaceIDs(r))
 	respond(w, a.log, "mcp.List", out, err)
 }
 
@@ -184,7 +185,7 @@ func parseIDList(s string) []contracts.ID {
 }
 
 func (a *App) getMcp(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.GetMcp(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	out, err := a.store.GetMcp(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	respond(w, a.log, "mcp.Get", out, err, store.ErrMcpNotFound)
 }
 
@@ -197,7 +198,7 @@ func (a *App) createMcp(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "name and command are required")
 		return
 	}
-	ws := httputil.WorkspaceID(r)
+	ws := tenancy.WorkspaceID(r)
 	if ws == "" {
 		httputil.Error(w, http.StatusBadRequest, "no workspace context")
 		return
@@ -216,12 +217,12 @@ func (a *App) updateMcp(w http.ResponseWriter, r *http.Request) {
 	if bad := decode(w, r, &in); bad {
 		return
 	}
-	out, err := a.store.UpdateMcp(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), in)
+	out, err := a.store.UpdateMcp(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r), in)
 	respond(w, a.log, "mcp.Update", out, err, store.ErrMcpNotFound)
 }
 
 func (a *App) deleteMcp(w http.ResponseWriter, r *http.Request) {
-	err := a.store.DeleteMcp(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	err := a.store.DeleteMcp(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	if err == nil {
 		a.publish(r.Context(), contracts.TopicMcpDeleted,
 			contracts.McpDeletedData{McpServerID: r.PathValue("id")}, "")

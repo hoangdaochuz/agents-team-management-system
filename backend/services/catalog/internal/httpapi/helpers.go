@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/aaks/server/internal/httputil"
+	"github.com/aaks/server/internal/platform/http"
 )
 
 // decode reads JSON into v; on error it writes 400 and returns true (caller returns).

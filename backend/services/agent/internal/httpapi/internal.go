@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
+	"github.com/aaks/server/internal/platform/http"
 	"github.com/aaks/server/services/agent/internal/store"
 )
 

@@ -6,7 +6,7 @@ package main
 import (
 	"os"
 
-	"github.com/aaks/server/internal/svcrun"
+	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/runner/internal/httpapi"
 )
 

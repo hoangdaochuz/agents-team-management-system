@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/db"
+	"github.com/aaks/server/internal/platform/db"
 )
 
 //go:embed migrations/*.sql

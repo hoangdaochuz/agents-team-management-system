@@ -26,8 +26,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
-	"github.com/aaks/server/internal/kafka"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/kafka"
 	"github.com/aaks/server/services/auth/internal/store"
 )
 

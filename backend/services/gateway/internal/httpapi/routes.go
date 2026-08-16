@@ -36,8 +36,9 @@ import (
 	"time"
 
 	"github.com/aaks/server/internal/contracts"
-	apiutil "github.com/aaks/server/internal/httputil"
-	"github.com/aaks/server/internal/kafka"
+	apiutil "github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
+	"github.com/aaks/server/internal/platform/kafka"
 	"github.com/aaks/server/services/gateway/internal/proxy"
 )
 
@@ -195,7 +196,7 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 			if !g.requireWorkspaceMember(w, r, segs[1]) {
 				return
 			}
-			r.Header.Set("X-Workspace-ID", segs[1])
+			r.Header.Set(tenancy.HeaderWorkspaceID, segs[1])
 			g.domains["skills"].ServeHTTP(w, r)
 			return
 		case "knowledge", "plugins", "rules", "mcp":
@@ -205,7 +206,7 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 			if !g.requireWorkspaceMember(w, r, segs[1]) {
 				return
 			}
-			r.Header.Set("X-Workspace-ID", segs[1])
+			r.Header.Set(tenancy.HeaderWorkspaceID, segs[1])
 			g.domains["resources"].ServeHTTP(w, r)
 			return
 		case "audit":
@@ -215,7 +216,7 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 			if !g.requireWorkspaceMember(w, r, segs[1]) {
 				return
 			}
-			r.Header.Set("X-Workspace-ID", segs[1])
+			r.Header.Set(tenancy.HeaderWorkspaceID, segs[1])
 			g.domains["admin"].ServeHTTP(w, r)
 			return
 		default:
@@ -226,7 +227,7 @@ func (g *gateway) serve(w http.ResponseWriter, r *http.Request) {
 			if !g.requireWorkspaceMember(w, r, segs[1]) {
 				return
 			}
-			r.Header.Set("X-Workspace-ID", segs[1])
+			r.Header.Set(tenancy.HeaderWorkspaceID, segs[1])
 			g.domains["orgs"].ServeHTTP(w, r)
 			return
 		}
@@ -314,34 +315,34 @@ func (g *gateway) injectIdentity(w http.ResponseWriter, r *http.Request, require
 		}
 		return true
 	}
-	r.Header.Del("X-User-ID")
-	r.Header.Del("X-User-Name")
-	r.Header.Del("X-User-Email")
-	r.Header.Del("X-User-Superadmin")
-	r.Header.Del("X-User-Role")
-	r.Header.Del("X-Workspace-ID")
-	r.Header.Del("X-Workspace-IDs")
-	r.Header.Set("X-User-ID", id.UserID)
-	r.Header.Set("X-User-Name", id.Name)
-	r.Header.Set("X-User-Email", id.Email)
+	r.Header.Del(tenancy.HeaderUserID)
+	r.Header.Del(tenancy.HeaderUserName)
+	r.Header.Del(tenancy.HeaderUserEmail)
+	r.Header.Del(tenancy.HeaderUserSuperadmin)
+	r.Header.Del(tenancy.HeaderUserRole)
+	r.Header.Del(tenancy.HeaderWorkspaceID)
+	r.Header.Del(tenancy.HeaderWorkspaceIDs)
+	r.Header.Set(tenancy.HeaderUserID, id.UserID)
+	r.Header.Set(tenancy.HeaderUserName, id.Name)
+	r.Header.Set(tenancy.HeaderUserEmail, id.Email)
 	if id.Superadmin {
-		r.Header.Set("X-User-Superadmin", "true")
+		r.Header.Set(tenancy.HeaderUserSuperadmin, "true")
 	}
 	ids := make([]string, 0, len(id.Workspaces))
 	for _, ws := range id.Workspaces {
 		ids = append(ids, string(ws.ID))
 	}
 	if len(ids) == 1 {
-		r.Header.Set("X-Workspace-ID", ids[0])
+		r.Header.Set(tenancy.HeaderWorkspaceID, ids[0])
 	}
 	if len(ids) > 0 {
-		r.Header.Set("X-Workspace-IDs", strings.Join(ids, ","))
+		r.Header.Set(tenancy.HeaderWorkspaceIDs, strings.Join(ids, ","))
 	}
 	// X-User-Role is the strongest role the session holds across its workspace
 	// union (owner > admin > member). Trustworthy because it is derived from
 	// the Orgs memberships the Gateway resolved — never from the client.
 	if role := strongestRole(id.Workspaces); role != "" {
-		r.Header.Set("X-User-Role", string(role))
+		r.Header.Set(tenancy.HeaderUserRole, string(role))
 	}
 	return true
 }
@@ -370,10 +371,7 @@ func strongestRole(workspaces []contracts.Workspace) contracts.Role {
 // so no forged value can reach the upstream services. Only injectIdentity (via
 // resolveIdentity against Auth + Orgs) may populate them.
 func stripInboundIdentity(r *http.Request) {
-	for _, h := range []string{
-		"X-User-ID", "X-User-Name", "X-User-Email", "X-User-Superadmin",
-		"X-User-Role", "X-Workspace-ID", "X-Workspace-IDs",
-	} {
+	for _, h := range tenancy.IdentityHeaders {
 		r.Header.Del(h)
 	}
 }
@@ -421,7 +419,7 @@ func (g *gateway) resolveIdentity(ctx context.Context, token string) (identity, 
 // the caller's resolved workspace union. The identity headers must already be
 // injected (injectIdentity) so X-Workspace-IDs reflects the session.
 func (g *gateway) requireWorkspaceMember(w http.ResponseWriter, r *http.Request, wid string) bool {
-	for _, id := range apiutil.WorkspaceIDs(r) {
+	for _, id := range tenancy.WorkspaceIDs(r) {
 		if string(id) == wid {
 			return true
 		}
@@ -441,7 +439,7 @@ func (g *gateway) requireTaskWorkspace(w http.ResponseWriter, r *http.Request, t
 		apiutil.Error(w, http.StatusNotFound, "task not found")
 		return false
 	}
-	for _, id := range apiutil.WorkspaceIDs(r) {
+	for _, id := range tenancy.WorkspaceIDs(r) {
 		if string(id) == res.WorkspaceID {
 			return true
 		}

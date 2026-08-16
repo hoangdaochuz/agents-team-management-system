@@ -23,8 +23,9 @@ import (
 	"github.com/IBM/sarama"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
-	"github.com/aaks/server/internal/kafka"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
+	"github.com/aaks/server/internal/platform/kafka"
 	"github.com/aaks/server/services/orgs/internal/store"
 )
 
@@ -123,7 +124,7 @@ func (a *App) consume(ctx context.Context, env contracts.EventEnvelope) error {
 
 // userID extracts the Gateway-injected identity (X-User-ID, scoping contract).
 func userID(r *http.Request) (contracts.ID, error) {
-	id := httputil.UserID(r)
+	id := tenancy.UserID(r)
 	if id == "" {
 		return "", errors.New("missing X-User-ID")
 	}
@@ -131,7 +132,7 @@ func userID(r *http.Request) (contracts.ID, error) {
 }
 
 func isSuperadmin(r *http.Request) bool {
-	return httputil.UserSuperadmin(r)
+	return tenancy.UserSuperadmin(r)
 }
 
 // requireMember resolves the caller and verifies active membership in the
@@ -729,7 +730,7 @@ func (a *App) publish(ctx context.Context, topic string, data any, key contracts
 // audit records a workspace admin action for the Admin service (best-effort).
 func (a *App) audit(r *http.Request, workspaceID contracts.ID, action, kind, target string) {
 	a.publish(r.Context(), contracts.TopicAuditRecorded, contracts.AuditRecordedData{
-		WorkspaceID: workspaceID, ActorID: httputil.UserID(r),
+		WorkspaceID: workspaceID, ActorID: tenancy.UserID(r),
 		Action: action, ActionKind: kind, Target: target,
 	}, workspaceID)
 }

@@ -9,7 +9,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/aaks/server/internal/httputil"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
 	"github.com/aaks/server/services/agent/internal/store"
 )
 
@@ -64,12 +65,12 @@ func (a *App) agentCount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) list(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.List(r.Context(), httputil.WorkspaceIDs(r))
+	out, err := a.store.List(r.Context(), tenancy.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "agent.List", out, err)
 }
 
 func (a *App) get(w http.ResponseWriter, r *http.Request) {
-	out, err := a.store.Get(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	out, err := a.store.Get(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	httputil.RespondOK(w, a.log, "agent.Get", out, err, store.ErrAgentNotFound)
 }
 
@@ -82,7 +83,7 @@ func (a *App) create(w http.ResponseWriter, r *http.Request) {
 		httputil.Error(w, http.StatusBadRequest, "name and role are required")
 		return
 	}
-	ws := httputil.WorkspaceID(r)
+	ws := tenancy.WorkspaceID(r)
 	if ws == "" {
 		httputil.Error(w, http.StatusBadRequest, "no workspace context")
 		return
@@ -96,12 +97,12 @@ func (a *App) update(w http.ResponseWriter, r *http.Request) {
 	if httputil.Decode(w, r, &in) {
 		return
 	}
-	out, err := a.store.Update(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r), in)
+	out, err := a.store.Update(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r), in)
 	httputil.RespondOK(w, a.log, "agent.Update", out, err, store.ErrAgentNotFound)
 }
 
 func (a *App) delete(w http.ResponseWriter, r *http.Request) {
-	err := a.store.Delete(r.Context(), r.PathValue("id"), httputil.WorkspaceIDs(r))
+	err := a.store.Delete(r.Context(), r.PathValue("id"), tenancy.WorkspaceIDs(r))
 	httputil.RespondDelete(w, a.log, "agent.Delete", err, store.ErrAgentNotFound)
 }
 

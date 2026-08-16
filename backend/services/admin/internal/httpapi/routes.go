@@ -15,8 +15,9 @@ import (
 	"strings"
 
 	"github.com/aaks/server/internal/contracts"
-	"github.com/aaks/server/internal/httputil"
-	"github.com/aaks/server/internal/kafka"
+	"github.com/aaks/server/internal/platform/http"
+	"github.com/aaks/server/internal/platform/tenancy"
+	"github.com/aaks/server/internal/platform/kafka"
 	"github.com/aaks/server/services/admin/internal/store"
 )
 
@@ -180,5 +181,5 @@ func (a *App) runMaintenance(w http.ResponseWriter, r *http.Request) {
 }
 
 func isSuperadmin(r *http.Request) bool {
-	return httputil.UserSuperadmin(r)
+	return tenancy.UserSuperadmin(r)
 }
