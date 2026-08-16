@@ -27,7 +27,7 @@ type App struct {
 
 // Register wires settings routes. SETTINGS_MASTER_KEY is required; the decrypt
 // endpoint additionally requires the shared SETTINGS_INTERNAL_TOKEN.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("SETTINGS_DB_DSN")
 	if dsn == "" {
 		return errors.New("SETTINGS_DB_DSN is not set")

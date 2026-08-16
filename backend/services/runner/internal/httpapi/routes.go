@@ -55,7 +55,7 @@ type App struct {
 }
 
 // Register wires runner routes + the command consumers.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("RUNNER_DB_DSN")
 	if dsn == "" {
 		return errors.New("RUNNER_DB_DSN is not set")

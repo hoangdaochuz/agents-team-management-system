@@ -28,7 +28,7 @@ type App struct {
 }
 
 // Register wires admin routes + the audit consumer.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("ADMIN_DB_DSN")
 	if dsn == "" {
 		return errors.New("ADMIN_DB_DSN is not set")

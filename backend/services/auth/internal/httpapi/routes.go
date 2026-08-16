@@ -61,7 +61,7 @@ type loginRateEntry struct {
 }
 
 // Register wires auth routes + the signup/invite Kafka consumers.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("AUTH_DB_DSN")
 	if dsn == "" {
 		return errors.New("AUTH_DB_DSN is not set")

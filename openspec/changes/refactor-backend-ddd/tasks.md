@@ -17,17 +17,17 @@ not done until its gate passes.
 
 ## 2. Phase 1 — Pilot: `orgs` service DDD conversion
 
-- [ ] 2.1 Create the `services/orgs/internal/{domain,application,infrastructure,interfaces}` package skeleton.
-- [ ] 2.2 Define domain entities/aggregates (Workspace, Member, Org, Invite, JoinRequest) and repository **port interfaces** in `domain` (move logic, not SQL).
-- [ ] 2.3 Implement postgres repository adapters in `infrastructure/store` satisfying the domain ports; migrate inline SQL from the old `store.Store`.
-- [ ] 2.4 Extract business logic from `routes.go` into `application` handlers: membership/role enforcement, last-owner invariant, workspace create, org-request approval.
-- [ ] 2.5 Introduce the application-layer `UnitOfWork` and wrap the multi-aggregate mutations (`createWorkspace`, `approveOrgRequest`) so they commit atomically or roll back. Introduce an `EventPublisher` port (SOLID DIP) and wrap the sarama producer behind it in `infrastructure`; inject it into the application handlers that publish events (no sarama import in `application`/`domain`).
-- [ ] 2.6 Add an `interfaces/http` layer of thin handlers (decode → call application handler → encode) and `interfaces/messaging` Kafka consumers delegating to application handlers.
-- [ ] 2.7 Wire an explicit composition root in `cmd`/`interfaces` that injects repositories and producers into application handlers; pass the lifecycle context into the Kafka consumer group.
-- [ ] 2.8 Write mock-based `application` unit tests (no live Postgres) for last-owner protection, role enforcement, and the create/approve flows.
-- [ ] 2.9 Add a rollback test: inject a mid-transaction failure in a multi-aggregate mutation and assert no partial state persists.
-- [ ] 2.10 Remove the temporary `contracts` re-export usage from `orgs`; import per-domain subpackages directly.
-- [ ] 2.11 Gate: parity (all pre-existing `orgs` tests pass), new unit/rollback tests pass, import-lint green, contract-conformance unchanged.
+- [x] 2.1 Create the `services/orgs/internal/{domain,application,infrastructure,interfaces}` package skeleton.
+- [x] 2.2 Define domain entities/aggregates (Workspace, Member, Org, Invite, JoinRequest) and repository **port interfaces** in `domain` (move logic, not SQL).
+- [x] 2.3 Implement postgres repository adapters in `infrastructure/store` satisfying the domain ports; migrate inline SQL from the old `store.Store`.
+- [x] 2.4 Extract business logic from `routes.go` into `application` handlers: membership/role enforcement, last-owner invariant, workspace create, org-request approval.
+- [x] 2.5 Introduce the application-layer `UnitOfWork` and wrap the multi-aggregate mutations (`createWorkspace`, `approveOrgRequest`) so they commit atomically or roll back. Introduce an `EventPublisher` port (SOLID DIP) and wrap the sarama producer behind it in `infrastructure`; inject it into the application handlers that publish events (no sarama import in `application`/`domain`).
+- [x] 2.6 Add an `interfaces/http` layer of thin handlers (decode → call application handler → encode) and `interfaces/messaging` Kafka consumers delegating to application handlers.
+- [x] 2.7 Wire an explicit composition root in `cmd`/`interfaces` that injects repositories and producers into application handlers; pass the lifecycle context into the Kafka consumer group.
+- [x] 2.8 Write mock-based `application` unit tests (no live Postgres) for last-owner protection, role enforcement, and the create/approve flows.
+- [x] 2.9 Add a rollback test: inject a mid-transaction failure in a multi-aggregate mutation and assert no partial state persists.
+- [x] 2.10 Remove the temporary `contracts` re-export usage from `orgs`; import per-domain subpackages directly.
+- [x] 2.11 Gate: parity (all pre-existing `orgs` tests pass), new unit/rollback tests pass, import-lint green, contract-conformance unchanged.
 
 ## 3. Phase 2a — Complex validation: `runner` service
 

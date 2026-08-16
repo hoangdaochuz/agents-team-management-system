@@ -16,8 +16,10 @@ import (
 )
 
 // Registrar registers routes on mux (under /api or root). The service owns its
-// handler tree; svcrun only adds /healthz.
-type Registrar func(mux *http.ServeMux, log *slog.Logger) error
+// handler tree; svcrun only adds /healthz. ctx is the service lifecycle context
+// (cancelled on SIGINT/SIGTERM) so services can thread it into Kafka consumer
+// groups for graceful drain.
+type Registrar func(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error
 
 // Run boots a named service: JSON logging, route registration, /healthz, a
 // server with sane timeouts, and graceful shutdown on SIGINT/SIGTERM.
@@ -25,13 +27,16 @@ func Run(name, addr string, register Registrar) {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("svc", name)
 	slog.SetDefault(log)
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "svc": name})
 	})
 
-	if err := register(mux, log); err != nil {
+	if err := register(ctx, mux, log); err != nil {
 		log.Error("route registration failed", "error", err)
 		os.Exit(1)
 	}
@@ -47,9 +52,6 @@ func Run(name, addr string, register Registrar) {
 		WriteTimeout:      0, // SSE: no write timeout
 		IdleTimeout:       120 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		log.Info("http server starting", "addr", addr)

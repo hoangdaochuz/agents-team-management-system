@@ -29,7 +29,7 @@ type App struct {
 }
 
 // Register wires resources routes + consumers.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("RESOURCES_DB_DSN")
 	if dsn == "" {
 		return errors.New("RESOURCES_DB_DSN is not set")

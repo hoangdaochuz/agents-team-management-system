@@ -16,7 +16,7 @@ import (
 )
 
 // Register opens the project_db pool, runs migrations, and wires CRUD routes.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("PROJECT_DB_DSN")
 	if dsn == "" {
 		return errDSN("PROJECT_DB_DSN")

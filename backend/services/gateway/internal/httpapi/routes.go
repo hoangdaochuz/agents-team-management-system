@@ -46,7 +46,7 @@ const sessionCookie = "aaks_session"
 
 // Register wires the gateway. It reads UPSTREAM_* env vars (each an absolute
 // URL like http://project:8081) and registers a catch-all /api/ handler.
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	gw, err := newGateway(log)
 	if err != nil {
 		return err

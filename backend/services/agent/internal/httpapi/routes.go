@@ -23,7 +23,7 @@ type App struct {
 	catalogURL string
 }
 
-func Register(mux *http.ServeMux, log *slog.Logger) error {
+func Register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("AGENT_DB_DSN")
 	if dsn == "" {
 		return errors.New("AGENT_DB_DSN is not set")
