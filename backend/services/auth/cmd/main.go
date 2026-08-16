@@ -52,7 +52,11 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		"saml":   os.Getenv("SSO_SAML_REDIRECT_URL"),
 	}
 	interfacehttp.New(app, log, ssoCfg).Register(mux)
-	messaging.New(app, log).Start(ctx, os.Getenv("KAFKA_BROKERS"))
+	messaging.New(log,
+		messaging.SignupApprovedHandler{App: app},
+		messaging.SignupDeclinedHandler{App: app},
+		messaging.InviteCreatedHandler{App: app},
+	).Start(ctx, os.Getenv("KAFKA_BROKERS"))
 
 	log.Info("auth routes registered", "endpoints", 9)
 	return nil

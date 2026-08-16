@@ -74,7 +74,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	)
 
 	interfacehttp.New(app, log).Register(mux)
-	messaging.New(app, log).Start(ctx, os.Getenv("KAFKA_BROKERS"))
+	messaging.New(log, messaging.DispatchHandler{App: app}).Start(ctx, os.Getenv("KAFKA_BROKERS"))
 
 	log.Info("runner routes registered", "endpoints", 4, "driver", os.Getenv("RUNNER_DRIVER"))
 	return nil

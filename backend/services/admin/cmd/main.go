@@ -40,7 +40,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	app := application.New(repo, log)
 
 	interfacehttp.New(app, log).Register(mux)
-	messaging.New(app, log).Start(ctx, os.Getenv("KAFKA_BROKERS"))
+	messaging.New(log, messaging.AuditRecordedHandler{App: app}).Start(ctx, os.Getenv("KAFKA_BROKERS"))
 
 	log.Info("admin routes registered", "endpoints", 6)
 	return nil

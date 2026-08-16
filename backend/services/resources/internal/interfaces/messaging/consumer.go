@@ -9,49 +9,45 @@ import (
 
 	"github.com/aaks/server/internal/contracts/events"
 	"github.com/aaks/server/internal/platform/kafka"
-	"github.com/aaks/server/services/resources/internal/application"
 )
 
-// handler decodes and forwards one event envelope to the application.
-type handler func(ctx context.Context, msg events.EventEnvelope) error
-
-// Consumer subscribes to catalog MCP definition events (projected into
-// connection rows) and to workspace.created (default rule seed). Idempotent:
-// the connection upsert and the unique rule index make redelivery a no-op.
-type Consumer struct {
-	app *application.App
-	log *slog.Logger
-	// handlers registers one entry per subscribed event type; extending the
-	// subscription means one map entry (plus its topic in Start), never
-	// another branch in consume.
-	handlers map[string]handler
+// Handler reacts to the event types it declares via Topics. Each topic's
+// reactions live in one dedicated implementation (its own file), so reacting
+// to a new topic is a new Handler — never a change to the consumer plumbing.
+type Handler interface {
+	// Topics lists the event types this handler reacts to.
+	Topics() []string
+	// Handle decodes msg and forwards it to the application.
+	Handle(ctx context.Context, msg events.EventEnvelope) error
 }
 
-// New builds the messaging adapter.
-func New(app *application.App, log *slog.Logger) *Consumer {
-	return &Consumer{app: app, log: log, handlers: map[string]handler{
-		events.TopicMcpCreated: func(ctx context.Context, msg events.EventEnvelope) error {
-			var d events.McpCreatedData
-			if err := msg.DecodeData(&d); err != nil {
-				return err
+// Consumer runs one consumer group whose subscription is the union of the
+// registered handlers' topics and dispatches each envelope to the handler
+// registered for its event type (unknown types are logged and dropped).
+type Consumer struct {
+	log      *slog.Logger
+	topics   []string
+	handlers map[string]Handler
+}
+
+// New builds the messaging adapter from the given handlers. Subscribing to
+// a new topic is passing one more handler here; the plumbing never changes.
+func New(log *slog.Logger, handlers ...Handler) *Consumer {
+	reg := make(map[string]Handler, len(handlers))
+	seen := make(map[string]bool, len(handlers))
+	topics := make([]string, 0, len(handlers))
+	for _, h := range handlers {
+		for _, t := range h.Topics() {
+			if seen[t] {
+				log.Warn("dropping duplicate handler for topic", "topic", t)
+				continue
 			}
-			return app.ProjectMcpCreated(ctx, d)
-		},
-		events.TopicMcpDeleted: func(ctx context.Context, msg events.EventEnvelope) error {
-			var d events.McpDeletedData
-			if err := msg.DecodeData(&d); err != nil {
-				return err
-			}
-			return app.ProjectMcpDeleted(ctx, d)
-		},
-		events.TopicWorkspaceCreated: func(ctx context.Context, msg events.EventEnvelope) error {
-			var d events.WorkspaceCreatedData
-			if err := msg.DecodeData(&d); err != nil {
-				return err
-			}
-			return app.BootstrapWorkspace(ctx, d)
-		},
-	}}
+			seen[t] = true
+			reg[t] = h
+			topics = append(topics, t)
+		}
+	}
+	return &Consumer{log: log, topics: topics, handlers: reg}
 }
 
 // Start runs the consumer group on the lifecycle context until it is cancelled
@@ -66,20 +62,18 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 		return
 	}
 	go func() {
-		if err := cg.Run(ctx, []string{events.TopicMcpCreated, events.TopicMcpDeleted, events.TopicWorkspaceCreated}, c.consume); err != nil {
+		if err := cg.Run(ctx, c.topics, c.consume); err != nil {
 			c.log.Error("resources consumer stopped", "error", err)
 		}
 		_ = cg.Close()
 	}()
 }
 
-// consume projects MCP connections and seeds default rules on workspace
-// creation.
 func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
 	h, ok := c.handlers[msg.EventType]
 	if !ok {
 		c.log.Warn("resources consumer dropping unhandled event", "type", msg.EventType, "task_id", msg.TaskID)
 		return nil
 	}
-	return h(ctx, msg)
+	return h.Handle(ctx, msg)
 }

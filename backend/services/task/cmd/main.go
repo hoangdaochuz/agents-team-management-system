@@ -41,7 +41,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	app := application.New(repo, pub, log)
 
 	interfacehttp.New(app, log).Register(mux)
-	messaging.New(app, log).Start(ctx, os.Getenv("KAFKA_BROKERS"))
+	messaging.New(log, messaging.DispatchHandler{App: app}).Start(ctx, os.Getenv("KAFKA_BROKERS"))
 
 	log.Info("task routes registered", "endpoints", 13, "saga_enabled", pub.Enabled())
 	return nil
