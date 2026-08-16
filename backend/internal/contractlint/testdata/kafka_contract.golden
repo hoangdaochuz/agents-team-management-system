@@ -1,0 +1,179 @@
+# topics (name task-partitioned)
+audit.recorded false
+finding true
+invite.created false
+mcp.created false
+mcp.deleted false
+pr.opened true
+run.completed true
+run.started true
+signup.approved false
+signup.declined false
+signup.requested false
+skill.created false
+skill.deleted false
+step true
+task.pr-open-requested true
+task.review-requested true
+task.run-requested true
+task.status-changed true
+task.stop-requested true
+verdict true
+workspace.created false
+
+# payload JSON shapes (zero-value marshal)
+## AuditRecordedData
+{
+  "workspace_id": "",
+  "actor_name": "",
+  "action": ""
+}
+## EventEnvelope
+{
+  "event_id": "",
+  "event_type": "",
+  "occurred_at": "0001-01-01T00:00:00Z",
+  "data": null
+}
+## FindingData
+{
+  "finding": {
+    "id": "",
+    "run_id": "",
+    "file": "",
+    "line": 0,
+    "severity": "",
+    "issue": "",
+    "recommendation": "",
+    "status": ""
+  }
+}
+## InviteCreatedData
+{
+  "invite_id": "",
+  "email": "",
+  "role": "",
+  "invite_code": "",
+  "workspace_id": "",
+  "workspace_name": ""
+}
+## McpCreatedData
+{
+  "mcp_server_id": "",
+  "workspace_id": "",
+  "name": "",
+  "command": "",
+  "args": null,
+  "env": null
+}
+## McpDeletedData
+{
+  "mcp_server_id": "",
+  "workspace_id": ""
+}
+## PrOpenRequestedData
+{
+  "task_id": ""
+}
+## PrOpenedData
+{
+  "task_id": "",
+  "url": ""
+}
+## ReviewRequestedData
+{
+  "task_id": "",
+  "agent_id": "",
+  "run_id": "",
+  "round_no": 0,
+  "prompt": ""
+}
+## RunCompletedData
+{
+  "task_id": "",
+  "run_id": "",
+  "role": "",
+  "status": "",
+  "round_no": 0,
+  "token_usage": 0
+}
+## RunRequestedData
+{
+  "task_id": "",
+  "agent_id": "",
+  "project_id": "",
+  "round_no": 0,
+  "prompt": ""
+}
+## RunStartedData
+{
+  "task_id": "",
+  "run_id": "",
+  "agent_id": ""
+}
+## SignupApprovedData
+{
+  "request_id": "",
+  "user_id": "",
+  "email": "",
+  "name": "",
+  "mode": "",
+  "role": ""
+}
+## SignupDeclinedData
+{
+  "request_id": "",
+  "user_id": ""
+}
+## SignupRequestedData
+{
+  "request_id": "",
+  "user_id": "",
+  "name": "",
+  "email": "",
+  "mode": "",
+  "requested_role": ""
+}
+## SkillCreatedData
+{
+  "skill_id": "",
+  "workspace_id": ""
+}
+## SkillDeletedData
+{
+  "skill_id": ""
+}
+## StepData
+{
+  "step": {
+    "id": "",
+    "run_id": "",
+    "seq": 0,
+    "kind": "",
+    "payload": null,
+    "created_at": "0001-01-01T00:00:00Z"
+  }
+}
+## StopRequestedData
+{
+  "task_id": ""
+}
+## TaskStatusChangedData
+{
+  "task_id": "",
+  "from": "",
+  "to": "",
+  "round_no": 0
+}
+## VerdictData
+{
+  "task_id": "",
+  "run_id": "",
+  "round_no": 0,
+  "decision": ""
+}
+## WorkspaceCreatedData
+{
+  "workspace_id": "",
+  "name": ""
+}
