@@ -1,30 +1,21 @@
-// Package repository implements the Project domain repository port on Postgres
-// (Ports & Adapters: the adapter side of the hexagon). The pool-backed adapter
-// satisfies the domain port; reads filter by the session's workspace set and
-// mutations reject rows outside it (404), so a tenant can never observe or
-// touch another tenant's projects even if the Gateway were misconfigured.
-package repository
+// Package project implements the Project aggregate repository port on Postgres
+// (Ports & Adapters: the adapter side of the hexagon). The same adapter serves
+// plain pool access and tx-scoped access via the UnitOfWork.
+package project
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aaks/server/internal/contracts/identity"
 	"github.com/aaks/server/internal/contracts/tasks"
-	"github.com/aaks/server/internal/platform/db"
 	"github.com/aaks/server/services/project/internal/domain"
 )
-
-//go:embed migrations/*.sql
-var migrations embed.FS
 
 // querier is satisfied by both *pgxpool.Pool and pgx.Tx, letting one adapter
 // implementation serve plain and transactional access.
@@ -34,31 +25,11 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// Store owns the project Postgres pool and exposes the pool-backed adapter for
-// the domain port. It is the composition-root entrypoint of this package.
-type Store struct {
-	pool *pgxpool.Pool
-	log  *slog.Logger
+// Repo implements domain.ProjectRepository on Postgres.
+type Repo struct{ q querier }
 
-	Projects domain.ProjectRepository
-}
-
-// New opens the project database and runs migrations.
-func New(ctx context.Context, dsn string, log *slog.Logger) (*Store, error) {
-	pool, err := db.Pool(ctx, dsn, log)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Migrate(ctx, pool, migrations, "migrations", log); err != nil {
-		return nil, err
-	}
-	s := &Store{pool: pool, log: log}
-	s.Projects = &projectRepo{q: pool}
-	return s, nil
-}
-
-// Close releases the connection pool.
-func (s *Store) Close() { s.pool.Close() }
+// New builds the adapter over a pool or transaction.
+func New(q querier) *Repo { return &Repo{q: q} }
 
 const projectCols = `id, workspace_id, name, repo_source, repo_type, cloned_path, default_branch, created_at`
 
@@ -86,11 +57,9 @@ func whereScoped(ws []identity.ID) (string, []any) {
 	return whereScopedAt(1, ws)
 }
 
-type projectRepo struct{ q querier }
-
 // List returns all projects in the workspace set, newest first. An empty
 // workspace set returns no rows (fail closed).
-func (r *projectRepo) List(ctx context.Context, ws []identity.ID) ([]tasks.Project, error) {
+func (r *Repo) List(ctx context.Context, ws []identity.ID) ([]tasks.Project, error) {
 	where, args := whereScoped(ws)
 	rows, err := r.q.Query(ctx, `SELECT `+projectCols+` FROM projects WHERE 1=1`+where+` ORDER BY created_at DESC`, args...)
 	if err != nil {
@@ -109,7 +78,7 @@ func (r *projectRepo) List(ctx context.Context, ws []identity.ID) ([]tasks.Proje
 }
 
 // Get returns one project by id, scoped to the workspace set.
-func (r *projectRepo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (tasks.Project, error) {
+func (r *Repo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (tasks.Project, error) {
 	where, args := whereScopedAt(2, ws) // $1=id, $2=ws ids
 	row := r.q.QueryRow(ctx, `SELECT `+projectCols+` FROM projects WHERE id = $1`+where, append([]any{id}, args...)...)
 	p, err := scanProject(row)
@@ -120,7 +89,7 @@ func (r *projectRepo) Get(ctx context.Context, id identity.ID, ws []identity.ID)
 }
 
 // Create inserts a project in the given workspace and returns it.
-func (r *projectRepo) Create(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Project, error) {
+func (r *Repo) Create(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Project, error) {
 	if in.DefaultBranch == "" {
 		in.DefaultBranch = "main"
 	}
@@ -133,7 +102,7 @@ func (r *projectRepo) Create(ctx context.Context, workspaceID identity.ID, in do
 }
 
 // Update partially updates a project, scoped to the workspace set.
-func (r *projectRepo) Update(ctx context.Context, id identity.ID, ws []identity.ID, in domain.UpdateInput) (tasks.Project, error) {
+func (r *Repo) Update(ctx context.Context, id identity.ID, ws []identity.ID, in domain.UpdateInput) (tasks.Project, error) {
 	where, scopeArgs := whereScoped(ws)
 	if len(scopeArgs) == 0 {
 		return tasks.Project{}, domain.ErrNotFound
@@ -182,7 +151,7 @@ func (r *projectRepo) Update(ctx context.Context, id identity.ID, ws []identity.
 
 // Delete removes a project, scoped to the workspace set. Returns ErrNotFound
 // if absent or outside the workspace context.
-func (r *projectRepo) Delete(ctx context.Context, id identity.ID, ws []identity.ID) error {
+func (r *Repo) Delete(ctx context.Context, id identity.ID, ws []identity.ID) error {
 	where, args := whereScopedAt(2, ws) // $1=id, $2=ws ids
 	if len(args) == 0 {
 		return domain.ErrNotFound

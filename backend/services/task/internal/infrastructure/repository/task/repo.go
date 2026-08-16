@@ -1,30 +1,20 @@
-// Package repository implements the Task domain repository ports on Postgres
-// (Ports & Adapters: the adapter side of the hexagon). Each aggregate has its
-// own adapter satisfying the domain port; pool-backed instances serve the
-// use cases and the saga coordinator.
-package repository
+// Package task implements the Tasks aggregate repository on Postgres.
+package task
 
 import (
 	"context"
-	"embed"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aaks/server/internal/contracts/identity"
 	"github.com/aaks/server/internal/contracts/tasks"
-	"github.com/aaks/server/internal/platform/db"
 	"github.com/aaks/server/services/task/internal/domain"
 )
-
-//go:embed migrations/*.sql
-var migrations embed.FS
 
 // querier is satisfied by both *pgxpool.Pool and pgx.Tx, letting one adapter
 // implementation serve plain and transactional access.
@@ -34,33 +24,11 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// Store owns the task Postgres pool and exposes pool-backed adapters for the
-// domain ports. It is the composition-root entrypoint of this package.
-type Store struct {
-	pool *pgxpool.Pool
-	log  *slog.Logger
+// Repo is the pool-backed adapter satisfying domain.TaskRepository.
+type Repo struct{ q querier }
 
-	Tasks    domain.TaskRepository
-	Feedback domain.FeedbackRepository
-}
-
-// New opens the task database and runs migrations.
-func New(ctx context.Context, dsn string, log *slog.Logger) (*Store, error) {
-	pool, err := db.Pool(ctx, dsn, log)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Migrate(ctx, pool, migrations, "migrations", log); err != nil {
-		return nil, err
-	}
-	s := &Store{pool: pool, log: log}
-	s.Tasks = &taskRepo{q: pool}
-	s.Feedback = &feedbackRepo{q: pool}
-	return s, nil
-}
-
-// Close releases the connection pool.
-func (s *Store) Close() { s.pool.Close() }
+// New builds the adapter over a pool or transaction.
+func New(q querier) *Repo { return &Repo{q: q} }
 
 const taskCols = `id, workspace_id, project_id, agent_id, model_override, title, prompt, description,
 	status, type, priority, labels, points, due_at, progress, branch_name, worktree_path,
@@ -112,8 +80,6 @@ func scanTask(row pgx.Row) (tasks.Task, error) {
 	return t, nil
 }
 
-type taskRepo struct{ q querier }
-
 // queryClauses builds the WHERE clause and args for a task list query (the
 // SQL-shaping half of domain.Query; the query itself is a domain value object).
 func queryClauses(q domain.Query) (string, []any) {
@@ -161,7 +127,7 @@ func queryClauses(q domain.Query) (string, []any) {
 	return clause, args
 }
 
-func (r *taskRepo) List(ctx context.Context, q domain.Query) ([]tasks.Task, error) {
+func (r *Repo) List(ctx context.Context, q domain.Query) ([]tasks.Task, error) {
 	clause, args := queryClauses(q)
 	rows, err := r.q.Query(ctx, `SELECT `+taskCols+` FROM tasks`+clause+` ORDER BY updated_at DESC`, args...)
 	if err != nil {
@@ -179,7 +145,7 @@ func (r *taskRepo) List(ctx context.Context, q domain.Query) ([]tasks.Task, erro
 	return out, rows.Err()
 }
 
-func (r *taskRepo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (tasks.Task, error) {
+func (r *Repo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (tasks.Task, error) {
 	where, args := whereScopedAt(2, ws) // $1=id, $2=ws ids
 	row := r.q.QueryRow(ctx, `SELECT `+taskCols+` FROM tasks WHERE id = $1`+where, append([]any{id}, args...)...)
 	t, err := scanTask(row)
@@ -190,7 +156,7 @@ func (r *taskRepo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (t
 }
 
 // GetUnscoped returns a task regardless of workspace context (saga consumer).
-func (r *taskRepo) GetUnscoped(ctx context.Context, id identity.ID) (tasks.Task, error) {
+func (r *Repo) GetUnscoped(ctx context.Context, id identity.ID) (tasks.Task, error) {
 	row := r.q.QueryRow(ctx, `SELECT `+taskCols+` FROM tasks WHERE id = $1`, id)
 	t, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -199,7 +165,7 @@ func (r *taskRepo) GetUnscoped(ctx context.Context, id identity.ID) (tasks.Task,
 	return t, err
 }
 
-func (r *taskRepo) Create(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Task, error) {
+func (r *Repo) Create(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Task, error) {
 	if in.Labels == nil {
 		in.Labels = []string{}
 	}
@@ -225,7 +191,7 @@ func (r *taskRepo) Create(ctx context.Context, workspaceID identity.ID, in domai
 
 // Update applies a partial update (frontend updateTask sends Partial<Task>).
 // It accepts a raw map to mirror the frontend's "any subset of fields" semantics.
-func (r *taskRepo) Update(ctx context.Context, id identity.ID, ws []identity.ID, fields map[string]any) (tasks.Task, error) {
+func (r *Repo) Update(ctx context.Context, id identity.ID, ws []identity.ID, fields map[string]any) (tasks.Task, error) {
 	allowed := map[string]string{
 		"title": "title", "prompt": "prompt", "description": "description",
 		"type": "type", "priority": "priority", "points": "points",
@@ -259,7 +225,7 @@ func (r *taskRepo) Update(ctx context.Context, id identity.ID, ws []identity.ID,
 }
 
 // SetStatus updates a task's status and returns the updated task.
-func (r *taskRepo) SetStatus(ctx context.Context, id identity.ID, status tasks.TaskStatus) (tasks.Task, error) {
+func (r *Repo) SetStatus(ctx context.Context, id identity.ID, status tasks.TaskStatus) (tasks.Task, error) {
 	row := r.q.QueryRow(ctx, `
 		UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1
 		RETURNING `+taskCols, id, status)
@@ -271,14 +237,14 @@ func (r *taskRepo) SetStatus(ctx context.Context, id identity.ID, status tasks.T
 }
 
 // SetRoundNo advances the review round counter (saga phase 6).
-func (r *taskRepo) SetRoundNo(ctx context.Context, id identity.ID, roundNo int) error {
+func (r *Repo) SetRoundNo(ctx context.Context, id identity.ID, roundNo int) error {
 	_, err := r.q.Exec(ctx, `UPDATE tasks SET round_no = $2, updated_at = now() WHERE id = $1`, id, roundNo)
 	return err
 }
 
 // CountOpenByWorkspace counts tasks in open states (doing/review) per workspace
 // for the Gateway's workspace-stats composition.
-func (r *taskRepo) CountOpenByWorkspace(ctx context.Context, workspaceID identity.ID) (int, error) {
+func (r *Repo) CountOpenByWorkspace(ctx context.Context, workspaceID identity.ID) (int, error) {
 	var n int
 	err := r.q.QueryRow(ctx,
 		`SELECT count(*) FROM tasks WHERE workspace_id = $1 AND status IN ('doing', 'review')`,
@@ -288,7 +254,7 @@ func (r *taskRepo) CountOpenByWorkspace(ctx context.Context, workspaceID identit
 
 // SagaNew records (task_id, run_id) as processed; false when already seen.
 // This is the saga's idempotency hook for at-least-once Kafka redelivery.
-func (r *taskRepo) SagaNew(ctx context.Context, taskID, runID identity.ID) (bool, error) {
+func (r *Repo) SagaNew(ctx context.Context, taskID, runID identity.ID) (bool, error) {
 	tag, err := r.q.Exec(ctx, `
 		INSERT INTO saga_runs (task_id, run_id) VALUES ($1, $2)
 		ON CONFLICT DO NOTHING`, taskID, runID)
@@ -298,7 +264,7 @@ func (r *taskRepo) SagaNew(ctx context.Context, taskID, runID identity.ID) (bool
 	return tag.RowsAffected() > 0, nil
 }
 
-func (r *taskRepo) Delete(ctx context.Context, id identity.ID, ws []identity.ID) error {
+func (r *Repo) Delete(ctx context.Context, id identity.ID, ws []identity.ID) error {
 	where, args := whereScopedAt(2, ws) // $1=id, $2=ws ids
 	if len(args) == 0 {
 		return domain.ErrNotFound
@@ -311,46 +277,4 @@ func (r *taskRepo) Delete(ctx context.Context, id identity.ID, ws []identity.ID)
 		return domain.ErrNotFound
 	}
 	return nil
-}
-
-// ── Feedback ────────────────────────────────────────────────────────────────
-
-type feedbackRepo struct{ q querier }
-
-func (r *feedbackRepo) List(ctx context.Context, taskID identity.ID, ws []identity.ID) ([]tasks.Feedback, error) {
-	where, args := whereScopedAt(2, ws) // $1=taskID, $2=ws ids
-	if len(args) == 0 {
-		return []tasks.Feedback{}, nil
-	}
-	rows, err := r.q.Query(ctx, `SELECT id, task_id, author, body, created_at FROM feedback WHERE task_id = $1`+where+` ORDER BY created_at ASC`, append([]any{taskID}, args...)...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []tasks.Feedback{}
-	for rows.Next() {
-		var f tasks.Feedback
-		if err := rows.Scan(&f.ID, &f.TaskID, &f.Author, &f.Body, &f.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, f)
-	}
-	return out, rows.Err()
-}
-
-func (r *feedbackRepo) Add(ctx context.Context, taskID identity.ID, ws []identity.ID, body string) (tasks.Feedback, error) {
-	var f tasks.Feedback
-	scopeClause, scopeArgs := whereScopedAt(3, ws) // $1=taskID, $2=body, $3=ws ids
-	if len(scopeArgs) == 0 {
-		return tasks.Feedback{}, domain.ErrNotFound
-	}
-	err := r.q.QueryRow(ctx, `
-		INSERT INTO feedback (task_id, author, body)
-		SELECT $1, 'user', $2 FROM tasks WHERE id = $1`+scopeClause+`
-		RETURNING id, task_id, author, body, created_at`,
-		taskID, body, scopeArgs[0]).Scan(&f.ID, &f.TaskID, &f.Author, &f.Body, &f.CreatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return tasks.Feedback{}, domain.ErrNotFound
-	}
-	return f, err
 }

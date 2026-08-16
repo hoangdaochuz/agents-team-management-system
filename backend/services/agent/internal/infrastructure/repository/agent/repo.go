@@ -1,31 +1,23 @@
-// Package repository implements the Agent domain repository ports on Postgres
-// (Ports & Adapters: the adapter side of the hexagon). Each aggregate has its
-// own adapter: agents (including the agent-builder fields), the skill/mcp link
-// tables, and local projections of the catalog's skill/MCP definitions used to
-// validate attachments within a workspace (no service-to-service sync calls).
-package repository
+// Package agent implements the agent aggregate repository adapter on Postgres
+// (Ports & Adapters: the adapter side of the hexagon): CRUD including the
+// agent-builder fields, the skill/mcp link tables, and the runtime status
+// mutations driven by the run-lifecycle consumers.
+package agent
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aaks/server/internal/contracts/agentexec"
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/internal/platform/db"
 	"github.com/aaks/server/services/agent/internal/domain"
 )
-
-//go:embed migrations/*.sql
-var migrations embed.FS
 
 // querier is satisfied by both *pgxpool.Pool and pgx.Tx, letting one adapter
 // implementation serve plain and transactional access.
@@ -35,32 +27,11 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// Store owns the agent Postgres pool and exposes pool-backed adapters for the
-// domain ports. It is the composition-root entrypoint of this package.
-type Store struct {
-	pool        *pgxpool.Pool
-	log         *slog.Logger
-	Agents      domain.AgentRepository
-	Projections domain.CatalogProjectionRepository
-}
+// Repo is the pool- or tx-backed adapter for the agent aggregate.
+type Repo struct{ q querier }
 
-// New opens the agent database and runs migrations.
-func New(ctx context.Context, dsn string, log *slog.Logger) (*Store, error) {
-	pool, err := db.Pool(ctx, dsn, log)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Migrate(ctx, pool, migrations, "migrations", log); err != nil {
-		return nil, err
-	}
-	s := &Store{pool: pool, log: log}
-	s.Agents = &agentRepo{q: pool}
-	s.Projections = &projectionRepo{q: pool}
-	return s, nil
-}
-
-// Close releases the connection pool.
-func (s *Store) Close() { s.pool.Close() }
+// New wraps a querier (pool or tx) as the agent adapter.
+func New(q querier) *Repo { return &Repo{q: q} }
 
 // whereScopedAt returns `AND a.workspace_id = ANY($start)` scoping plus args.
 func whereScopedAt(start int, ws []identity.ID) (string, []any) {
@@ -126,11 +97,7 @@ func scanAgent(row pgx.Row) (agentexec.Agent, error) {
 	return a, nil
 }
 
-// ── Agents ──────────────────────────────────────────────────────────────────
-
-type agentRepo struct{ q querier }
-
-func (r *agentRepo) List(ctx context.Context, ws []identity.ID) ([]agentexec.Agent, error) {
+func (r *Repo) List(ctx context.Context, ws []identity.ID) ([]agentexec.Agent, error) {
 	where, args := whereScopedAt(1, ws)
 	rows, err := r.q.Query(ctx, agentSelect+` WHERE 1=1`+where+` ORDER BY a.created_at DESC`, args...)
 	if err != nil {
@@ -148,7 +115,7 @@ func (r *agentRepo) List(ctx context.Context, ws []identity.ID) ([]agentexec.Age
 	return out, rows.Err()
 }
 
-func (r *agentRepo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (agentexec.Agent, error) {
+func (r *Repo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (agentexec.Agent, error) {
 	where, args := whereScopedAt(2, ws)
 	row := r.q.QueryRow(ctx, agentSelect+` WHERE a.id = $1`+where, append([]any{id}, args...)...)
 	a, err := scanAgent(row)
@@ -161,7 +128,7 @@ func (r *agentRepo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (
 // GetUnscoped returns an agent without a workspace filter. Used only by the
 // attachment validation and the MCP hydration path where the agent is already
 // trusted.
-func (r *agentRepo) GetUnscoped(ctx context.Context, id identity.ID) (agentexec.Agent, error) {
+func (r *Repo) GetUnscoped(ctx context.Context, id identity.ID) (agentexec.Agent, error) {
 	row := r.q.QueryRow(ctx, agentSelect+` WHERE a.id = $1`, id)
 	a, err := scanAgent(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -170,7 +137,7 @@ func (r *agentRepo) GetUnscoped(ctx context.Context, id identity.ID) (agentexec.
 	return a, err
 }
 
-func (r *agentRepo) Create(ctx context.Context, workspaceID identity.ID, in domain.AgentCreate) (agentexec.Agent, error) {
+func (r *Repo) Create(ctx context.Context, workspaceID identity.ID, in domain.AgentCreate) (agentexec.Agent, error) {
 	if in.AllowedTools == nil {
 		in.AllowedTools = []string{}
 	}
@@ -197,7 +164,7 @@ func (r *agentRepo) Create(ctx context.Context, workspaceID identity.ID, in doma
 	return r.Get(ctx, id, []identity.ID{workspaceID})
 }
 
-func (r *agentRepo) Update(ctx context.Context, id identity.ID, ws []identity.ID, in domain.AgentUpdate) (agentexec.Agent, error) {
+func (r *Repo) Update(ctx context.Context, id identity.ID, ws []identity.ID, in domain.AgentUpdate) (agentexec.Agent, error) {
 	where, scopeArgs := whereScopedAt(2, ws)
 	if len(scopeArgs) == 0 {
 		return agentexec.Agent{}, domain.ErrAgentNotFound
@@ -276,7 +243,7 @@ func (r *agentRepo) Update(ctx context.Context, id identity.ID, ws []identity.ID
 	return r.Get(ctx, id, ws)
 }
 
-func (r *agentRepo) Delete(ctx context.Context, id identity.ID, ws []identity.ID) error {
+func (r *Repo) Delete(ctx context.Context, id identity.ID, ws []identity.ID) error {
 	where, args := whereScopedAt(2, ws)
 	if len(args) == 0 {
 		return domain.ErrAgentNotFound
@@ -292,7 +259,7 @@ func (r *agentRepo) Delete(ctx context.Context, id identity.ID, ws []identity.ID
 }
 
 // CountByWorkspace counts agents in a workspace (Gateway workspace-stats composition).
-func (r *agentRepo) CountByWorkspace(ctx context.Context, workspaceID identity.ID) (int, error) {
+func (r *Repo) CountByWorkspace(ctx context.Context, workspaceID identity.ID) (int, error) {
 	var n int
 	err := r.q.QueryRow(ctx, `SELECT count(*) FROM agents WHERE workspace_id = $1`, workspaceID).Scan(&n)
 	return n, err
@@ -302,97 +269,45 @@ func (r *agentRepo) CountByWorkspace(ctx context.Context, workspaceID identity.I
 
 // LinkSkill adds a skill to an agent (idempotent). Workspace validation is the
 // application's job; this adapter only writes the link.
-func (r *agentRepo) LinkSkill(ctx context.Context, agentID, skillID identity.ID) error {
+func (r *Repo) LinkSkill(ctx context.Context, agentID, skillID identity.ID) error {
 	_, err := r.q.Exec(ctx, `INSERT INTO agent_skills (agent_id, skill_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, agentID, skillID)
 	return err
 }
 
-func (r *agentRepo) UnlinkSkill(ctx context.Context, agentID, skillID identity.ID) error {
+func (r *Repo) UnlinkSkill(ctx context.Context, agentID, skillID identity.ID) error {
 	_, err := r.q.Exec(ctx, `DELETE FROM agent_skills WHERE agent_id = $1 AND skill_id = $2`, agentID, skillID)
 	return err
 }
 
 // LinkMcp adds an MCP server to an agent (idempotent).
-func (r *agentRepo) LinkMcp(ctx context.Context, agentID, mcpID identity.ID) error {
+func (r *Repo) LinkMcp(ctx context.Context, agentID, mcpID identity.ID) error {
 	_, err := r.q.Exec(ctx, `INSERT INTO agent_mcps (agent_id, mcp_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, agentID, mcpID)
 	return err
 }
 
-func (r *agentRepo) UnlinkMcp(ctx context.Context, agentID, mcpID identity.ID) error {
+func (r *Repo) UnlinkMcp(ctx context.Context, agentID, mcpID identity.ID) error {
 	_, err := r.q.Exec(ctx, `DELETE FROM agent_mcps WHERE agent_id = $1 AND mcp_id = $2`, agentID, mcpID)
 	return err
 }
 
-// ── Catalog projections (skill/mcp → workspace) ─────────────────────────────
-
-type projectionRepo struct{ q querier }
-
-// SkillWorkspace returns the workspace a skill belongs to, or ErrUnknownDefinition.
-func (r *projectionRepo) SkillWorkspace(ctx context.Context, skillID identity.ID) (identity.ID, error) {
-	var ws identity.ID
-	err := r.q.QueryRow(ctx, `SELECT workspace_id FROM known_skills WHERE skill_id = $1`, skillID).Scan(&ws)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", domain.ErrUnknownDefinition
-	}
-	return ws, err
-}
-
-// McpWorkspace returns the workspace an MCP definition belongs to, or ErrUnknownDefinition.
-func (r *projectionRepo) McpWorkspace(ctx context.Context, mcpID identity.ID) (identity.ID, error) {
-	var ws identity.ID
-	err := r.q.QueryRow(ctx, `SELECT workspace_id FROM known_mcps WHERE mcp_id = $1`, mcpID).Scan(&ws)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", domain.ErrUnknownDefinition
-	}
-	return ws, err
-}
-
-// ── Projection/status mutations (run-lifecycle + catalog consumers) ─────────
-// These write the local projections and runtime status derived from events;
-// the consumers that call them arrive with the messaging conversion.
-
-// UpsertSkillProjection records a catalog skill's workspace.
-func (s *Store) UpsertSkillProjection(ctx context.Context, skillID, workspaceID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO known_skills (skill_id, workspace_id) VALUES ($1, $2)
-		ON CONFLICT (skill_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id`, skillID, workspaceID)
-	return err
-}
-
-// DeleteSkillProjection forgets a deleted catalog skill.
-func (s *Store) DeleteSkillProjection(ctx context.Context, skillID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM known_skills WHERE skill_id = $1`, skillID)
-	return err
-}
-
-// UpsertMcpProjection records a catalog MCP definition's workspace.
-func (s *Store) UpsertMcpProjection(ctx context.Context, mcpID, workspaceID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO known_mcps (mcp_id, workspace_id) VALUES ($1, $2)
-		ON CONFLICT (mcp_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id`, mcpID, workspaceID)
-	return err
-}
-
-// DeleteMcpProjection forgets a deleted catalog MCP definition.
-func (s *Store) DeleteMcpProjection(ctx context.Context, mcpID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM known_mcps WHERE mcp_id = $1`, mcpID)
-	return err
-}
+// ── Runtime status mutations (run-lifecycle + admin consumers) ──────────────
+// These write agent status derived from events; the consumers that call them
+// arrive with the messaging conversion.
 
 // SetAgentRunning marks an agent as executing a task (run.started consumer).
-func (s *Store) SetAgentRunning(ctx context.Context, agentID, taskID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE agents SET status = 'running', current_task_id = $2 WHERE id = $1`, agentID, taskID)
+func (r *Repo) SetAgentRunning(ctx context.Context, agentID, taskID identity.ID) error {
+	_, err := r.q.Exec(ctx, `UPDATE agents SET status = 'running', current_task_id = $2 WHERE id = $1`, agentID, taskID)
 	return err
 }
 
 // SetAgentIdle clears an agent's running state (run.completed consumer).
-func (s *Store) SetAgentIdle(ctx context.Context, agentID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE agents SET status = 'idle', current_task_id = NULL, load = NULL WHERE id = $1 AND status = 'running'`, agentID)
+func (r *Repo) SetAgentIdle(ctx context.Context, agentID identity.ID) error {
+	_, err := r.q.Exec(ctx, `UPDATE agents SET status = 'idle', current_task_id = NULL, load = NULL WHERE id = $1 AND status = 'running'`, agentID)
 	return err
 }
 
 // SetAgentPaused pauses an agent (admin action).
-func (s *Store) SetAgentPaused(ctx context.Context, agentID identity.ID) error {
-	_, err := s.pool.Exec(ctx, `UPDATE agents SET status = 'paused' WHERE id = $1`, agentID)
+func (r *Repo) SetAgentPaused(ctx context.Context, agentID identity.ID) error {
+	_, err := r.q.Exec(ctx, `UPDATE agents SET status = 'paused' WHERE id = $1`, agentID)
 	return err
 }

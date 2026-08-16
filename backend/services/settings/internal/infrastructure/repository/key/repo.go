@@ -1,25 +1,16 @@
-// Package repository implements the Settings domain repository port on Postgres
-// (Ports & Adapters: the adapter side of the hexagon). Provider keys are
-// stored as opaque ciphertext; the crypto port lives in infrastructure/crypto.
-package repository
+// Package key implements the ProviderKey aggregate's Postgres adapter.
+package key
 
 import (
 	"context"
-	"embed"
 	"errors"
-	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/internal/platform/db"
 	"github.com/aaks/server/services/settings/internal/domain"
 )
-
-//go:embed migrations/*.sql
-var migrations embed.FS
 
 // querier is satisfied by both *pgxpool.Pool and pgx.Tx, letting one adapter
 // implementation serve plain and transactional access.
@@ -29,36 +20,13 @@ type querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
-// Store owns the settings Postgres pool and exposes the pool-backed adapter
-// for the domain port. It is the composition-root entrypoint of this package.
-type Store struct {
-	pool *pgxpool.Pool
-	log  *slog.Logger
-	Keys domain.ProviderKeyRepository
-}
+// Repo is the pool-backed adapter for domain.ProviderKeyRepository.
+type Repo struct{ q querier }
 
-// New opens the settings database and runs migrations.
-func New(ctx context.Context, dsn string, log *slog.Logger) (*Store, error) {
-	pool, err := db.Pool(ctx, dsn, log)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Migrate(ctx, pool, migrations, "migrations", log); err != nil {
-		return nil, err
-	}
-	s := &Store{pool: pool, log: log}
-	s.Keys = &keyRepo{q: pool}
-	return s, nil
-}
+// New wraps the given querier (pool or tx) as a provider key repository.
+func New(q querier) *Repo { return &Repo{q: q} }
 
-// Close releases the connection pool.
-func (s *Store) Close() { s.pool.Close() }
-
-// ── Provider keys ───────────────────────────────────────────────────────────
-
-type keyRepo struct{ q querier }
-
-func (r *keyRepo) List(ctx context.Context) ([]identity.ProviderKey, error) {
+func (r *Repo) List(ctx context.Context) ([]identity.ProviderKey, error) {
 	rows, err := r.q.Query(ctx, `SELECT provider, created_at FROM provider_keys ORDER BY provider`)
 	if err != nil {
 		return nil, err
@@ -76,7 +44,7 @@ func (r *keyRepo) List(ctx context.Context) ([]identity.ProviderKey, error) {
 }
 
 // Upsert stores the ciphertext for the provider (upsert on the provider key).
-func (r *keyRepo) Upsert(ctx context.Context, provider identity.Provider, ciphertext []byte) (identity.ProviderKey, error) {
+func (r *Repo) Upsert(ctx context.Context, provider identity.Provider, ciphertext []byte) (identity.ProviderKey, error) {
 	var k identity.ProviderKey
 	err := r.q.QueryRow(ctx, `
 		INSERT INTO provider_keys (provider, ciphertext, updated_at)
@@ -86,7 +54,7 @@ func (r *keyRepo) Upsert(ctx context.Context, provider identity.Provider, cipher
 	return k, err
 }
 
-func (r *keyRepo) Delete(ctx context.Context, provider identity.Provider) error {
+func (r *Repo) Delete(ctx context.Context, provider identity.Provider) error {
 	tag, err := r.q.Exec(ctx, `DELETE FROM provider_keys WHERE provider = $1`, provider)
 	if err != nil {
 		return err
@@ -99,7 +67,7 @@ func (r *keyRepo) Delete(ctx context.Context, provider identity.Provider) error 
 
 // Ciphertext returns the stored ciphertext; the caller (application) decrypts
 // it through the KeyCipher port.
-func (r *keyRepo) Ciphertext(ctx context.Context, provider identity.Provider) ([]byte, error) {
+func (r *Repo) Ciphertext(ctx context.Context, provider identity.Provider) ([]byte, error) {
 	var ct []byte
 	err := r.q.QueryRow(ctx, `SELECT ciphertext FROM provider_keys WHERE provider = $1`, provider).Scan(&ct)
 	if errors.Is(err, pgx.ErrNoRows) {
