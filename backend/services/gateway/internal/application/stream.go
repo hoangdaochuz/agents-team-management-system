@@ -77,10 +77,9 @@ func (s *Stream) Serve(ctx context.Context, taskID identity.ID, w SSEWriter) err
 	}
 	ticker := time.NewTicker(s.pingInterval)
 	defer ticker.Stop()
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		defer close(done)
-		_ = tail.Run(ctx, func(_ context.Context, step agentexec.Step) error {
+		err := tail.Run(ctx, func(_ context.Context, step agentexec.Step) error {
 			if seen[string(step.ID)] {
 				return nil
 			}
@@ -88,12 +87,18 @@ func (s *Stream) Serve(ctx context.Context, taskID identity.ID, w SSEWriter) err
 			w.Event("step", marshalStep(step))
 			return nil
 		})
+		done <- err
 	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-done:
+		case err := <-done:
+			if err != nil {
+				s.log.Warn("sse tail ended with error", "error", err)
+				w.Event("error", []byte(`{"message":"live tail unavailable"}`))
+				return err
+			}
 			w.Event("error", []byte(`{"message":"stream ended"}`))
 			return nil
 		case <-ticker.C:

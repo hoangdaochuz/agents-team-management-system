@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -104,39 +103,36 @@ func (a *ACL) Resolve(ctx context.Context, token string) (Identity, bool) {
 	return id, true
 }
 
-// Inject writes the identity/scoping headers for id onto h, replacing any
-// prior values. Only the gateway may populate these headers — the request was
-// stripped of forged values before routing, so Inject is the sole writer.
-func (a *ACL) Inject(h http.Header, id Identity) {
-	h.Del(tenancy.HeaderUserID)
-	h.Del(tenancy.HeaderUserName)
-	h.Del(tenancy.HeaderUserEmail)
-	h.Del(tenancy.HeaderUserSuperadmin)
-	h.Del(tenancy.HeaderUserRole)
-	h.Del(tenancy.HeaderWorkspaceID)
-	h.Del(tenancy.HeaderWorkspaceIDs)
-	h.Set(tenancy.HeaderUserID, id.UserID)
-	h.Set(tenancy.HeaderUserName, id.Name)
-	h.Set(tenancy.HeaderUserEmail, id.Email)
+// Headers returns the identity/scoping header values for id. The HTTP adapter
+// writes them onto the routed request (application stays free of net/http).
+// The caller's request was stripped of forged values before routing, so these
+// values are the sole source of truth for the scoping headers.
+func (a *ACL) Headers(id Identity) map[string]string {
+	h := map[string]string{
+		tenancy.HeaderUserID:    id.UserID,
+		tenancy.HeaderUserName:  id.Name,
+		tenancy.HeaderUserEmail: id.Email,
+	}
 	if id.Superadmin {
-		h.Set(tenancy.HeaderUserSuperadmin, "true")
+		h[tenancy.HeaderUserSuperadmin] = "true"
 	}
 	ids := make([]string, 0, len(id.Workspaces))
 	for _, ws := range id.Workspaces {
 		ids = append(ids, string(ws.ID))
 	}
 	if len(ids) == 1 {
-		h.Set(tenancy.HeaderWorkspaceID, ids[0])
+		h[tenancy.HeaderWorkspaceID] = ids[0]
 	}
 	if len(ids) > 0 {
-		h.Set(tenancy.HeaderWorkspaceIDs, strings.Join(ids, ","))
+		h[tenancy.HeaderWorkspaceIDs] = strings.Join(ids, ",")
 	}
 	// X-User-Role is the strongest role the session holds across its workspace
 	// union (owner > admin > member). Trustworthy because it is derived from
-	// the Orgs memberships the Gateway resolved — never from the client.
+	// the Orgs memberships the Gateway resolved - never from the client.
 	if role := StrongestRole(id.Workspaces); role != "" {
-		h.Set(tenancy.HeaderUserRole, string(role))
+		h[tenancy.HeaderUserRole] = string(role)
 	}
+	return h
 }
 
 // StrongestRole returns the highest-privilege role in the workspace union.

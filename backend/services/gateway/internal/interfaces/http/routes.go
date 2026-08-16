@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aaks/server/internal/contracts/admin"
@@ -132,8 +133,8 @@ func (s *Server) writeRouteError(w http.ResponseWriter, err error) {
 // inject resolves the session cookie (via ACL) and injects the scoping
 // headers. Returns false after writing a 401 when the session is missing or
 // unresolvable and required=true. Any inbound X-User-*/X-Workspace-* values
-// were deleted at the boundary (stripInboundIdentity) so only ACL.Inject
-// populates them.
+// were deleted at the boundary (stripInboundIdentity) so only the ACL's
+// header values populate them.
 func (s *Server) inject(w http.ResponseWriter, r *http.Request, required bool) bool {
 	token := sessionValue(r)
 	if token == "" {
@@ -151,7 +152,9 @@ func (s *Server) inject(w http.ResponseWriter, r *http.Request, required bool) b
 		}
 		return true
 	}
-	s.app.ACL.Inject(r.Header, id)
+	for k, v := range s.app.ACL.Headers(id) {
+		r.Header.Set(k, v)
+	}
 	return true
 }
 
@@ -341,14 +344,20 @@ func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, route appli
 }
 
 // sseWriter adapts an http.ResponseWriter + Flusher to the application's
-// SSEWriter, matching the pre-DDD gateway's wire format byte-for-byte.
+// SSEWriter, matching the pre-DDD gateway's wire format byte-for-byte. The
+// mutex serializes writers: the stream loop (replay/ping/terminal events)
+// and the Kafka tail goroutine both emit events, and http.ResponseWriter is
+// not safe for concurrent use.
 type sseWriter struct {
 	w  http.ResponseWriter
 	fl http.Flusher
+	mu sync.Mutex
 }
 
 // Event writes one SSE event and flushes.
 func (s *sseWriter) Event(event string, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	_, _ = s.w.Write([]byte("event: " + event + "\n"))
 	_, _ = s.w.Write(append([]byte("data: "), append(data, '\n')...))
 	_, _ = s.w.Write([]byte("\n"))

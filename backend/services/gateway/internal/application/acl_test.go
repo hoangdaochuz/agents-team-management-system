@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/http"
+
 	"testing"
 	"time"
 
@@ -129,29 +129,28 @@ func TestInjectHeaders(t *testing.T) {
 		},
 	}
 
-	h := http.Header{}
-	acl.Inject(h, id)
+	h := acl.Headers(id)
 
-	if got := h.Get(tenancy.HeaderUserID); got != "u1" {
+	if got := h[tenancy.HeaderUserID]; got != "u1" {
 		t.Errorf("X-User-ID: got %q want u1", got)
 	}
-	if got := h.Get(tenancy.HeaderUserName); got != "Ada" {
+	if got := h[tenancy.HeaderUserName]; got != "Ada" {
 		t.Errorf("X-User-Name: got %q want Ada", got)
 	}
-	if got := h.Get(tenancy.HeaderUserEmail); got != "ada@aaks.dev" {
+	if got := h[tenancy.HeaderUserEmail]; got != "ada@aaks.dev" {
 		t.Errorf("X-User-Email: got %q want ada@aaks.dev", got)
 	}
-	if got := h.Get(tenancy.HeaderUserSuperadmin); got != "true" {
+	if got := h[tenancy.HeaderUserSuperadmin]; got != "true" {
 		t.Errorf("X-User-Superadmin: got %q want true", got)
 	}
-	if got := h.Get(tenancy.HeaderUserRole); got != "owner" {
+	if got := h[tenancy.HeaderUserRole]; got != "owner" {
 		t.Errorf("X-User-Role: got %q want owner", got)
 	}
 	// Multi-workspace union: no single X-Workspace-ID, full X-Workspace-IDs.
-	if got := h.Get(tenancy.HeaderWorkspaceID); got != "" {
+	if got := h[tenancy.HeaderWorkspaceID]; got != "" {
 		t.Errorf("X-Workspace-ID: got %q want empty (union)", got)
 	}
-	if got := h.Get(tenancy.HeaderWorkspaceIDs); got != "w1,w2" {
+	if got := h[tenancy.HeaderWorkspaceIDs]; got != "w1,w2" {
 		t.Errorf("X-Workspace-IDs: got %q want w1,w2", got)
 	}
 }
@@ -163,34 +162,33 @@ func TestInjectHeadersSingleWorkspace(t *testing.T) {
 		Workspaces: []workspaces.Workspace{{ID: "w1", Name: "A", Role: identity.RoleMember}},
 	}
 
-	h := http.Header{}
-	acl.Inject(h, id)
+	h := acl.Headers(id)
 
-	if got := h.Get(tenancy.HeaderWorkspaceID); got != "w1" {
+	if got := h[tenancy.HeaderWorkspaceID]; got != "w1" {
 		t.Errorf("X-Workspace-ID: got %q want w1", got)
 	}
-	if got := h.Get(tenancy.HeaderWorkspaceIDs); got != "w1" {
+	if got := h[tenancy.HeaderWorkspaceIDs]; got != "w1" {
 		t.Errorf("X-Workspace-IDs: got %q want w1", got)
 	}
-	if got := h.Get(tenancy.HeaderUserSuperadmin); got != "" {
+	if got := h[tenancy.HeaderUserSuperadmin]; got != "" {
 		t.Errorf("X-User-Superadmin: got %q want empty", got)
 	}
 }
 
-// TestInjectOverwritesPriorValues: Inject must replace stale values (the
-// request was stripped at the boundary, but Inject is the sole writer).
-func TestInjectOverwritesPriorValues(t *testing.T) {
+// TestHeadersNeverContainStaleValues: the map is the sole source of truth for
+// the scoping headers; the HTTP adapter overwrites via Header.Set so no stale
+// value can survive.
+func TestHeadersNeverContainStaleValues(t *testing.T) {
 	acl, _, _, _ := newTestACL(nil, nil, nil)
-	h := http.Header{}
-	h.Set(tenancy.HeaderUserID, "attacker")
-	h.Set(tenancy.HeaderUserRole, "owner")
+	h := acl.Headers(Identity{
+		UserID: "u1", Name: "Ada", Email: "a@b.c",
+		Workspaces: []workspaces.Workspace{{ID: "w1", Role: identity.RoleMember}},
+	})
 
-	acl.Inject(h, Identity{UserID: "u1", Name: "Ada", Email: "a@b.c", Workspaces: []workspaces.Workspace{{ID: "w1", Role: identity.RoleMember}}})
-
-	if got := h.Get(tenancy.HeaderUserID); got != "u1" {
+	if got := h[tenancy.HeaderUserID]; got != "u1" {
 		t.Errorf("X-User-ID: got %q want u1", got)
 	}
-	if got := h.Get(tenancy.HeaderUserRole); got != "member" {
+	if got := h[tenancy.HeaderUserRole]; got != "member" {
 		t.Errorf("X-User-Role: got %q want member", got)
 	}
 }

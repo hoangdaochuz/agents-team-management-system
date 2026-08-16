@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -51,13 +52,47 @@ func (f *fakeTailer) Run(ctx context.Context, onStep func(context.Context, agent
 
 func (f *fakeTailer) Close() error { return nil }
 
-// recordingSSEWriter collects the raw wire events of a stream.
+// recordingSSEWriter collects the raw wire events of a stream. Appends come
+// from the Serve goroutine (and its tail goroutine), so access is mutex-
+// guarded; arrival is signalled on notify so tests wait instead of polling.
 type recordingSSEWriter struct {
+	mu     sync.Mutex
 	events []string
+	notify chan struct{}
+}
+
+func newRecordingSSEWriter() *recordingSSEWriter {
+	return &recordingSSEWriter{notify: make(chan struct{}, 64)}
 }
 
 func (w *recordingSSEWriter) Event(event string, data []byte) {
+	w.mu.Lock()
 	w.events = append(w.events, "event: "+event+"\ndata: "+string(data)+"\n")
+	w.mu.Unlock()
+	select {
+	case w.notify <- struct{}{}:
+	default:
+	}
+}
+
+func (w *recordingSSEWriter) snapshot() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]string(nil), w.events...)
+}
+
+// waitFor blocks until at least n events arrived or the deadline passes.
+func (w *recordingSSEWriter) waitFor(t *testing.T, n int, deadline <-chan time.Time) {
+	t.Helper()
+	got := 0
+	for got < n {
+		select {
+		case <-w.notify:
+			got = len(w.snapshot())
+		case <-deadline:
+			t.Fatalf("timed out waiting for %d events, have %d (%v)", n, got, w.snapshot())
+		}
+	}
 }
 
 func newTestStream(steps *fakeSteps, tail *fakeTailer, tailErr error, ping time.Duration) (*Stream, *fakeSteps, *fakeTailer) {
@@ -89,25 +124,18 @@ func TestStreamReplaysThenTails(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &recordingSSEWriter{}
+	w := newRecordingSSEWriter()
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(ctx, "t1", w) }()
 
 	// Wait for the tailed step to arrive, then cancel.
-	deadline := time.After(2 * time.Second)
-	for len(w.events) < 3 {
-		select {
-		case <-deadline:
-			t.Fatalf("timed out waiting for events: %d (%v)", len(w.events), w.events)
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	w.waitFor(t, 3, time.After(2*time.Second))
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatalf("serve: %v", err)
 	}
 
-	got := append([]string(nil), w.events...)
+	got := w.snapshot()
 	// s1 + s2 from the replay, s3 from the tail — and s2 NOT duplicated.
 	if len(got) != 3 {
 		t.Fatalf("events: got %d want 3 (%v)", len(got), got)
@@ -131,23 +159,16 @@ func TestStreamReplayFailureDegrades(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &recordingSSEWriter{}
+	w := newRecordingSSEWriter()
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(ctx, "t1", w) }()
 
-	deadline := time.After(2 * time.Second)
-	for len(w.events) < 1 {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for the tailed step")
-		case <-time.After(5 * time.Millisecond):
-		}
-	}
+	w.waitFor(t, 1, time.After(2*time.Second))
 	cancel()
 	<-done
 
-	if !strings.Contains(w.events[0], `"id":"s3"`) {
-		t.Fatalf("tail must still stream after replay failure: %v", w.events)
+	if !strings.Contains(w.snapshot()[0], `"id":"s3"`) {
+		t.Fatalf("tail must still stream after replay failure: %v", w.snapshot())
 	}
 }
 
@@ -157,20 +178,21 @@ func TestStreamTailUnavailable(t *testing.T) {
 	replayed := []agentexec.Step{{ID: "s1", Seq: 1}}
 	s, _, _ := newTestStream(&fakeSteps{steps: replayed}, nil, errors.New("kafka down"), 0)
 
-	w := &recordingSSEWriter{}
+	w := newRecordingSSEWriter()
 	err := s.Serve(context.Background(), "t1", w)
 
 	if err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	if len(w.events) != 2 {
-		t.Fatalf("events: got %d want 2 (%v)", len(w.events), w.events)
+	events := w.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("events: got %d want 2 (%v)", len(events), events)
 	}
-	if !strings.Contains(w.events[0], `"id":"s1"`) {
-		t.Fatalf("replay missing: %v", w.events[0])
+	if !strings.Contains(events[0], `"id":"s1"`) {
+		t.Fatalf("replay missing: %v", events[0])
 	}
-	if !strings.Contains(w.events[1], "live tail unavailable") {
-		t.Fatalf("degraded event missing: %v", w.events[1])
+	if !strings.Contains(events[1], "live tail unavailable") {
+		t.Fatalf("degraded event missing: %v", events[1])
 	}
 }
 
@@ -179,12 +201,12 @@ func TestStreamTailUnavailable(t *testing.T) {
 func TestStreamEnded(t *testing.T) {
 	s, _, _ := newTestStream(&fakeSteps{}, &fakeTailer{done: true}, nil, 0)
 
-	w := &recordingSSEWriter{}
+	w := newRecordingSSEWriter()
 	if err := s.Serve(context.Background(), "t1", w); err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	if len(w.events) != 1 || !strings.Contains(w.events[0], "stream ended") {
-		t.Fatalf("terminal event missing: %v", w.events)
+	if len(w.snapshot()) != 1 || !strings.Contains(w.snapshot()[0], "stream ended") {
+		t.Fatalf("terminal event missing: %v", w.snapshot())
 	}
 }
 
@@ -195,23 +217,17 @@ func TestStreamPing(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	w := &recordingSSEWriter{}
+	w := newRecordingSSEWriter()
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(ctx, "t1", w) }()
 
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for a ping")
-		case <-time.After(5 * time.Millisecond):
-		}
-		if len(w.events) >= 1 && strings.Contains(w.events[0], "event: ping") {
-			cancel()
-			<-done
-			return
-		}
+	// Wait for a ping event (the only event this stream emits).
+	w.waitFor(t, 1, time.After(2*time.Second))
+	if events := w.snapshot(); !strings.Contains(events[0], "event: ping") {
+		t.Fatalf("expected ping event, got %v", events)
 	}
+	cancel()
+	<-done
 }
 
 // TestStreamClientDisconnect: cancelling the context returns without a
@@ -220,7 +236,7 @@ func TestStreamClientDisconnect(t *testing.T) {
 	s, _, _ := newTestStream(&fakeSteps{}, &fakeTailer{}, nil, time.Hour)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &recordingSSEWriter{}
+	w := newRecordingSSEWriter()
 	done := make(chan error, 1)
 	go func() { done <- s.Serve(ctx, "t1", w) }()
 	time.Sleep(20 * time.Millisecond)
@@ -229,7 +245,7 @@ func TestStreamClientDisconnect(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("serve: %v", err)
 	}
-	if len(w.events) != 0 {
-		t.Fatalf("no events expected on disconnect, got %v", w.events)
+	if len(w.snapshot()) != 0 {
+		t.Fatalf("no events expected on disconnect, got %v", w.snapshot())
 	}
 }
