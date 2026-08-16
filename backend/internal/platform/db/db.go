@@ -5,24 +5,16 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 )
-
-// Config holds the connection parameters for one logical database.
-type Config struct {
-	DSN string // full Postgres DSN for this service's database
-}
 
 // Pool opens a pgx connection pool configured for a backend service.
 func Pool(ctx context.Context, dsn string, log *slog.Logger) (*pgxpool.Pool, error) {
@@ -54,24 +46,14 @@ func Pool(ctx context.Context, dsn string, log *slog.Logger) (*pgxpool.Pool, err
 	return pool, nil
 }
 
-// OpenStdSQL returns a *database/sql handle backed by pgx, for tooling that
-// prefers the database/sql interface.
-func OpenStdSQL(dsn string) (*sql.DB, error) {
-	cfg, err := pgxpool.ParseConfig(dsn)
+// Migrate applies every *.sql file rooted in root (sorted by name) to the
+// pool. Services pass their embedded migrations FS; os.DirFS covers on-disk
+// directories. Each file is applied whole (single Exec) — sufficient for this
+// project's simple per-service schemas.
+func Migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS, root string, log *slog.Logger) error {
+	entries, err := fs.ReadDir(fsys, root)
 	if err != nil {
-		return nil, err
-	}
-	return stdlib.OpenDB(*cfg.ConnConfig), nil
-}
-
-// MigrateDir applies every *.sql file in dir (sorted by name) in order against
-// the provided pool. Each file is split on ";" statements naively — sufficient
-// for this project's simple per-service schemas. Statements run outside an
-// explicit transaction; add transactional migration if a schema needs it.
-func MigrateDir(ctx context.Context, pool *pgxpool.Pool, dir string, log *slog.Logger) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return fmt.Errorf("db: read migrations dir %q: %w", dir, err)
+		return fmt.Errorf("db: read migrations %q: %w", root, err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -81,12 +63,14 @@ func MigrateDir(ctx context.Context, pool *pgxpool.Pool, dir string, log *slog.L
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		path := filepath.Join(dir, name)
-		buf, err := os.ReadFile(path)
+		buf, err := fs.ReadFile(fsys, root+"/"+name)
 		if err != nil {
 			return fmt.Errorf("db: read %s: %w", name, err)
 		}
-		if _, err := pool.Exec(ctx, string(buf)); err != nil {
+		applyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		_, err = pool.Exec(applyCtx, string(buf))
+		cancel()
+		if err != nil {
 			return fmt.Errorf("db: apply %s: %w", name, err)
 		}
 		log.Info("migration applied", "file", name)

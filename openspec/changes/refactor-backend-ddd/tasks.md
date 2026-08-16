@@ -8,8 +8,8 @@ not done until its gate passes.
 
 - [x] 1.1 Re-parent shared infra under `backend/internal/platform` (`db`, `kafka`, `svcrun`, `httputil`→`platform/http`, `config`→`platform/config`); update all import paths repo-wide.
 - [x] 1.2 Split the identity-header string literals into a shared `const` block (used by the gateway injector and downstream readers); extract `scope.go` into `platform/tenancy` so JSON helpers no longer import `contracts`.
-- [ ] 1.3 Delete dead code: `internal/httpapi.Server` scaffold, unused `db.Config` struct.
-- [ ] 1.4 Collapse the two near-identical migrators (`MigrateDir`/`MigrateFS`) into one; keep embedded-FS behavior.
+- [x] 1.3 Delete dead code: `internal/httpapi.Server` scaffold, unused `db.Config` struct.
+- [x] 1.4 Collapse the two near-identical migrators (`MigrateDir`/`MigrateFS`) into one; keep embedded-FS behavior.
 - [ ] 1.5 Decompose `internal/contracts` into per-domain subpackages (`identity`, `workspaces`, `tasks`, `agentexec`, `events`, …); add temporary re-export aliases at the old `contracts` path so unconverted services still compile.
 - [ ] 1.6 Add the import-direction lint: a `go test`-based check asserting no `domain` package imports `application`/`infrastructure`/`interfaces`/platform-infra, plus a `golangci-lint` `depguard` config.
 - [ ] 1.7 Add a REST + Kafka contract-conformance check (golden snapshot of endpoint paths/methods/JSON shapes and topic/payload shapes) as a CI test; baseline it against the current system.

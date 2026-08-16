@@ -30,7 +30,7 @@ func New(ctx context.Context, dsn string, log *slog.Logger) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := db.MigrateFS(ctx, pool, migrations, "migrations", log); err != nil {
+	if err := db.Migrate(ctx, pool, migrations, "migrations", log); err != nil {
 		return nil, err
 	}
 	return &Store{pool: pool}, nil
