@@ -338,7 +338,7 @@ func (s *Store) UpdateMcp(ctx context.Context, id contracts.ID, ws []contracts.I
 	}
 	if in.Env != nil {
 		envJSON, _ := json.Marshal(*in.Env)
-		sets = append(sets, fmt.Sprintf("env = $%d", idx)); args = append(args, envJSON); idx++
+		sets = append(sets, fmt.Sprintf("env = $%d", idx)); args = append(args, envJSON)
 	}
 	if len(sets) == 0 {
 		return s.GetMcp(ctx, id, ws)

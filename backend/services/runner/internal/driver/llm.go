@@ -163,7 +163,7 @@ func (d *LLMDriver) chat(ctx context.Context, rc RunContext, base string, sys st
 	if err != nil {
 		return "", nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", nil, err
@@ -232,7 +232,7 @@ func (d *LLMDriver) chatAnthropic(ctx context.Context, rc RunContext, base strin
 	if err != nil {
 		return "", nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", nil, err

@@ -118,7 +118,7 @@ func (a *App) fetchMcpServers(agentID, workspaceID contracts.ID) []contracts.Mcp
 		a.log.Warn("mcp servers fetch failed", "agent", agentID, "error", err)
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		a.log.Warn("mcp servers fetch non-200", "agent", agentID, "status", resp.Status)
 		return nil

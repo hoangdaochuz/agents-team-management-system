@@ -53,7 +53,7 @@ func (a *App) fetchMcpDefinitions(ctx context.Context, ids []contracts.ID) ([]co
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("catalog returned %s", resp.Status)
 	}

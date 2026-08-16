@@ -407,7 +407,7 @@ func (a *App) signup(w http.ResponseWriter, r *http.Request) {
 
 	workspaceID := contracts.ID("")
 	workspaceName := ""
-	role := contracts.RoleMember
+	var role contracts.Role
 	if body.StartMode == "join" {
 		if body.InviteCode == "" {
 			httputil.Error(w, http.StatusBadRequest, "invite_code is required for join mode")

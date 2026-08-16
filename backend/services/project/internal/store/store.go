@@ -151,7 +151,7 @@ func (s *ProjectStore) Update(ctx context.Context, id contracts.ID, ws []contrac
 		sets = append(sets, fmt.Sprintf("default_branch = $%d", idx)); args = append(args, *in.DefaultBranch); idx++
 	}
 	if in.ClonedPath != nil {
-		sets = append(sets, fmt.Sprintf("cloned_path = $%d", idx)); args = append(args, *in.ClonedPath); idx++
+		sets = append(sets, fmt.Sprintf("cloned_path = $%d", idx)); args = append(args, *in.ClonedPath)
 	}
 	if len(sets) == 0 {
 		// Nothing to update; return current.

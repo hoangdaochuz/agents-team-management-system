@@ -340,7 +340,7 @@ func (a *App) fetchRules(ctx context.Context, workspaceID contracts.ID) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("resources returned %s", resp.Status)
 	}
@@ -369,7 +369,7 @@ func (a *App) fetchKey(ctx context.Context, provider string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("settings returned %s", resp.Status)
 	}

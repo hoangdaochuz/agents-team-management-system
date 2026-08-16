@@ -455,7 +455,7 @@ func (g *gateway) doJSON(req *http.Request, out any) bool {
 		g.log.Warn("internal call failed", "url", req.URL.String(), "error", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return false
 	}
@@ -480,7 +480,7 @@ func (g *gateway) internalJSON(rp *httputil.ReverseProxy, path string, out any) 
 		g.log.Warn("internal call failed", "url", req.URL.String(), "error", err)
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return false
 	}
@@ -496,7 +496,7 @@ func (g *gateway) serveSession(w http.ResponseWriter, r *http.Request) {
 	// The recorder captures headers (session cookie on login) — put them back
 	// on the wire or the client never receives the cookie.
 	copyHeaders(w.Header(), rec2.Header())
-	if rec2.code != http.StatusOK && !(r.Method == http.MethodPost && rec2.code == http.StatusCreated) {
+	if rec2.code != http.StatusOK && (r.Method != http.MethodPost || rec2.code != http.StatusCreated) {
 		w.WriteHeader(rec2.code)
 		_, _ = w.Write(rec2.body)
 		return
@@ -599,7 +599,7 @@ func (g *gateway) serveHealth(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					sh.Pct, sh.Status = 0, "down"
 				} else {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 					sh.Pct, sh.Status = 100, "ok"
 				}
 			}
@@ -662,7 +662,7 @@ func (g *gateway) serveStream(w http.ResponseWriter, r *http.Request, taskID str
 		writeSSE(w, fl, "error", []byte(`{"message":"live tail unavailable; replayed history only"}`))
 		return
 	}
-	defer cg.Close()
+	defer func() { _ = cg.Close() }()
 	seen := map[string]bool{}
 	for _, st := range steps {
 		seen[string(st.ID)] = true

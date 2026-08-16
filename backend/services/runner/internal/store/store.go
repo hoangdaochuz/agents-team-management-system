@@ -86,8 +86,6 @@ func (s *Store) LatestRun(ctx context.Context, taskID contracts.ID) (contracts.R
 	return scanRun(row)
 }
 
-const runCols = `id, task_id, role, agent_id, model, status, round_no, started_at, ended_at, token_usage, error`
-
 func scanRun(row interface{ Scan(...any) error }) (contracts.Run, error) {
 	var r contracts.Run
 	var ended *time.Time

@@ -191,7 +191,7 @@ func (s *Store) CreateSignupRequest(ctx context.Context, name, email, passwordHa
 	if err != nil {
 		return SignupRequestRow{}, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var userID contracts.ID
 	if err := tx.QueryRow(ctx, `

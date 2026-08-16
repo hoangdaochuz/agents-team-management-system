@@ -46,7 +46,7 @@ func dial(ctx context.Context, s contracts.McpServer, log *slog.Logger) (*conn, 
 	}
 	stdout, err := c.StdoutPipe()
 	if err != nil {
-		stdin.Close()
+		_ = stdin.Close()
 		return nil, err
 	}
 	if err := c.Start(); err != nil {
