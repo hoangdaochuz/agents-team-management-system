@@ -12,7 +12,7 @@ import (
 
 	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/orgs/internal/application"
-	"github.com/aaks/server/services/orgs/internal/infrastructure/store"
+	"github.com/aaks/server/services/orgs/internal/infrastructure/repository"
 	interfacehttp "github.com/aaks/server/services/orgs/internal/interfaces/http"
 	"github.com/aaks/server/services/orgs/internal/interfaces/messaging"
 )
@@ -29,7 +29,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	if dsn == "" {
 		return errors.New("ORGS_DB_DSN is not set")
 	}
-	st, err := store.New(ctx, dsn, log)
+	st, err := repository.New(ctx, dsn, log)
 	if err != nil {
 		return err
 	}
@@ -42,8 +42,8 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		JoinRequests:  st.JoinRequests,
 		OrgRequests:   st.OrgRequests,
 	}
-	pub := store.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
-	app := application.New(repo, store.NewUnitOfWork(st), pub, log)
+	pub := repository.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
+	app := application.New(repo, repository.NewUnitOfWork(st), pub, log)
 
 	interfacehttp.New(app, log).Register(mux)
 	messaging.New(app, log).Start(ctx, os.Getenv("KAFKA_BROKERS"))

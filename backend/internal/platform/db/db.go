@@ -1,6 +1,6 @@
 // Package db provides shared Postgres helpers: connection-pool creation and a
 // SQL-file migrator with schema_migrations tracking. Each service owns its own
-// logical database and embeds its migrations under internal/store/migrations.
+// logical database and embeds its migrations under internal/infrastructure/repository/migrations.
 package db
 
 import (

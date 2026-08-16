@@ -7,11 +7,11 @@ package proxy
 
 import (
 	"log/slog"
-	"sync"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"sync"
 
 	apiutil "github.com/aaks/server/internal/platform/http"
 )

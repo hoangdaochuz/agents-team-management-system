@@ -19,7 +19,7 @@ not done until its gate passes.
 
 - [x] 2.1 Create the `services/orgs/internal/{domain,application,infrastructure,interfaces}` package skeleton.
 - [x] 2.2 Define domain entities/aggregates (Workspace, Member, Org, Invite, JoinRequest) and repository **port interfaces** in `domain` (move logic, not SQL).
-- [x] 2.3 Implement postgres repository adapters in `infrastructure/store` satisfying the domain ports; migrate inline SQL from the old `store.Store`.
+- [x] 2.3 Implement postgres repository adapters in `infrastructure/repository` satisfying the domain ports; migrate inline SQL from the old `store.Store`.
 - [x] 2.4 Extract business logic from `routes.go` into `application` handlers: membership/role enforcement, last-owner invariant, workspace create, org-request approval.
 - [x] 2.5 Introduce the application-layer `UnitOfWork` and wrap the multi-aggregate mutations (`createWorkspace`, `approveOrgRequest`) so they commit atomically or roll back. Introduce an `EventPublisher` port (SOLID DIP) and wrap the sarama producer behind it in `infrastructure`; inject it into the application handlers that publish events (no sarama import in `application`/`domain`).
 - [x] 2.6 Add an `interfaces/http` layer of thin handlers (decode → call application handler → encode) and `interfaces/messaging` Kafka consumers delegating to application handlers.
@@ -32,7 +32,7 @@ not done until its gate passes.
 ## 3. Phase 2a — Complex validation: `runner` service
 
 - [x] 3.1 Create the `services/runner/internal/{domain,application,infrastructure,interfaces}` skeleton; preserve existing `driver`, `sandbox`, `mcp` leaf packages and their ports untouched.
-- [x] 3.2 Define domain ports: `RunRepository`/`StepRepository`/`FindingRepository`/`ArtifactRepository`; move `store.Store` SQL into `infrastructure/store` adapters.
+- [x] 3.2 Define domain ports: `RunRepository`/`StepRepository`/`FindingRepository`/`ArtifactRepository`; move `store.Store` SQL into `infrastructure/repository` adapters.
 - [x] 3.3 Extract the `httpapi.App` orchestration (`runImplementer`, `runReviewer`, `executeAndFinish`, `openPr`, `cancelTask`) into `application` handlers depending only on domain ports.
 - [x] 3.4 Introduce ACL port interfaces (`SettingsKeyClient`, `ResourcesRulesClient`, `AgentMcpClient`) in `domain`/`application`; implement HTTP adapters in `infrastructure`, replacing inline `http.DefaultClient` calls. Also introduce an `EventPublisher` port (DIP) wrapping the sarama producer, so the orchestration handlers publish through the abstraction.
 - [x] 3.5 Add `interfaces/http` (query endpoints + SSE replay) and `interfaces/messaging` (command consumers) delegating to application handlers; wire the lifecycle context for consumer drain.

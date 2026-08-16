@@ -11,7 +11,7 @@ import (
 
 	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/admin/internal/application"
-	"github.com/aaks/server/services/admin/internal/infrastructure/store"
+	"github.com/aaks/server/services/admin/internal/infrastructure/repository"
 	interfacehttp "github.com/aaks/server/services/admin/internal/interfaces/http"
 	"github.com/aaks/server/services/admin/internal/interfaces/messaging"
 )
@@ -28,7 +28,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	if dsn == "" {
 		return errors.New("ADMIN_DB_DSN is not set")
 	}
-	st, err := store.New(ctx, dsn, log)
+	st, err := repository.New(ctx, dsn, log)
 	if err != nil {
 		return err
 	}

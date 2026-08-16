@@ -111,7 +111,7 @@ DTOs.
   (`WorkspaceRepository`, `MemberRepository`, `OrganizationRepository`, …) — not one fat data-access
   interface (ISP). They carry domain-shaped methods only (no `pgx.Tx`, no SQL leaking).
 - `application` handlers depend on these ports. The concrete postgres implementations live in
-  `infrastructure/store` and are injected at the composition root (DIP).
+  `infrastructure/repository` and are injected at the composition root (DIP).
 - **Dependency inversion extends to all infrastructure, not just the DB.** The sarama producer is wrapped
   behind an `EventPublisher` port (so `application` never imports sarama); each inter-service HTTP
   dependency is wrapped behind its own focused anti-corruption-layer client port (`SettingsKeyClient`,

@@ -27,16 +27,16 @@ type Query struct {
 
 // CreateInput is the body of POST /tasks (matches frontend createTask).
 type CreateInput struct {
-	ProjectID   identity.ID       `json:"project_id"`
-	Title       string            `json:"title"`
-	Prompt      string            `json:"prompt"`
-	Description string            `json:"description,omitempty"`
-	Type        tasks.TaskType    `json:"type,omitempty"`
-	Priority    tasks.Priority    `json:"priority,omitempty"`
-	Labels      []string          `json:"labels,omitempty"`
-	Points      *int              `json:"points,omitempty"`
-	AgentID     *identity.ID      `json:"agent_id,omitempty"`
-	DueAt       *string           `json:"due_at,omitempty"`
+	ProjectID   identity.ID    `json:"project_id"`
+	Title       string         `json:"title"`
+	Prompt      string         `json:"prompt"`
+	Description string         `json:"description,omitempty"`
+	Type        tasks.TaskType `json:"type,omitempty"`
+	Priority    tasks.Priority `json:"priority,omitempty"`
+	Labels      []string       `json:"labels,omitempty"`
+	Points      *int           `json:"points,omitempty"`
+	AgentID     *identity.ID   `json:"agent_id,omitempty"`
+	DueAt       *string        `json:"due_at,omitempty"`
 }
 
 // TaskRepository is the task aggregate port. Reads are scoped to the caller's

@@ -37,9 +37,9 @@ func (c *AuthClient) Resolve(ctx context.Context, token string) (application.Ses
 	}
 	req.Header.Set("Cookie", c.cookie+"="+token)
 	var u struct {
-		UserID      string `json:"user_id"`
-		Name        string `json:"name"`
-		Email       string `json:"email"`
+		UserID       string `json:"user_id"`
+		Name         string `json:"name"`
+		Email        string `json:"email"`
 		IsSuperadmin bool   `json:"is_superadmin"`
 	}
 	if err := doGet(c.hc, c.log, ctx, req.URL.String(), req.Header, &u); err != nil {

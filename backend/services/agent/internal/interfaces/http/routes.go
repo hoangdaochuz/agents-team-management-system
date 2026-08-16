@@ -65,19 +65,19 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name               string               `json:"name"`
-		Role               string               `json:"role"`
-		SystemPrompt       string               `json:"system_prompt,omitempty"`
-		DefaultModel       string               `json:"default_model,omitempty"`
-		AllowedTools       []string             `json:"allowed_tools,omitempty"`
-		RoleTitle          string               `json:"role_title,omitempty"`
-		Provider           identity.Provider    `json:"provider,omitempty"`
-		Temperature        *float64             `json:"temperature,omitempty"`
-		MaxOutputTokens    *int                 `json:"max_output_tokens,omitempty"`
+		Name               string                 `json:"name"`
+		Role               string                 `json:"role"`
+		SystemPrompt       string                 `json:"system_prompt,omitempty"`
+		DefaultModel       string                 `json:"default_model,omitempty"`
+		AllowedTools       []string               `json:"allowed_tools,omitempty"`
+		RoleTitle          string                 `json:"role_title,omitempty"`
+		Provider           identity.Provider      `json:"provider,omitempty"`
+		Temperature        *float64               `json:"temperature,omitempty"`
+		MaxOutputTokens    *int                   `json:"max_output_tokens,omitempty"`
 		AutonomyMode       agentexec.AutonomyMode `json:"autonomy_mode,omitempty"`
-		UserPromptTemplate string               `json:"user_prompt_template,omitempty"`
-		KnowledgeSourceIDs []identity.ID        `json:"knowledge_source_ids,omitempty"`
-		Guardrails         *agentexec.Guardrails `json:"guardrails,omitempty"`
+		UserPromptTemplate string                 `json:"user_prompt_template,omitempty"`
+		KnowledgeSourceIDs []identity.ID          `json:"knowledge_source_ids,omitempty"`
+		Guardrails         *agentexec.Guardrails  `json:"guardrails,omitempty"`
 	}
 	if httputil.Decode(w, r, &body) {
 		return

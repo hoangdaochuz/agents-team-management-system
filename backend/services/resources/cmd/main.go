@@ -12,7 +12,7 @@ import (
 
 	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/resources/internal/application"
-	"github.com/aaks/server/services/resources/internal/infrastructure/store"
+	"github.com/aaks/server/services/resources/internal/infrastructure/repository"
 	interfacehttp "github.com/aaks/server/services/resources/internal/interfaces/http"
 	"github.com/aaks/server/services/resources/internal/interfaces/messaging"
 )
@@ -29,7 +29,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	if dsn == "" {
 		return errors.New("RESOURCES_DB_DSN is not set")
 	}
-	st, err := store.New(ctx, dsn, log)
+	st, err := repository.New(ctx, dsn, log)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		Rules:     st.Rules,
 		Mcp:       st.Mcp,
 	}
-	app := application.New(repo, store.NewUnitOfWork(st), log)
+	app := application.New(repo, repository.NewUnitOfWork(st), log)
 
 	interfacehttp.New(app, log).Register(mux)
 	messaging.New(app, log).Start(ctx, os.Getenv("KAFKA_BROKERS"))

@@ -315,8 +315,8 @@ func (s *Server) sendInvites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Emails []string       `json:"emails"`
-		Role   identity.Role  `json:"role"`
+		Emails []string      `json:"emails"`
+		Role   identity.Role `json:"role"`
 	}
 	if httputil.Decode(w, r, &body) {
 		return
