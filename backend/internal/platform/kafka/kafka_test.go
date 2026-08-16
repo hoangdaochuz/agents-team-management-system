@@ -19,7 +19,7 @@ import (
 	"github.com/aaks/server/internal/contracts/identity"
 )
 
-// brokerEnv names the env var holding a reachable Kafka bootstrap address. The
+// brokerEnv names the msg var holding a reachable Kafka bootstrap address. The
 // test is skipped when unset so `go test ./...` is green without infrastructure.
 const brokerEnv = "AAKS_KAFKA_TEST_BROKERS"
 
@@ -105,7 +105,7 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = prod.Close() }()
 
-	env := events.EventEnvelope{
+	msg := events.EventEnvelope{
 		EventID:   "evt-" + newID(),
 		EventType: topic,
 		TaskID:    taskID,
@@ -116,7 +116,7 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	if err := Publish(ctx, prod, topic, env, log); err != nil {
+	if err := Publish(ctx, prod, topic, msg, log); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
 
@@ -144,8 +144,8 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 
 		select {
 		case recv := <-got:
-			if recv.EventID != env.EventID {
-				t.Errorf("%s: event_id mismatch: got %s want %s", groupID, recv.EventID, env.EventID)
+			if recv.EventID != msg.EventID {
+				t.Errorf("%s: event_id mismatch: got %s want %s", groupID, recv.EventID, msg.EventID)
 			}
 		case <-ctx.Done():
 			t.Fatalf("%s: timed out waiting for event", groupID)
@@ -183,9 +183,9 @@ func (c *fakeClaim) InitialOffset() int64                     { return 0 }
 func (c *fakeClaim) HighWaterMarkOffset() int64               { return 0 }
 func (c *fakeClaim) Messages() <-chan *sarama.ConsumerMessage { return c.msgs }
 
-func mustEnvBytes(t *testing.T, env events.EventEnvelope) []byte {
+func mustEnvBytes(t *testing.T, msg events.EventEnvelope) []byte {
 	t.Helper()
-	b, err := json.Marshal(env)
+	b, err := json.Marshal(msg)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -236,11 +236,11 @@ func (p *captureProducer) AddMessageToTxnWithGroupMetadata(*sarama.ConsumerMessa
 func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := events.EventEnvelope{
+	msg := events.EventEnvelope{
 		EventID: "evt-poison", EventType: topic, TaskID: "task-1",
 		Data: map[string]string{"x": "y"},
 	}
-	raw := mustEnvBytes(t, env)
+	raw := mustEnvBytes(t, msg)
 
 	prod := &captureProducer{}
 	d := newDispatcher(
@@ -251,8 +251,8 @@ func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 	sess := &fakeSession{ctx: context.Background()}
 	// First (maxRedeliveries - 1) deliveries: handler fails, message NOT marked.
 	for i := 1; i < maxRedeliveries; i++ {
-		msg := &sarama.ConsumerMessage{Topic: topic, Partition: 0, Offset: int64(i), Key: []byte("task-1"), Value: raw}
-		if err := d.ConsumeClaim(sess, oneMsgClaim(msg)); err == nil {
+		cm := &sarama.ConsumerMessage{Topic: topic, Partition: 0, Offset: int64(i), Key: []byte("task-1"), Value: raw}
+		if err := d.ConsumeClaim(sess, oneMsgClaim(cm)); err == nil {
 			t.Fatalf("delivery %d: expected handler error, got nil", i)
 		}
 	}
@@ -261,8 +261,8 @@ func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 	}
 
 	// Final delivery: routed to DLQ and marked (ACKed).
-	msg := &sarama.ConsumerMessage{Topic: topic, Partition: 0, Offset: int64(maxRedeliveries), Key: []byte("task-1"), Value: raw}
-	if err := d.ConsumeClaim(sess, oneMsgClaim(msg)); err != nil {
+	cm := &sarama.ConsumerMessage{Topic: topic, Partition: 0, Offset: int64(maxRedeliveries), Key: []byte("task-1"), Value: raw}
+	if err := d.ConsumeClaim(sess, oneMsgClaim(cm)); err != nil {
 		t.Fatalf("final delivery: expected nil (DLQ+ACK), got %v", err)
 	}
 
@@ -300,8 +300,8 @@ func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 func TestDLQPublishFailureStillAcks(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := events.EventEnvelope{EventID: "evt-dlqfail", EventType: topic, TaskID: "task-7"}
-	raw := mustEnvBytes(t, env)
+	msg := events.EventEnvelope{EventID: "evt-dlqfail", EventType: topic, TaskID: "task-7"}
+	raw := mustEnvBytes(t, msg)
 
 	prod := &captureProducer{err: errors.New("dlq broker down")}
 	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") }, prod, log)
@@ -323,8 +323,8 @@ func TestDLQPublishFailureStillAcks(t *testing.T) {
 func TestPoisonMessageNoDLQProducerDropsSafely(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := events.EventEnvelope{EventID: "evt-2", EventType: topic, TaskID: "task-2"}
-	raw := mustEnvBytes(t, env)
+	msg := events.EventEnvelope{EventID: "evt-2", EventType: topic, TaskID: "task-2"}
+	raw := mustEnvBytes(t, msg)
 
 	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") }, nil, log)
 	sess := &fakeSession{ctx: context.Background()}
@@ -374,8 +374,8 @@ func TestMalformedMessageRoutedToDLQ(t *testing.T) {
 func TestSuccessfulDeliveryResetsFailures(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := events.EventEnvelope{EventID: "evt-flaky", EventType: topic, TaskID: "task-3"}
-	raw := mustEnvBytes(t, env)
+	msg := events.EventEnvelope{EventID: "evt-flaky", EventType: topic, TaskID: "task-3"}
+	raw := mustEnvBytes(t, msg)
 
 	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") }, nil, log)
 	sess := &fakeSession{ctx: context.Background()}
@@ -388,8 +388,8 @@ func TestSuccessfulDeliveryResetsFailures(t *testing.T) {
 	if err := d.ConsumeClaim(sess, oneMsgClaim(&sarama.ConsumerMessage{Topic: topic, Value: raw})); err != nil {
 		t.Fatalf("success delivery: %v", err)
 	}
-	if d.failures[eventKey(env)] != 0 {
-		t.Errorf("failure counter not reset after success: %d", d.failures[eventKey(env)])
+	if d.failures[eventKey(msg)] != 0 {
+		t.Errorf("failure counter not reset after success: %d", d.failures[eventKey(msg)])
 	}
 }
 

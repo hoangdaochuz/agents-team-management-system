@@ -42,12 +42,12 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 	}()
 }
 
-func (c *Consumer) consume(ctx context.Context, env events.EventEnvelope) error {
-	if env.EventType != events.TopicAuditRecorded {
+func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
+	if msg.EventType != events.TopicAuditRecorded {
 		return nil
 	}
 	var d events.AuditRecordedData
-	if err := env.DecodeData(&d); err != nil {
+	if err := msg.DecodeData(&d); err != nil {
 		return err
 	}
 	return c.app.RecordAudit(ctx, d)

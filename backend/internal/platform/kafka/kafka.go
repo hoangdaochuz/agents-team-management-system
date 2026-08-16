@@ -53,19 +53,19 @@ func NewProducer(brokers Brokers, log *slog.Logger) (sarama.SyncProducer, error)
 	return p, nil
 }
 
-// Publish serializes env.Data to JSON and publishes to topic, keyed by env.TaskID
+// Publish serializes msg.Data to JSON and publishes to topic, keyed by msg.TaskID
 // so all events for a task land on the same partition in publish order.
-func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env events.EventEnvelope, log *slog.Logger) error {
-	if env.EventID == "" {
-		env.EventID = newID()
+func Publish(ctx context.Context, p sarama.SyncProducer, topic string, msg events.EventEnvelope, log *slog.Logger) error {
+	if msg.EventID == "" {
+		msg.EventID = newID()
 	}
-	if env.OccurredAt.IsZero() {
-		env.OccurredAt = time.Now().UTC()
+	if msg.OccurredAt.IsZero() {
+		msg.OccurredAt = time.Now().UTC()
 	}
-	if env.EventType == "" {
-		env.EventType = topic
+	if msg.EventType == "" {
+		msg.EventType = topic
 	}
-	if env.TaskID == "" && events.IsTaskPartitioned(topic) {
+	if msg.TaskID == "" && events.IsTaskPartitioned(topic) {
 		// Task-partitioned topics preserve per-task ordering; an empty key would
 		// silently collapse every such event onto a single partition, degrading
 		// the invariant — fail fast instead. Non-task topics (signup, invite,
@@ -73,25 +73,25 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env event
 		// and are unaffected.
 		return fmt.Errorf("kafka: publish to %s: TaskID is required for task-partitioned topics", topic)
 	}
-	buf, err := json.Marshal(env)
+	buf, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("kafka: marshal event: %w", err)
 	}
-	msg := &sarama.ProducerMessage{
+	pm := &sarama.ProducerMessage{
 		Topic: topic,
-		Key:   sarama.StringEncoder(env.TaskID),
+		Key:   sarama.StringEncoder(msg.TaskID),
 		Value: sarama.ByteEncoder(buf),
 	}
-	if _, _, err := p.SendMessage(msg); err != nil {
+	if _, _, err := p.SendMessage(pm); err != nil {
 		return fmt.Errorf("kafka: send %s: %w", topic, err)
 	}
-	log.Debug("event published", "topic", topic, "event_id", env.EventID, "task_id", env.TaskID)
+	log.Debug("event published", "topic", topic, "event_id", msg.EventID, "task_id", msg.TaskID)
 	return nil
 }
 
 // Handler processes one envelope; returning an error re-queues (at-least-once).
-// The handler MUST be idempotent (dedup by env.EventID or the entity id it carries).
-type Handler func(ctx context.Context, env events.EventEnvelope) error
+// The handler MUST be idempotent (dedup by msg.EventID or the entity id it carries).
+type Handler func(ctx context.Context, msg events.EventEnvelope) error
 
 // ConsumerGroup runs a consumer group for the given topics, dispatching each
 // message to handler. It blocks until ctx is cancelled. Rebalance/errors are
@@ -213,18 +213,18 @@ func (d *dispatcher) Setup(sarama.ConsumerGroupSession) error   { return nil }
 func (d *dispatcher) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
 func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	for msg := range claim.Messages() {
-		var env events.EventEnvelope
-		if err := json.Unmarshal(msg.Value, &env); err != nil {
+	for cm := range claim.Messages() {
+		var msg events.EventEnvelope
+		if err := json.Unmarshal(cm.Value, &msg); err != nil {
 			// Malformed (unparseable) envelope is definitively poison: route to
 			// the DLQ (best-effort) and ACK so the partition keeps progressing.
-			d.log.Error("kafka: malformed message", "topic", msg.Topic, "err", err)
-			d.routeToDLQ(sess.Context(), msg, env, fmt.Sprintf("malformed envelope: %v", err))
-			sess.MarkMessage(msg, "")
+			d.log.Error("kafka: malformed message", "topic", cm.Topic, "err", err)
+			d.routeToDLQ(sess.Context(), cm, msg, fmt.Sprintf("malformed envelope: %v", err))
+			sess.MarkMessage(cm, "")
 			continue
 		}
-		if err := d.handler(sess.Context(), env); err != nil {
-			key := eventKey(env)
+		if err := d.handler(sess.Context(), msg); err != nil {
+			key := eventKey(msg)
 			d.mu.Lock()
 			d.failures[key]++
 			attempts := d.failures[key]
@@ -238,21 +238,21 @@ func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama
 				// The partition keeps progressing and the message is recoverable
 				// for offline inspection/replay rather than silently dropped.
 				d.log.Error("kafka: poison message after max retries; routing to DLQ",
-					"topic", msg.Topic, "dlq_topic", DLQTopic(msg.Topic),
-					"event_id", env.EventID, "task_id", env.TaskID,
+					"topic", cm.Topic, "dlq_topic", DLQTopic(cm.Topic),
+					"event_id", msg.EventID, "task_id", msg.TaskID,
 					"attempts", attempts, "err", err)
-				d.routeToDLQ(sess.Context(), msg, env, err.Error())
-				sess.MarkMessage(msg, "")
+				d.routeToDLQ(sess.Context(), cm, msg, err.Error())
+				sess.MarkMessage(cm, "")
 				continue
 			}
-			d.log.Error("kafka: handler error (will NOT advance; at-least-once)", "topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID, "attempts", attempts, "err", err)
+			d.log.Error("kafka: handler error (will NOT advance; at-least-once)", "topic", cm.Topic, "event_id", msg.EventID, "task_id", msg.TaskID, "attempts", attempts, "err", err)
 			// Do not mark the message: it will be redelivered.
 			return err
 		}
 		d.mu.Lock()
-		delete(d.failures, eventKey(env))
+		delete(d.failures, eventKey(msg))
 		d.mu.Unlock()
-		sess.MarkMessage(msg, "")
+		sess.MarkMessage(cm, "")
 	}
 	return nil
 }
@@ -262,41 +262,41 @@ func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama
 // inspected or replayed. Best-effort: if no DLQ producer or the publish fails,
 // the caller still ACKs the message (never stalls the partition) and the drop
 // is logged loudly.
-func (d *dispatcher) routeToDLQ(_ context.Context, msg *sarama.ConsumerMessage, env events.EventEnvelope, reason string) {
+func (d *dispatcher) routeToDLQ(_ context.Context, cm *sarama.ConsumerMessage, msg events.EventEnvelope, reason string) {
 	if d.dlq == nil {
 		d.log.Error("kafka: no DLQ producer; dropping poison message",
-			"topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID, "reason", reason)
+			"topic", cm.Topic, "event_id", msg.EventID, "task_id", msg.TaskID, "reason", reason)
 		return
 	}
 	out := &sarama.ProducerMessage{
-		Topic: DLQTopic(msg.Topic),
-		Key:   sarama.ByteEncoder(msg.Key),
-		Value: sarama.ByteEncoder(msg.Value),
+		Topic: DLQTopic(cm.Topic),
+		Key:   sarama.ByteEncoder(cm.Key),
+		Value: sarama.ByteEncoder(cm.Value),
 		Headers: []sarama.RecordHeader{
-			{Key: []byte("original-topic"), Value: []byte(msg.Topic)},
-			{Key: []byte("original-partition"), Value: []byte(strconv.Itoa(int(msg.Partition)))},
-			{Key: []byte("original-offset"), Value: []byte(strconv.FormatInt(msg.Offset, 10))},
-			{Key: []byte("original-event-id"), Value: []byte(env.EventID)},
+			{Key: []byte("original-topic"), Value: []byte(cm.Topic)},
+			{Key: []byte("original-partition"), Value: []byte(strconv.Itoa(int(cm.Partition)))},
+			{Key: []byte("original-offset"), Value: []byte(strconv.FormatInt(cm.Offset, 10))},
+			{Key: []byte("original-event-id"), Value: []byte(msg.EventID)},
 			{Key: []byte("reason"), Value: []byte(truncate(reason, 1024))},
 		},
 	}
 	if _, _, err := d.dlq.SendMessage(out); err != nil {
 		d.log.Error("kafka: DLQ publish failed; dropping poison message",
-			"dlq_topic", out.Topic, "src_topic", msg.Topic, "event_id", env.EventID, "err", err)
+			"dlq_topic", out.Topic, "src_topic", cm.Topic, "event_id", msg.EventID, "err", err)
 		return
 	}
 	d.log.Warn("kafka: poison message routed to DLQ",
-		"src_topic", msg.Topic, "dlq_topic", out.Topic, "event_id", env.EventID, "task_id", env.TaskID)
+		"src_topic", cm.Topic, "dlq_topic", out.Topic, "event_id", msg.EventID, "task_id", msg.TaskID)
 }
 
 // eventKey identifies a delivery for poison tracking. Fall back to the raw
 // offset when the envelope has no EventID, so every redelivery of a malformed
 // (but JSON-parsable) envelope is still accounted for.
-func eventKey(env events.EventEnvelope) string {
-	if env.EventID != "" {
-		return env.EventID
+func eventKey(msg events.EventEnvelope) string {
+	if msg.EventID != "" {
+		return msg.EventID
 	}
-	return env.OccurredAt.String() + ":" + env.EventType
+	return msg.OccurredAt.String() + ":" + msg.EventType
 }
 
 // newID returns a short random hex id for event dedup. Not a UUID, but unique

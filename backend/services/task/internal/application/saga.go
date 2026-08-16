@@ -130,11 +130,11 @@ func (a *App) OpenPr(ctx context.Context, id identity.ID, ws []identity.ID) erro
 //	verdict REQUEST_CHANGES      → round < 5 → doing + task.run-requested(round+1)
 //	                              → round ≥ 5 → blocked (review rounds exhausted)
 //	pr.opened                    → logged (PR info is surfaced via the Runner)
-func (a *App) Dispatch(ctx context.Context, env events.EventEnvelope) error {
-	switch env.EventType {
+func (a *App) Dispatch(ctx context.Context, msg events.EventEnvelope) error {
+	switch msg.EventType {
 	case events.TopicRunCompleted:
 		var d events.RunCompletedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		if d.Role != agentexec.RunRoleImplementer || d.Status != agentexec.RunDone {
@@ -143,13 +143,13 @@ func (a *App) Dispatch(ctx context.Context, env events.EventEnvelope) error {
 		return a.onImplementerDone(ctx, d)
 	case events.TopicVerdict:
 		var d events.VerdictData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return a.onVerdict(ctx, d)
 	case events.TopicPrOpened:
 		var d events.PrOpenedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		a.log.Info("pr opened for task", "task_id", d.TaskID, "run_id", d.RunID, "url", d.URL)

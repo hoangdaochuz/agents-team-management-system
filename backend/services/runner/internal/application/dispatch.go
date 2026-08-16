@@ -12,29 +12,29 @@ import (
 // (a stop command must be consumable while a run is in flight); a per-task
 // in-flight guard prevents overlapping runs, and stop cancels via the task
 // context.
-func (r *Runner) Dispatch(ctx context.Context, env events.EventEnvelope) error {
-	switch env.EventType {
+func (r *Runner) Dispatch(ctx context.Context, msg events.EventEnvelope) error {
+	switch msg.EventType {
 	case events.TopicTaskRunRequested:
 		var d events.RunRequestedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		r.startRun(ctx, string(d.TaskID), func(rctx context.Context) { r.StartImplementer(rctx, d) })
 	case events.TopicTaskReviewRequested:
 		var d events.ReviewRequestedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		r.startRun(ctx, string(d.TaskID), func(rctx context.Context) { r.StartReviewer(rctx, d) })
 	case events.TopicTaskStopRequested:
 		var d events.StopRequestedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		r.CancelTask(string(d.TaskID))
 	case events.TopicPrOpenRequested:
 		var d events.PrOpenRequestedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return r.OpenPr(ctx, d)

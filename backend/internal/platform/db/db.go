@@ -1,6 +1,6 @@
 // Package db provides shared Postgres helpers: connection-pool creation and a
-// trivial SQL-file migrator. Each service owns its own logical database and
-// embeds its migrations under internal/store/migrations.
+// SQL-file migrator with schema_migrations tracking. Each service owns its own
+// logical database and embeds its migrations under internal/store/migrations.
 package db
 
 import (
@@ -47,10 +47,19 @@ func Pool(ctx context.Context, dsn string, log *slog.Logger) (*pgxpool.Pool, err
 }
 
 // Migrate applies every *.sql file rooted in root (sorted by name) to the
-// pool. Services pass their embedded migrations FS; os.DirFS covers on-disk
-// directories. Each file is applied whole (single Exec) — sufficient for this
-// project's simple per-service schemas.
+// pool, tracking applied files in a schema_migrations table so each file runs
+// exactly once — a service restart (or a second container replica) never
+// re-executes a migration. Services pass their embedded migrations FS;
+// os.DirFS covers on-disk directories. Each file is applied whole (single
+// Exec) — sufficient for this project's simple per-service schemas — and
+// recorded in the same transaction so a failed file is never marked applied.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS, root string, log *slog.Logger) error {
+	if _, err := pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		name       text PRIMARY KEY,
+		applied_at timestamptz NOT NULL DEFAULT now()
+	)`); err != nil {
+		return fmt.Errorf("db: create schema_migrations: %w", err)
+	}
 	entries, err := fs.ReadDir(fsys, root)
 	if err != nil {
 		return fmt.Errorf("db: read migrations %q: %w", root, err)
@@ -63,16 +72,39 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS, root string, l
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		var applied bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE name = $1)`, name).Scan(&applied); err != nil {
+			return fmt.Errorf("db: check %s: %w", name, err)
+		}
+		if applied {
+			continue
+		}
 		buf, err := fs.ReadFile(fsys, root+"/"+name)
 		if err != nil {
 			return fmt.Errorf("db: read %s: %w", name, err)
 		}
 		applyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		_, err = pool.Exec(applyCtx, string(buf))
-		cancel()
+		tx, err := pool.Begin(applyCtx)
 		if err != nil {
+			cancel()
+			return fmt.Errorf("db: begin %s: %w", name, err)
+		}
+		if _, err := tx.Exec(applyCtx, string(buf)); err != nil {
+			_ = tx.Rollback(applyCtx)
+			cancel()
 			return fmt.Errorf("db: apply %s: %w", name, err)
 		}
+		if _, err := tx.Exec(applyCtx, `INSERT INTO schema_migrations(name) VALUES($1)`, name); err != nil {
+			_ = tx.Rollback(applyCtx)
+			cancel()
+			return fmt.Errorf("db: record %s: %w", name, err)
+		}
+		if err := tx.Commit(applyCtx); err != nil {
+			cancel()
+			return fmt.Errorf("db: commit %s: %w", name, err)
+		}
+		cancel()
 		log.Info("migration applied", "file", name)
 	}
 	return nil

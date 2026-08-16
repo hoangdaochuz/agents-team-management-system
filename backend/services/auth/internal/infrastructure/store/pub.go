@@ -19,7 +19,7 @@ type Publisher struct {
 	log  *slog.Logger
 }
 
-// NewPublisher builds the adapter from a KAFKA_BROKERS env list. A nil/empty
+// NewPublisher builds the adapter from a KAFKA_BROKERS msg list. A nil/empty
 // broker list yields a no-op publisher (matches the pre-refactor behavior where
 // auth emitted no signup events when Kafka was unavailable).
 func NewPublisher(brokers string, log *slog.Logger) *Publisher {
@@ -39,8 +39,8 @@ func (p *Publisher) Publish(ctx context.Context, topic string, data any, key ide
 	if p.prod == nil {
 		return
 	}
-	env := events.EventEnvelope{TaskID: key, Data: data}
-	if err := kafka.Publish(ctx, p.prod, topic, env, p.log); err != nil {
+	msg := events.EventEnvelope{TaskID: key, Data: data}
+	if err := kafka.Publish(ctx, p.prod, topic, msg, p.log); err != nil {
 		p.log.Error("publish event failed", "topic", topic, "error", err)
 	}
 }

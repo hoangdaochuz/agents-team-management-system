@@ -38,8 +38,8 @@ func (p *Publisher) Publish(ctx context.Context, topic string, data any, key ide
 	if p.prod == nil {
 		return
 	}
-	env := events.EventEnvelope{TaskID: key, Data: data}
-	if err := kafka.Publish(ctx, p.prod, topic, env, p.log); err != nil {
+	msg := events.EventEnvelope{TaskID: key, Data: data}
+	if err := kafka.Publish(ctx, p.prod, topic, msg, p.log); err != nil {
 		p.log.Error("publish event failed", "topic", topic, "task_id", key, "error", err)
 	}
 }

@@ -41,23 +41,23 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 	}()
 }
 
-func (c *Consumer) consume(ctx context.Context, env events.EventEnvelope) error {
-	switch env.EventType {
+func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
+	switch msg.EventType {
 	case events.TopicSignupApproved:
 		var d events.SignupApprovedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return c.app.HandleSignupApproved(ctx, d)
 	case events.TopicSignupDeclined:
 		var d events.SignupDeclinedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return c.app.HandleSignupDeclined(ctx, d)
 	case events.TopicInviteCreated:
 		var d events.InviteCreatedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return c.app.HandleInviteCreated(ctx, d)

@@ -36,12 +36,12 @@ func NewStepTailer(brokers []string, taskID identity.ID, log *slog.Logger) (*Ste
 // Envelopes for other tasks and undecodable payloads are skipped silently
 // (the stream is best-effort).
 func (t *StepTailer) Run(ctx context.Context, onStep func(ctx context.Context, step agentexec.Step) error) error {
-	return t.cg.Run(ctx, []string{events.TopicStep}, func(ctx context.Context, env events.EventEnvelope) error {
-		if env.TaskID != t.taskID {
+	return t.cg.Run(ctx, []string{events.TopicStep}, func(ctx context.Context, msg events.EventEnvelope) error {
+		if msg.TaskID != t.taskID {
 			return nil
 		}
 		var d events.StepData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return nil
 		}
 		return onStep(ctx, d.Step)

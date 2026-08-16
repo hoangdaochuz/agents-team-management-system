@@ -11,8 +11,8 @@ import (
 
 	"github.com/aaks/server/internal/contracts/identity"
 	"github.com/aaks/server/internal/contracts/resources"
-	"github.com/aaks/server/services/runner/internal/driver"
 	"github.com/aaks/server/services/runner/internal/domain"
+	"github.com/aaks/server/services/runner/internal/driver"
 )
 
 // ErrNotConfigured is returned by ACL clients whose upstream is unset; the

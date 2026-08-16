@@ -185,11 +185,11 @@ func (p *fakePublisher) Publish(_ context.Context, topic string, _ any, _ identi
 }
 
 type fakeRepo struct {
-	users     *fakeUsers
-	sessions  *fakeSessions
-	signups   *fakeSignupRequests
-	invites   *fakeInvites
-	baseRepo  *Repository
+	users    *fakeUsers
+	sessions *fakeSessions
+	signups  *fakeSignupRequests
+	invites  *fakeInvites
+	baseRepo *Repository
 }
 
 func newFakeRepo() *fakeRepo {

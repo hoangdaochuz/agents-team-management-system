@@ -21,7 +21,7 @@ type fakeOrgs struct {
 	err  error
 }
 
-func (f *fakeOrgs) List(context.Context) ([]workspaces.Organization, error)          { return f.orgs, f.err }
+func (f *fakeOrgs) List(context.Context) ([]workspaces.Organization, error) { return f.orgs, f.err }
 func (f *fakeOrgs) Get(_ context.Context, id identity.ID) (workspaces.Organization, error) {
 	for _, o := range f.orgs {
 		if o.ID == id {
@@ -86,7 +86,9 @@ type fakeMembers struct {
 	next    int
 }
 
-func (f *fakeMembers) List(context.Context, identity.ID) ([]domain.Member, error) { return f.members, nil }
+func (f *fakeMembers) List(context.Context, identity.ID) ([]domain.Member, error) {
+	return f.members, nil
+}
 func (f *fakeMembers) Add(_ context.Context, wsID, userID identity.ID, name, email string, role identity.Role) (domain.Member, error) {
 	f.next++
 	m := domain.Member{Member: workspaces.Member{ID: identity.ID(fmt.Sprintf("m-%d", f.next)), Role: role, Status: identity.MemberActive}, WorkspaceID: wsID, UserID: userID}
@@ -159,7 +161,9 @@ type fakeOrgRequests struct {
 	reqs []domain.OrgRequest
 }
 
-func (f *fakeOrgRequests) ListPending(context.Context) ([]domain.OrgRequest, error) { return f.reqs, nil }
+func (f *fakeOrgRequests) ListPending(context.Context) ([]domain.OrgRequest, error) {
+	return f.reqs, nil
+}
 func (f *fakeOrgRequests) Get(_ context.Context, id identity.ID) (domain.OrgRequest, error) {
 	for _, r := range f.reqs {
 		if r.ID == id {
@@ -409,8 +413,8 @@ func TestApproveOrgRequest(t *testing.T) {
 	app, f, _, p := newTestApp()
 	rid := identity.ID("or1")
 	f.orgReqs.reqs = []domain.OrgRequest{{
-		SignupRequest:    identity.SignupRequest{ID: rid, Name: "Alice", Email: "a@x.io", RequestedRole: identity.RoleOwner},
-		UserID:           "u3", OrganizationName: "Acme", Status: identity.SignupPending,
+		SignupRequest: identity.SignupRequest{ID: rid, Name: "Alice", Email: "a@x.io", RequestedRole: identity.RoleOwner},
+		UserID:        "u3", OrganizationName: "Acme", Status: identity.SignupPending,
 	}}
 
 	err := app.ApproveOrgRequest(context.Background(), rid)

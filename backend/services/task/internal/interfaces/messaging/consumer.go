@@ -44,6 +44,6 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 	}()
 }
 
-func (c *Consumer) consume(ctx context.Context, env events.EventEnvelope) error {
-	return c.app.Dispatch(ctx, env)
+func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
+	return c.app.Dispatch(ctx, msg)
 }

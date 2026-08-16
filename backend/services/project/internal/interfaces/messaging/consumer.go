@@ -42,9 +42,9 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 	}()
 }
 
-func (c *Consumer) consume(ctx context.Context, env events.EventEnvelope) error {
+func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
 	var d events.WorkspaceCreatedData
-	if err := env.DecodeData(&d); err != nil {
+	if err := msg.DecodeData(&d); err != nil {
 		return err
 	}
 	return c.app.BindWorkspace(ctx, d)

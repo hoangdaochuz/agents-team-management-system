@@ -44,23 +44,23 @@ func (c *Consumer) Start(ctx context.Context, brokers string) {
 
 // consume projects MCP connections and seeds default rules on workspace
 // creation.
-func (c *Consumer) consume(ctx context.Context, env events.EventEnvelope) error {
-	switch env.EventType {
+func (c *Consumer) consume(ctx context.Context, msg events.EventEnvelope) error {
+	switch msg.EventType {
 	case events.TopicMcpCreated:
 		var d events.McpCreatedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return c.app.ProjectMcpCreated(ctx, d)
 	case events.TopicMcpDeleted:
 		var d events.McpDeletedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return c.app.ProjectMcpDeleted(ctx, d)
 	case events.TopicWorkspaceCreated:
 		var d events.WorkspaceCreatedData
-		if err := env.DecodeData(&d); err != nil {
+		if err := msg.DecodeData(&d); err != nil {
 			return err
 		}
 		return c.app.BootstrapWorkspace(ctx, d)

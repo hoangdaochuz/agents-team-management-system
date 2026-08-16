@@ -35,7 +35,9 @@ type fakePlugins struct {
 	next  int
 }
 
-func (f *fakePlugins) List(context.Context, identity.ID) ([]resources.Plugin, error) { return f.items, nil }
+func (f *fakePlugins) List(context.Context, identity.ID) ([]resources.Plugin, error) {
+	return f.items, nil
+}
 func (f *fakePlugins) SetEnabled(_ context.Context, wsID, id identity.ID, enabled bool) (resources.Plugin, error) {
 	for i := range f.items {
 		if f.items[i].ID == id {

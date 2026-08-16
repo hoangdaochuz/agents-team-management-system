@@ -422,7 +422,7 @@ func TestRunCompletedAdvancesToReview(t *testing.T) {
 func TestRunCompletedRedeliveryIsDeduped(t *testing.T) {
 	app, tf, _, p := newTestApp()
 	seedTask(tf, "t1", tasks.TaskDoing, 1, agent("a1"))
-	env := events.EventEnvelope{
+	msg := events.EventEnvelope{
 		EventType: events.TopicRunCompleted,
 		Data: events.RunCompletedData{
 			TaskID: "t1", RunID: "r1", Role: agentexec.RunRoleImplementer,
@@ -430,11 +430,11 @@ func TestRunCompletedRedeliveryIsDeduped(t *testing.T) {
 		},
 	}
 
-	if err := app.Dispatch(context.Background(), env); err != nil {
+	if err := app.Dispatch(context.Background(), msg); err != nil {
 		t.Fatalf("first dispatch: %v", err)
 	}
 	first := len(p.events)
-	if err := app.Dispatch(context.Background(), env); err != nil {
+	if err := app.Dispatch(context.Background(), msg); err != nil {
 		t.Fatalf("redelivered dispatch: %v", err)
 	}
 	if len(p.events) != first {

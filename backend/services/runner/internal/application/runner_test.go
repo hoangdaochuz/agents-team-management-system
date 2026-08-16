@@ -13,8 +13,8 @@ import (
 	"github.com/aaks/server/internal/contracts/events"
 	"github.com/aaks/server/internal/contracts/identity"
 	"github.com/aaks/server/internal/contracts/resources"
-	"github.com/aaks/server/services/runner/internal/driver"
 	"github.com/aaks/server/services/runner/internal/domain"
+	"github.com/aaks/server/services/runner/internal/driver"
 )
 
 // ── Fakes ───────────────────────────────────────────────────────────────────
@@ -33,7 +33,9 @@ func (f *fakeRuns) CreateRun(_ context.Context, taskID identity.ID, role agentex
 	f.runs = append(f.runs, agentexec.Run{ID: id, TaskID: taskID, Role: role, AgentID: agentID, Model: model, RoundNo: roundNo})
 	return id, nil
 }
-func (f *fakeRuns) ListRunsByTask(context.Context, identity.ID) ([]agentexec.Run, error) { return f.runs, nil }
+func (f *fakeRuns) ListRunsByTask(context.Context, identity.ID) ([]agentexec.Run, error) {
+	return f.runs, nil
+}
 func (f *fakeRuns) GetRun(_ context.Context, id identity.ID) (agentexec.Run, error) {
 	for _, r := range f.runs {
 		if r.ID == id {
@@ -69,7 +71,9 @@ type fakeSteps struct{}
 func (f *fakeSteps) AppendStep(context.Context, identity.ID, int, agentexec.StepKind, []byte) (agentexec.Step, error) {
 	return agentexec.Step{}, nil
 }
-func (f *fakeSteps) ListSteps(context.Context, identity.ID) ([]agentexec.Step, error) { return nil, nil }
+func (f *fakeSteps) ListSteps(context.Context, identity.ID) ([]agentexec.Step, error) {
+	return nil, nil
+}
 func (f *fakeSteps) ListStepsByTask(context.Context, identity.ID) ([]agentexec.Step, error) {
 	return nil, nil
 }
@@ -134,17 +138,26 @@ func (p *fakePub) topics() []string {
 	return append([]string(nil), p.events...)
 }
 
-type fakeSettings struct{ key string; err error }
+type fakeSettings struct {
+	key string
+	err error
+}
 
 func (f *fakeSettings) FetchKey(context.Context, string) (string, error) { return f.key, f.err }
 
-type fakeResources struct{ rules []string; err error }
+type fakeResources struct {
+	rules []string
+	err   error
+}
 
 func (f *fakeResources) FetchEnabledRules(context.Context, identity.ID) ([]string, error) {
 	return f.rules, f.err
 }
 
-type fakeAgents struct{ servers []resources.McpServer; err error }
+type fakeAgents struct {
+	servers []resources.McpServer
+	err     error
+}
 
 func (f *fakeAgents) FetchMcpServers(context.Context, identity.ID) ([]resources.McpServer, error) {
 	return f.servers, f.err
