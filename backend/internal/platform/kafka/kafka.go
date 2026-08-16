@@ -15,7 +15,7 @@ import (
 
 	"github.com/IBM/sarama"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/events"
 )
 
 // Brokers holds the Kafka bootstrap addresses.
@@ -54,7 +54,7 @@ func NewProducer(brokers Brokers, log *slog.Logger) (sarama.SyncProducer, error)
 
 // Publish serializes env.Data to JSON and publishes to topic, keyed by env.TaskID
 // so all events for a task land on the same partition in publish order.
-func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env contracts.EventEnvelope, log *slog.Logger) error {
+func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env events.EventEnvelope, log *slog.Logger) error {
 	if env.EventID == "" {
 		env.EventID = newID()
 	}
@@ -64,7 +64,7 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env contr
 	if env.EventType == "" {
 		env.EventType = topic
 	}
-	if env.TaskID == "" && contracts.IsTaskPartitioned(topic) {
+	if env.TaskID == "" && events.IsTaskPartitioned(topic) {
 		// Task-partitioned topics preserve per-task ordering; an empty key would
 		// silently collapse every such event onto a single partition, degrading
 		// the invariant — fail fast instead. Non-task topics (signup, invite,
@@ -90,7 +90,7 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, env contr
 
 // Handler processes one envelope; returning an error re-queues (at-least-once).
 // The handler MUST be idempotent (dedup by env.EventID or the entity id it carries).
-type Handler func(ctx context.Context, env contracts.EventEnvelope) error
+type Handler func(ctx context.Context, env events.EventEnvelope) error
 
 // ConsumerGroup runs a consumer group for the given topics, dispatching each
 // message to handler. It blocks until ctx is cancelled. Rebalance/errors are
@@ -211,7 +211,7 @@ func (d *dispatcher) Cleanup(sarama.ConsumerGroupSession) error { return nil }
 
 func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
-		var env contracts.EventEnvelope
+		var env events.EventEnvelope
 		if err := json.Unmarshal(msg.Value, &env); err != nil {
 			// Malformed (unparseable) envelope is definitively poison: route to
 			// the DLQ (best-effort) and ACK so the partition keeps progressing.
@@ -251,7 +251,7 @@ func (d *dispatcher) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama
 // inspected or replayed. Best-effort: if no DLQ producer or the publish fails,
 // the caller still ACKs the message (never stalls the partition) and the drop
 // is logged loudly.
-func (d *dispatcher) routeToDLQ(_ context.Context, msg *sarama.ConsumerMessage, env contracts.EventEnvelope, reason string) {
+func (d *dispatcher) routeToDLQ(_ context.Context, msg *sarama.ConsumerMessage, env events.EventEnvelope, reason string) {
 	if d.dlq == nil {
 		d.log.Error("kafka: no DLQ producer; dropping poison message",
 			"topic", msg.Topic, "event_id", env.EventID, "task_id", env.TaskID, "reason", reason)
@@ -281,7 +281,7 @@ func (d *dispatcher) routeToDLQ(_ context.Context, msg *sarama.ConsumerMessage, 
 // eventKey identifies a delivery for poison tracking. Fall back to the raw
 // offset when the envelope has no EventID, so every redelivery of a malformed
 // (but JSON-parsable) envelope is still accounted for.
-func eventKey(env contracts.EventEnvelope) string {
+func eventKey(env events.EventEnvelope) string {
 	if env.EventID != "" {
 		return env.EventID
 	}

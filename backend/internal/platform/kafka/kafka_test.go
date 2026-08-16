@@ -14,7 +14,9 @@ import (
 	"github.com/IBM/sarama"
 	"github.com/IBM/sarama/mocks"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/agentexec"
+	"github.com/aaks/server/internal/contracts/events"
+	"github.com/aaks/server/internal/contracts/identity"
 )
 
 // brokerEnv names the env var holding a reachable Kafka bootstrap address. The
@@ -45,14 +47,14 @@ func testLogger(t *testing.T) *slog.Logger {
 func TestPublishEmptyTaskIDGating(t *testing.T) {
 	log := testLogger(t)
 
-	if contracts.IsTaskPartitioned(contracts.TopicTaskRunRequested) != true {
-		t.Fatalf("%s should be task-partitioned", contracts.TopicTaskRunRequested)
+	if events.IsTaskPartitioned(events.TopicTaskRunRequested) != true {
+		t.Fatalf("%s should be task-partitioned", events.TopicTaskRunRequested)
 	}
-	if contracts.IsTaskPartitioned(contracts.TopicSignupRequested) {
-		t.Fatalf("%s should NOT be task-partitioned", contracts.TopicSignupRequested)
+	if events.IsTaskPartitioned(events.TopicSignupRequested) {
+		t.Fatalf("%s should NOT be task-partitioned", events.TopicSignupRequested)
 	}
-	if contracts.IsTaskPartitioned(contracts.TopicSkillDeleted) {
-		t.Fatalf("%s should NOT be task-partitioned", contracts.TopicSkillDeleted)
+	if events.IsTaskPartitioned(events.TopicSkillDeleted) {
+		t.Fatalf("%s should NOT be task-partitioned", events.TopicSkillDeleted)
 	}
 
 	// A mock producer lets us assert both branches without a broker: the
@@ -61,8 +63,8 @@ func TestPublishEmptyTaskIDGating(t *testing.T) {
 	mockProd := mocks.NewSyncProducer(t, sarama.NewConfig())
 
 	// Task-partitioned topic without a TaskID → hard error, no send attempted.
-	err := Publish(context.Background(), mockProd, contracts.TopicTaskRunRequested,
-		contracts.EventEnvelope{EventType: contracts.TopicTaskRunRequested}, log)
+	err := Publish(context.Background(), mockProd, events.TopicTaskRunRequested,
+		events.EventEnvelope{EventType: events.TopicTaskRunRequested}, log)
 	if err == nil {
 		t.Fatalf("task-partitioned publish with empty TaskID should fail, got nil")
 	}
@@ -70,8 +72,8 @@ func TestPublishEmptyTaskIDGating(t *testing.T) {
 	// Non-task topic without a TaskID → must reach the producer (the send
 	// succeeds on a mock producer), proving the TopicID guard exempts it.
 	mockProd.ExpectSendMessageAndSucceed()
-	err = Publish(context.Background(), mockProd, contracts.TopicSignupRequested,
-		contracts.EventEnvelope{EventType: contracts.TopicSignupRequested}, log)
+	err = Publish(context.Background(), mockProd, events.TopicSignupRequested,
+		events.EventEnvelope{EventType: events.TopicSignupRequested}, log)
 	if err != nil {
 		t.Fatalf("signup.requested should not be blocked by the TaskID guard: %v", err)
 	}
@@ -83,7 +85,7 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 	brokers := skipIfNoBroker(t)
 
 	topic := "kafka-test-" + newID()
-	taskID := contracts.ID("task-123")
+	taskID := identity.ID("task-123")
 
 	// Create the topic explicitly so the consumer doesn't race auto-create.
 	admin, err := sarama.NewClusterAdmin(brokers, NewConfig())
@@ -103,12 +105,12 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 	}
 	defer func() { _ = prod.Close() }()
 
-	env := contracts.EventEnvelope{
+	env := events.EventEnvelope{
 		EventID:   "evt-" + newID(),
 		EventType: topic,
 		TaskID:    taskID,
-		Data: contracts.StepData{Step: contracts.Step{
-			ID: "step-1", RunID: "run-1", Seq: 1, Kind: contracts.StepMessage,
+		Data: events.StepData{Step: agentexec.Step{
+			ID: "step-1", RunID: "run-1", Seq: 1, Kind: agentexec.StepMessage,
 			Payload: []byte(`{"content":"hi"}`),
 		}},
 	}
@@ -120,23 +122,25 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 
 	// Each consumer group must independently receive the event.
 	expect := func(groupID string) {
-		got := make(chan contracts.EventEnvelope, 1)
+		got := make(chan events.EventEnvelope, 1)
 		cg, err := NewConsumerGroup(brokers, groupID, log)
 		if err != nil {
 			t.Fatalf("consumer group %s: %v", groupID, err)
 		}
 		defer func() { _ = cg.Close() }()
 
-		go func() { _ = cg.Run(ctx, []string{topic}, func(_ context.Context, e contracts.EventEnvelope) error {
-			if e.TaskID == taskID {
-				select {
-				case got <- e:
-				default:
+		go func() {
+			_ = cg.Run(ctx, []string{topic}, func(_ context.Context, e events.EventEnvelope) error {
+				if e.TaskID == taskID {
+					select {
+					case got <- e:
+					default:
+					}
+					cancel() // received: stop the loop
 				}
-				cancel() // received: stop the loop
-			}
-			return nil
-		}) }()
+				return nil
+			})
+		}()
 
 		select {
 		case recv := <-got:
@@ -173,13 +177,13 @@ func (s *fakeSession) Commit()                                     {}
 // fakeClaim satisfies sarama.ConsumerGroupClaim for dispatcher tests.
 type fakeClaim struct{ msgs chan *sarama.ConsumerMessage }
 
-func (c *fakeClaim) Topic() string                          { return "" }
-func (c *fakeClaim) Partition() int32                       { return 0 }
-func (c *fakeClaim) InitialOffset() int64                   { return 0 }
-func (c *fakeClaim) HighWaterMarkOffset() int64             { return 0 }
+func (c *fakeClaim) Topic() string                            { return "" }
+func (c *fakeClaim) Partition() int32                         { return 0 }
+func (c *fakeClaim) InitialOffset() int64                     { return 0 }
+func (c *fakeClaim) HighWaterMarkOffset() int64               { return 0 }
 func (c *fakeClaim) Messages() <-chan *sarama.ConsumerMessage { return c.msgs }
 
-func mustEnvBytes(t *testing.T, env contracts.EventEnvelope) []byte {
+func mustEnvBytes(t *testing.T, env events.EventEnvelope) []byte {
 	t.Helper()
 	b, err := json.Marshal(env)
 	if err != nil {
@@ -232,7 +236,7 @@ func (p *captureProducer) AddMessageToTxnWithGroupMetadata(*sarama.ConsumerMessa
 func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := contracts.EventEnvelope{
+	env := events.EventEnvelope{
 		EventID: "evt-poison", EventType: topic, TaskID: "task-1",
 		Data: map[string]string{"x": "y"},
 	}
@@ -240,7 +244,7 @@ func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 
 	prod := &captureProducer{}
 	d := newDispatcher(
-		func(_ context.Context, _ contracts.EventEnvelope) error { return errors.New("boom") },
+		func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") },
 		prod, log,
 	)
 
@@ -296,11 +300,11 @@ func TestPoisonMessageRoutedToDLQ(t *testing.T) {
 func TestDLQPublishFailureStillAcks(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := contracts.EventEnvelope{EventID: "evt-dlqfail", EventType: topic, TaskID: "task-7"}
+	env := events.EventEnvelope{EventID: "evt-dlqfail", EventType: topic, TaskID: "task-7"}
 	raw := mustEnvBytes(t, env)
 
 	prod := &captureProducer{err: errors.New("dlq broker down")}
-	d := newDispatcher(func(_ context.Context, _ contracts.EventEnvelope) error { return errors.New("boom") }, prod, log)
+	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") }, prod, log)
 	sess := &fakeSession{ctx: context.Background()}
 	for i := 1; i < maxRedeliveries; i++ {
 		_ = d.ConsumeClaim(sess, oneMsgClaim(&sarama.ConsumerMessage{Topic: topic, Value: raw}))
@@ -319,10 +323,10 @@ func TestDLQPublishFailureStillAcks(t *testing.T) {
 func TestPoisonMessageNoDLQProducerDropsSafely(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := contracts.EventEnvelope{EventID: "evt-2", EventType: topic, TaskID: "task-2"}
+	env := events.EventEnvelope{EventID: "evt-2", EventType: topic, TaskID: "task-2"}
 	raw := mustEnvBytes(t, env)
 
-	d := newDispatcher(func(_ context.Context, _ contracts.EventEnvelope) error { return errors.New("boom") }, nil, log)
+	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") }, nil, log)
 	sess := &fakeSession{ctx: context.Background()}
 	for i := 1; i < maxRedeliveries; i++ {
 		_ = d.ConsumeClaim(sess, oneMsgClaim(&sarama.ConsumerMessage{Topic: topic, Value: raw}))
@@ -343,7 +347,7 @@ func TestMalformedMessageRoutedToDLQ(t *testing.T) {
 
 	prod := &captureProducer{}
 	// A healthy handler that must never be called for malformed input.
-	d := newDispatcher(func(_ context.Context, _ contracts.EventEnvelope) error {
+	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error {
 		t.Fatal("handler must not be called for a malformed message")
 		return nil
 	}, prod, log)
@@ -370,17 +374,17 @@ func TestMalformedMessageRoutedToDLQ(t *testing.T) {
 func TestSuccessfulDeliveryResetsFailures(t *testing.T) {
 	log := testLogger(t)
 	const topic = "task.run.requested"
-	env := contracts.EventEnvelope{EventID: "evt-flaky", EventType: topic, TaskID: "task-3"}
+	env := events.EventEnvelope{EventID: "evt-flaky", EventType: topic, TaskID: "task-3"}
 	raw := mustEnvBytes(t, env)
 
-	d := newDispatcher(func(_ context.Context, _ contracts.EventEnvelope) error { return errors.New("boom") }, nil, log)
+	d := newDispatcher(func(_ context.Context, _ events.EventEnvelope) error { return errors.New("boom") }, nil, log)
 	sess := &fakeSession{ctx: context.Background()}
 	// A couple of failures, then no DLQ expected because not yet at the cap.
 	for i := 1; i < maxRedeliveries; i++ {
 		_ = d.ConsumeClaim(sess, oneMsgClaim(&sarama.ConsumerMessage{Topic: topic, Value: raw}))
 	}
 	// Switch the handler to succeed: counter resets.
-	d.handler = func(context.Context, contracts.EventEnvelope) error { return nil }
+	d.handler = func(context.Context, events.EventEnvelope) error { return nil }
 	if err := d.ConsumeClaim(sess, oneMsgClaim(&sarama.ConsumerMessage{Topic: topic, Value: raw})); err != nil {
 		t.Fatalf("success delivery: %v", err)
 	}
@@ -391,7 +395,7 @@ func TestSuccessfulDeliveryResetsFailures(t *testing.T) {
 
 // TestDLQTopicNaming pins the dead-letter topic derivation.
 func TestDLQTopicNaming(t *testing.T) {
-	if got := DLQTopic(contracts.TopicTaskRunRequested); got != contracts.TopicTaskRunRequested+".dlq" {
+	if got := DLQTopic(events.TopicTaskRunRequested); got != events.TopicTaskRunRequested+".dlq" {
 		t.Errorf("DLQTopic = %q", got)
 	}
 }

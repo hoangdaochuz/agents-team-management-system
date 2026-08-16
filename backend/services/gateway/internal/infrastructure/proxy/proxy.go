@@ -1,0 +1,57 @@
+// Package proxy builds reverse proxies to each backend service that strip the
+// /api prefix before forwarding. Identity/scoping headers are NOT handled here:
+// the Gateway's handler strips client-supplied values and injects the session
+// view before ServeHTTP is called, so the Director must leave them untouched
+// (a strip here would run after the handler has set them).
+package proxy
+
+import (
+	"log/slog"
+	"sync"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+
+	apiutil "github.com/aaks/server/internal/platform/http"
+)
+
+// New returns a reverse proxy to upstream that strips the leading /api from the
+// request path. Upstream connection failures become a generic 502 (no internal
+// detail leaked).
+func New(upstream string) (*httputil.ReverseProxy, error) {
+	target, err := url.Parse(upstream)
+	if err != nil {
+		return nil, err
+	}
+	rp := httputil.NewSingleHostReverseProxy(target)
+	orig := rp.Director
+	rp.Director = func(req *http.Request) {
+		orig(req)
+		if strings.HasPrefix(req.URL.Path, "/api") {
+			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api")
+			if req.URL.Path == "" {
+				req.URL.Path = "/"
+			}
+		}
+		req.Host = target.Host
+	}
+	rp.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		slog.Error("upstream proxy error", "upstream", upstream, "error", err)
+		apiutil.Error(w, http.StatusBadGateway, "upstream unavailable")
+	}
+	baseURLs.Store(rp, strings.TrimSuffix(target.String(), "/"))
+	return rp, nil
+}
+
+// baseURLs lets the Gateway learn each proxy's target for internal composition
+// calls (session identity, KPIs, health probes, SSE replay).
+var baseURLs sync.Map // *httputil.ReverseProxy -> string
+
+// BaseURL returns the upstream base URL a proxy targets ("" when unknown).
+func BaseURL(rp *httputil.ReverseProxy) string {
+	if v, ok := baseURLs.Load(rp); ok {
+		return v.(string)
+	}
+	return ""
+}

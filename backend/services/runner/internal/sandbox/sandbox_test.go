@@ -11,12 +11,12 @@ import (
 
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"Add Login Page":         "add-login-page",
-		"Fix CVE-2024-1234!!!":   "fix-cve-2024-1234",
-		"  trailing   spaces  ":  "trailing-spaces",
-		"":                       "task",
-		"@@@":                    "task",
-		"MixedCASE Title":        "mixedcase-title",
+		"Add Login Page":        "add-login-page",
+		"Fix CVE-2024-1234!!!":  "fix-cve-2024-1234",
+		"  trailing   spaces  ": "trailing-spaces",
+		"":                      "task",
+		"@@@":                   "task",
+		"MixedCASE Title":       "mixedcase-title",
 	}
 	for in, want := range cases {
 		if got := slugify(in); got != want {

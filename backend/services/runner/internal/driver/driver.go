@@ -13,28 +13,29 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/aaks/server/internal/contracts"
+	"github.com/aaks/server/internal/contracts/agentexec"
+	"github.com/aaks/server/internal/contracts/identity"
 )
 
 // Caps bound a single run (task 5.3): hard step cap, token budget, wall clock.
 type Caps struct {
-	MaxSteps   int           // default 50
-	MaxTokens  int           // default 100_000
-	WallClock  time.Duration // default 30 min
-	StepDelay  time.Duration // simulated driver pacing (0 = as fast as possible)
+	MaxSteps  int           // default 50
+	MaxTokens int           // default 100_000
+	WallClock time.Duration // default 30 min
+	StepDelay time.Duration // simulated driver pacing (0 = as fast as possible)
 }
 
 // RunContext carries everything a driver needs for one run.
 type RunContext struct {
-	TaskID   contracts.ID
-	RunID    contracts.ID
-	AgentID  contracts.ID
-	Role     contracts.RunRole
+	TaskID   identity.ID
+	RunID    identity.ID
+	AgentID  identity.ID
+	Role     agentexec.RunRole
 	RoundNo  int
 	Prompt   string
 	Model    string
-	Provider contracts.Provider
-	APIKey   string // fetched from Settings over mTLS at run start; in-memory only
+	Provider identity.Provider
+	APIKey   string   // fetched from Settings over mTLS at run start; in-memory only
 	Rules    []string // enabled workspace rules (task 12.3 guardrails)
 	Caps     Caps
 	Log      *slog.Logger
@@ -64,8 +65,8 @@ type ToolExec interface {
 
 // McpTool is a tool bridged from an attached MCP server.
 type McpTool struct {
-	Server   string // owning MCP server name (namespacing)
-	Name     string
+	Server      string // owning MCP server name (namespacing)
+	Name        string
 	Description string
 	InputSchema json.RawMessage // JSON schema for the tool's arguments
 }
@@ -86,13 +87,13 @@ type ToolSet struct {
 
 // Result is the outcome of a driver execution.
 type Result struct {
-	Status     contracts.RunStatus // done | aborted | stopped
-	TokenUsage int
-	Error      string
-	Verdict    contracts.VerdictDecision // reviewer runs
+	Status         agentexec.RunStatus // done | aborted | stopped
+	TokenUsage     int
+	Error          string
+	Verdict        agentexec.VerdictDecision // reviewer runs
 	VerdictSummary string
-	Findings   []contracts.Finding
-	Artifacts  []ArtifactRef
+	Findings       []agentexec.Finding
+	Artifacts      []ArtifactRef
 }
 
 // ArtifactRef is a produced artifact (patch/document).
@@ -105,7 +106,7 @@ type ArtifactRef struct {
 }
 
 // StepSink receives steps as they are produced (persist + publish downstream).
-type StepSink func(st contracts.Step) error
+type StepSink func(st agentexec.Step) error
 
 // Driver executes one run.
 type Driver interface {
@@ -142,15 +143,15 @@ type Simulated struct {
 
 func (d *Simulated) Execute(ctx context.Context, rc RunContext, sink StepSink) (Result, error) {
 	log := d.log.With("driver", "simulated", "run", rc.RunID, "role", rc.Role)
-	res := Result{Status: contracts.RunDone}
+	res := Result{Status: agentexec.RunDone}
 	seq := 0
-	emit := func(kind contracts.StepKind, payload any) error {
+	emit := func(kind agentexec.StepKind, payload any) error {
 		seq++
 		buf, err := json.Marshal(payload)
 		if err != nil {
 			return err
 		}
-		st := contracts.Step{ID: newStepID(), RunID: rc.RunID, Seq: seq, Kind: kind, Payload: buf, CreatedAt: time.Now().UTC()}
+		st := agentexec.Step{ID: newStepID(), RunID: rc.RunID, Seq: seq, Kind: kind, Payload: buf, CreatedAt: time.Now().UTC()}
 		if err := sink(st); err != nil {
 			return err
 		}
@@ -163,15 +164,15 @@ func (d *Simulated) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 		}
 		return nil
 	}
-	step := func(kind contracts.StepKind, text string) error {
+	step := func(kind agentexec.StepKind, text string) error {
 		return emit(kind, map[string]string{"text": text})
 	}
 
 	log.Info("run started", "task", rc.TaskID, "round", rc.RoundNo, "prompt", truncate(rc.Prompt, 120), "rules", rc.Rules)
-	if err := step(contracts.StepReasoning, "planning approach for task "+rc.TaskID); err != nil {
+	if err := step(agentexec.StepReasoning, "planning approach for task "+rc.TaskID); err != nil {
 		return d.aborted(ctx, res, err, log)
 	}
-	if err := step(contracts.StepMessage, fmt.Sprintf("I will implement the requested change (%s).", rc.Model)); err != nil {
+	if err := step(agentexec.StepMessage, fmt.Sprintf("I will implement the requested change (%s).", rc.Model)); err != nil {
 		return d.aborted(ctx, res, err, log)
 	}
 	// Guardrails (task 12.3): the workspace's enabled rules shape the run.
@@ -180,43 +181,43 @@ func (d *Simulated) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 	// orchestrator (PRs are only ever opened on demand, and the reviewer is
 	// the sole path to done).
 	if hasRule(rc.Rules, "test-gate") {
-		if err := step(contracts.StepToolCall, `{"tool":"run_tests","input":"./..."}`); err != nil {
+		if err := step(agentexec.StepToolCall, `{"tool":"run_tests","input":"./..."}`); err != nil {
 			return d.aborted(ctx, res, err, log)
 		}
-		if err := step(contracts.StepToolResult, `{"tool":"run_tests","output":"ok: all tests pass"}`); err != nil {
+		if err := step(agentexec.StepToolResult, `{"tool":"run_tests","output":"ok: all tests pass"}`); err != nil {
 			return d.aborted(ctx, res, err, log)
 		}
 	}
-	if err := step(contracts.StepToolCall, `{"tool":"read","input":"src/main.go"}`); err != nil {
+	if err := step(agentexec.StepToolCall, `{"tool":"read","input":"src/main.go"}`); err != nil {
 		return d.aborted(ctx, res, err, log)
 	}
-	if err := step(contracts.StepToolResult, `{"tool":"read","output":"ok"}`); err != nil {
+	if err := step(agentexec.StepToolResult, `{"tool":"read","output":"ok"}`); err != nil {
 		return d.aborted(ctx, res, err, log)
 	}
-	if err := step(contracts.StepMessage, "Change applied; tests pass."); err != nil {
+	if err := step(agentexec.StepMessage, "Change applied; tests pass."); err != nil {
 		return d.aborted(ctx, res, err, log)
 	}
 
 	// Reviewer variant: decide deterministically (task 5.7). Round 1 always
 	// requests changes, exercising the saga's review loop; round ≥ 2 approves.
 	// (round_no is 0-based: 0 = first review round, 1 = second.)
-	if rc.Role == contracts.RunRoleReviewer {
+	if rc.Role == agentexec.RunRoleReviewer {
 		if rc.RoundNo < 1 {
-			res.Verdict = contracts.VerdictRequestChanges
+			res.Verdict = agentexec.VerdictRequestChanges
 			res.VerdictSummary = "tests fail on the new branch; please fix and re-run"
-			res.Findings = []contracts.Finding{{
+			res.Findings = []agentexec.Finding{{
 				File: "src/main_test.go", Line: 42, Severity: "error",
 				Issue:          "test suite fails on branch",
 				Recommendation: "run go test ./... and fix the failing assertion",
 				Status:         "open",
 			}}
-			if err := step(contracts.StepMessage, "Reviewer verdict: REQUEST_CHANGES (test failures)."); err != nil {
+			if err := step(agentexec.StepMessage, "Reviewer verdict: REQUEST_CHANGES (test failures)."); err != nil {
 				return d.aborted(ctx, res, err, log)
 			}
 		} else {
-			res.Verdict = contracts.VerdictApprove
+			res.Verdict = agentexec.VerdictApprove
 			res.VerdictSummary = "implementation looks correct; tests pass"
-			if err := step(contracts.StepMessage, "Reviewer verdict: APPROVE."); err != nil {
+			if err := step(agentexec.StepMessage, "Reviewer verdict: APPROVE."); err != nil {
 				return d.aborted(ctx, res, err, log)
 			}
 		}
@@ -224,7 +225,7 @@ func (d *Simulated) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 		// Implementer: attach a synthetic patch artifact (dev mode).
 		res.Artifacts = []ArtifactRef{{
 			Filename: "changes.patch", Kind: "patch",
-			Summary:  "simulated implementation of " + rc.TaskID,
+			Summary:   "simulated implementation of " + rc.TaskID,
 			Additions: 24, Deletions: 3,
 		}}
 		res.TokenUsage = 1200 + 100*rc.RoundNo
@@ -235,11 +236,11 @@ func (d *Simulated) Execute(ctx context.Context, rc RunContext, sink StepSink) (
 // aborted converts a context/step error into a terminated result.
 func (d *Simulated) aborted(ctx context.Context, res Result, err error, log *slog.Logger) (Result, error) {
 	if ctx.Err() != nil {
-		res.Status = contracts.RunStopped
+		res.Status = agentexec.RunStopped
 		log.Info("run stopped by context")
 		return res, nil
 	}
-	res.Status = contracts.RunAborted
+	res.Status = agentexec.RunAborted
 	res.Error = err.Error()
 	log.Warn("run aborted", "error", err)
 	return res, nil
@@ -262,7 +263,7 @@ func hasRule(rules []string, name string) bool {
 	return false
 }
 
-func newStepID() contracts.ID {
+func newStepID() identity.ID {
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	return "step_" + hex.EncodeToString(b)

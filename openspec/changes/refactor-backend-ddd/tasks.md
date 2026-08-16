@@ -43,22 +43,22 @@ not done until its gate passes.
 
 ## 4. Phase 2b — Roll-out waves (each service independently gated)
 
-- [ ] 4.1 `auth`: convert to four layers; extract login throttling + signup orchestration into `application`; add ports + mock tests.
-- [ ] 4.2 `project`: convert; extract workspace-scoped project logic into `application`; ports + mock tests.
-- [ ] 4.3 `task` (saga coordinator): convert; model command/fact handlers as `application` saga handlers; ports + mock tests.
-- [ ] 4.4 `catalog`: convert (skills + MCP servers); ports + mock tests.
-- [ ] 4.5 `settings` (provider-key decryptor): convert; isolate crypto + mTLS client in `infrastructure`; ports + mock tests.
-- [ ] 4.6 `agent`: convert; ports + mock tests.
-- [ ] 4.7 `resources`: convert (per-workspace knowledge/plugins/rules/MCP/audit); ports + mock tests.
-- [ ] 4.8 `admin`: convert (sysadmin oversight); ports + mock tests.
-- [ ] 4.9 `gateway`: apply the decided depth (full DDD **or** lighter use-case + client-port extraction per design Open Question); preserve the path-aware proxy and identity-injection behavior.
-- [ ] 4.10 Remove the now-unused temporary `contracts` re-export aliases once all services import per-domain subpackages.
+- [x] 4.1 `auth`: convert to four layers; extract login throttling + signup orchestration into `application`; add ports + mock tests.
+- [x] 4.2 `project`: convert; extract workspace-scoped project logic into `application`; ports + mock tests.
+- [x] 4.3 `task` (saga coordinator): convert; model command/fact handlers as `application` saga handlers; ports + mock tests.
+- [x] 4.4 `catalog`: convert (skills + MCP servers); ports + mock tests.
+- [x] 4.5 `settings` (provider-key decryptor): convert; isolate crypto + mTLS client in `infrastructure`; ports + mock tests.
+- [x] 4.6 `agent`: convert; ports + mock tests.
+- [x] 4.7 `resources`: convert (per-workspace knowledge/plugins/rules/MCP/audit); ports + mock tests.
+- [x] 4.8 `admin`: convert (sysadmin oversight); ports + mock tests.
+- [x] 4.9 `gateway`: apply the decided depth (full DDD **or** lighter use-case + client-port extraction per design Open Question); preserve the path-aware proxy and identity-injection behavior.
+- [x] 4.10 Remove the now-unused temporary `contracts` re-export aliases once all services import per-domain subpackages.
 
 ## 5. Cross-cutting acceptance & finalization
 
-- [ ] 5.1 Run full gate repo-wide: `make build test vet lint`, frontend `npm run typecheck && npm run build`, contract-conformance check, import-lint — all green.
-- [ ] 5.2 Confirm `docker compose up` brings the whole stack up and the gateway serves the frontend contract end-to-end.
-- [ ] 5.3 Update `AGENTS.md` / `CLAUDE.md` architecture section to describe the DDD layering and `internal/platform` + decomposed `contracts` layout.
-- [ ] 5.4 Confirm every `domain` package across all services passes the import-direction lint (no infra imports).
-- [ ] 5.5 Clean-Code sweep: verify no dead/duplicated infrastructure (no `httpapi.Server`, `db.Config`, single migrator), one shared identity-header `const` block, consistent sentinel-error + `httputil.Respond*` error handling, small named functions, and no remaining god-objects.
-- [ ] 5.6 Pattern & SOLID conformance review: confirm Repository, Unit of Work, Ports & Adapters, Strategy, Adapter, Factory, Dependency Injection, Saga, Anti-Corruption Layer, and Publish/Subscribe are applied where warranted; confirm SRP (one concern per package), OCP/LSP (ports swappable, mocks pass), ISP (segregated per-aggregate ports), and DIP (no concrete infra imports in `domain`/`application`) hold across all services.
+- [x] 5.1 Run full gate repo-wide: `make build test vet lint`, frontend `npm run typecheck && npm run build`, contract-conformance check, import-lint — all green.
+- [x] 5.2 Confirm `docker compose up` brings the whole stack up and the gateway serves the frontend contract end-to-end.
+- [x] 5.3 Update `AGENTS.md` / `CLAUDE.md` architecture section to describe the DDD layering and `internal/platform` + decomposed `contracts` layout.
+- [x] 5.4 Confirm every `domain` package across all services passes the import-direction lint (no infra imports).
+- [x] 5.5 Clean-Code sweep: verify no dead/duplicated infrastructure (no `httpapi.Server`, `db.Config`, single migrator), one shared identity-header `const` block, consistent sentinel-error + `httputil.Respond*` error handling, small named functions, and no remaining god-objects.
+- [x] 5.6 Pattern & SOLID conformance review: confirm Repository, Unit of Work, Ports & Adapters, Strategy, Adapter, Factory, Dependency Injection, Saga, Anti-Corruption Layer, and Publish/Subscribe are applied where warranted; confirm SRP (one concern per package), OCP/LSP (ports swappable, mocks pass), ISP (segregated per-aggregate ports), and DIP (no concrete infra imports in `domain`/`application`) hold across all services.

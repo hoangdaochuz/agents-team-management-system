@@ -62,7 +62,9 @@ func (e *dockerEnv) createAndStart(ctx context.Context) error {
 			"AutoRemove": false,
 		},
 	}
-	var resp struct{ ID string `json:"Id"` }
+	var resp struct {
+		ID string `json:"Id"`
+	}
 	if err := e.doJSON(ctx, http.MethodPost, "/containers/create", body, &resp); err != nil {
 		return fmt.Errorf("container create: %w", err)
 	}
@@ -72,7 +74,7 @@ func (e *dockerEnv) createAndStart(ctx context.Context) error {
 	if resp, err := e.httpClient.Do(req); err != nil {
 		return fmt.Errorf("container start: %w", err)
 	} else {
-_ = resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode >= 300 {
 			return fmt.Errorf("container start: %s", resp.Status)
 		}
@@ -93,7 +95,9 @@ func (e *dockerEnv) Exec(ctx context.Context, cmd string, args ...string) (ExecR
 		"WorkingDir":   "/workspace",
 		"Cmd":          append([]string{cmd}, args...),
 	}
-	var created struct{ ID string `json:"Id"` }
+	var created struct {
+		ID string `json:"Id"`
+	}
 	if err := e.doJSON(ctx, http.MethodPost, "/containers/"+e.container+"/exec", create, &created); err != nil {
 		return ExecResult{}, fmt.Errorf("exec create: %w", err)
 	}
@@ -120,7 +124,7 @@ func (e *dockerEnv) execStart(ctx context.Context, execID string) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.Close() }()
 	// Cancel tear-down: closing the conn unblocks the read on stop.
 	go func() { <-ctx.Done(); _ = conn.Close() }()
 
@@ -136,7 +140,7 @@ defer func() { _ = conn.Close() }()
 	if err != nil {
 		return nil, err
 	}
-defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("exec start: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
@@ -166,7 +170,7 @@ func (e *dockerEnv) Logs(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("docker logs: %s", resp.Status)
 	}
@@ -232,7 +236,7 @@ func (e *dockerEnv) doJSON(ctx context.Context, method, path string, body any, o
 	if err != nil {
 		return err
 	}
-defer func() { _ = resp.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("docker %s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(b)))
