@@ -16,9 +16,5 @@ type AuditRecordedHandler struct{ App *application.App }
 func (h AuditRecordedHandler) Topics() []string { return []string{events.TopicAuditRecorded} }
 
 func (h AuditRecordedHandler) Handle(ctx context.Context, msg events.EventEnvelope) error {
-	var d events.AuditRecordedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return h.App.RecordAudit(ctx, d)
+	return events.Forward(ctx, msg, h.App.RecordAudit)
 }

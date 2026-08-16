@@ -4,6 +4,7 @@
 package events
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -139,6 +140,23 @@ func (e *EventEnvelope) DecodeData(v interface{}) error {
 		return err
 	}
 	return json.Unmarshal(buf, v)
+}
+
+// Decode unmarshals the envelope payload into a typed value.
+func Decode[T any](msg EventEnvelope) (T, error) {
+	var d T
+	err := msg.DecodeData(&d)
+	return d, err
+}
+
+// Forward decodes the envelope payload into T and hands it to fn, collapsing
+// the per-event decode boilerplate in message handlers.
+func Forward[T any](ctx context.Context, msg EventEnvelope, fn func(context.Context, T) error) error {
+	d, err := Decode[T](msg)
+	if err != nil {
+		return err
+	}
+	return fn(ctx, d)
 }
 
 // ── Command payloads ───────────────────────────────────────────────────────

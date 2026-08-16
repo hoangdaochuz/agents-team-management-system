@@ -13,9 +13,5 @@ type SignupApprovedHandler struct{ App *application.App }
 func (h SignupApprovedHandler) Topics() []string { return []string{events.TopicSignupApproved} }
 
 func (h SignupApprovedHandler) Handle(ctx context.Context, msg events.EventEnvelope) error {
-	var d events.SignupApprovedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return h.App.HandleSignupApproved(ctx, d)
+	return events.Forward(ctx, msg, h.App.HandleSignupApproved)
 }

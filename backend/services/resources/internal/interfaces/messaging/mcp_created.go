@@ -14,9 +14,5 @@ type McpCreatedHandler struct{ App *application.App }
 func (h McpCreatedHandler) Topics() []string { return []string{events.TopicMcpCreated} }
 
 func (h McpCreatedHandler) Handle(ctx context.Context, msg events.EventEnvelope) error {
-	var d events.McpCreatedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return h.App.ProjectMcpCreated(ctx, d)
+	return events.Forward(ctx, msg, h.App.ProjectMcpCreated)
 }

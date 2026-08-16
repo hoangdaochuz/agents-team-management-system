@@ -14,9 +14,5 @@ type InviteCreatedHandler struct{ App *application.App }
 func (h InviteCreatedHandler) Topics() []string { return []string{events.TopicInviteCreated} }
 
 func (h InviteCreatedHandler) Handle(ctx context.Context, msg events.EventEnvelope) error {
-	var d events.InviteCreatedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return h.App.HandleInviteCreated(ctx, d)
+	return events.Forward(ctx, msg, h.App.HandleInviteCreated)
 }

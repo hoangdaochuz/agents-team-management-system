@@ -16,9 +16,5 @@ type SignupRequestedHandler struct{ App *application.App }
 func (h SignupRequestedHandler) Topics() []string { return []string{events.TopicSignupRequested} }
 
 func (h SignupRequestedHandler) Handle(ctx context.Context, msg events.EventEnvelope) error {
-	var d events.SignupRequestedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return h.App.ProjectSignupRequest(ctx, d)
+	return events.Forward(ctx, msg, h.App.ProjectSignupRequest)
 }

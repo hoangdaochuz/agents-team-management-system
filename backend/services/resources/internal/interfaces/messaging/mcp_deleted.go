@@ -14,9 +14,5 @@ type McpDeletedHandler struct{ App *application.App }
 func (h McpDeletedHandler) Topics() []string { return []string{events.TopicMcpDeleted} }
 
 func (h McpDeletedHandler) Handle(ctx context.Context, msg events.EventEnvelope) error {
-	var d events.McpDeletedData
-	if err := msg.DecodeData(&d); err != nil {
-		return err
-	}
-	return h.App.ProjectMcpDeleted(ctx, d)
+	return events.Forward(ctx, msg, h.App.ProjectMcpDeleted)
 }
