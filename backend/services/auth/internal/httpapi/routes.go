@@ -535,22 +535,6 @@ func (a *App) ssoBegin(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"redirect_url": url})
 }
 
-// internalIdentity resolves the session cookie to the identity the Gateway
-// forwards as the X-User-* scoping headers (workspace-scoping contract).
-func (a *App) internalIdentity(w http.ResponseWriter, r *http.Request) {
-	u, err := a.currentUser(r)
-	if err != nil {
-		httputil.Error(w, http.StatusUnauthorized, "not authenticated")
-		return
-	}
-	super := u.IsSuperadmin != nil && *u.IsSuperadmin
-	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"user_id":       u.ID,
-		"name":          u.Name,
-		"email":         u.Email,
-		"is_superadmin": super,
-	})
-}
 
 // activeUsers24h serves the Gateway's KPI composition.
 func (a *App) activeUsers24h(w http.ResponseWriter, r *http.Request) {

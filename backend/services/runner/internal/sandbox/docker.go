@@ -72,7 +72,7 @@ func (e *dockerEnv) createAndStart(ctx context.Context) error {
 	if resp, err := e.httpClient.Do(req); err != nil {
 		return fmt.Errorf("container start: %w", err)
 	} else {
-		resp.Body.Close()
+_ = resp.Body.Close()
 		if resp.StatusCode >= 300 {
 			return fmt.Errorf("container start: %s", resp.Status)
 		}
@@ -120,9 +120,9 @@ func (e *dockerEnv) execStart(ctx context.Context, execID string) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+defer func() { _ = conn.Close() }()
 	// Cancel tear-down: closing the conn unblocks the read on stop.
-	go func() { <-ctx.Done(); conn.Close() }()
+	go func() { <-ctx.Done(); _ = conn.Close() }()
 
 	payload := []byte(`{"Detach":false,"Tty":true}`)
 	reqLine := "POST /" + dockerAPIVersion + "/exec/" + execID + "/start HTTP/1.1\r\n" +
@@ -136,7 +136,7 @@ func (e *dockerEnv) execStart(ctx context.Context, execID string) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		msg, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("exec start: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
@@ -166,7 +166,7 @@ func (e *dockerEnv) Logs(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return "", fmt.Errorf("docker logs: %s", resp.Status)
 	}
@@ -232,7 +232,7 @@ func (e *dockerEnv) doJSON(ctx context.Context, method, path string, body any, o
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("docker %s %s: %s: %s", method, path, resp.Status, strings.TrimSpace(string(b)))

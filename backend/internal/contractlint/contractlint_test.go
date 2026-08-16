@@ -150,7 +150,7 @@ func TestKafkaContract(t *testing.T) {
 	topics := events.AllTopics()
 	sort.Strings(topics)
 	for _, tp := range topics {
-		b.WriteString(fmt.Sprintf("%s %t\n", tp, events.IsTaskPartitioned(tp)))
+		fmt.Fprintf(&b, "%s %t\n", tp, events.IsTaskPartitioned(tp))
 	}
 	b.WriteString("\n# payload JSON shapes (zero-value marshal)\n")
 	payloads := kafkaPayloads()

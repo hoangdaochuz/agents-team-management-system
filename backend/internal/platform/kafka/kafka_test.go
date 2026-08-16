@@ -90,18 +90,18 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cluster admin: %v", err)
 	}
-	defer admin.Close()
+	defer func() { _ = admin.Close() }()
 	if err := admin.CreateTopic(topic, &sarama.TopicDetail{NumPartitions: 1, ReplicationFactor: 1}, false); err != nil {
 		t.Fatalf("create topic: %v", err)
 	}
-	defer admin.DeleteTopic(topic)
+	defer func() { _ = admin.DeleteTopic(topic) }()
 
 	log := testLogger(t)
 	prod, err := NewProducer(brokers, log)
 	if err != nil {
 		t.Fatalf("producer: %v", err)
 	}
-	defer prod.Close()
+	defer func() { _ = prod.Close() }()
 
 	env := contracts.EventEnvelope{
 		EventID:   "evt-" + newID(),
@@ -125,7 +125,7 @@ func TestPublishConsumeRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("consumer group %s: %v", groupID, err)
 		}
-		defer cg.Close()
+		defer func() { _ = cg.Close() }()
 
 		go func() { _ = cg.Run(ctx, []string{topic}, func(_ context.Context, e contracts.EventEnvelope) error {
 			if e.TaskID == taskID {
