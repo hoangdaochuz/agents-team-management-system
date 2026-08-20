@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { Step } from "../../api/types";
 import { Badge, Card, CardHead, EmptyState } from "../ui";
 import { Icon } from "../../lib/icons";
@@ -18,13 +19,23 @@ function stepTitle(step: Step): { title: string; detail?: string } {
 }
 
 export function StepsList({ steps }: { steps: Step[] }) {
+  // Keep the newest step visible as the run streams without growing the page.
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight });
+  }, [steps.length]);
+
   return (
     <Card>
       <CardHead title={<h2 className="card-title" style={{ fontSize: 16 }}>Steps</h2>} />
       {steps.length === 0 ? (
         <EmptyState icon="clock" title="No steps yet." hint="Steps appear as the agent runs." />
       ) : (
-        <div className="stack" style={{ gap: "var(--space-3)" }}>
+        <div
+          ref={bodyRef}
+          className="stack"
+          style={{ gap: "var(--space-3)", maxHeight: 420, overflowY: "auto", paddingRight: 4 }}
+        >
           {steps.map((step, i) => {
             const isLast = i === steps.length - 1;
             const running = isLast && step.kind === "tool_call";

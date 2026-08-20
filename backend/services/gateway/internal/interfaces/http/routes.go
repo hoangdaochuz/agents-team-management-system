@@ -214,8 +214,12 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request) {
 	rec := &responseRecorder{}
 	s.proxy(application.UpstreamAuth).ServeHTTP(rec, r)
 	// The recorder captures headers (session cookie on login) — put them back
-	// on the wire or the client never receives the cookie.
+	// on the wire or the client never receives the cookie. Content-Length must
+	// NOT survive: it sizes the upstream user JSON, while the body written
+	// below is the larger composed Session — a stale length makes net/http
+	// truncate the response mid-body.
 	copyHeaders(w.Header(), rec.Header())
+	w.Header().Del("Content-Length")
 	if rec.code != http.StatusOK && (r.Method != http.MethodPost || rec.code != http.StatusCreated) {
 		w.WriteHeader(rec.code)
 		_, _ = w.Write(rec.body)

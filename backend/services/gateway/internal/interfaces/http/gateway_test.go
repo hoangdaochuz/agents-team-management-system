@@ -498,6 +498,45 @@ func TestSessionComposition(t *testing.T) {
 	})
 }
 
+// TestSessionCompositionOverRealServer exercises the composed session endpoints
+// through a real http.Server, not a ResponseRecorder: net/http enforces any
+// declared Content-Length, and the upstream's header (sizing the bare auth user
+// JSON) must not survive onto the larger composed Session the gateway writes —
+// a stale length truncates the response body on the wire.
+func TestSessionCompositionOverRealServer(t *testing.T) {
+	s := newTestServer(t)
+	srv := httptest.NewServer(http.HandlerFunc(s.serve))
+	t.Cleanup(srv.Close)
+
+	post := func(t *testing.T, path string) *http.Response {
+		t.Helper()
+		resp, err := http.Post(srv.URL+path, "application/json", strings.NewReader(`{"email":"ada@aaks.dev","password":"pw"}`))
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		t.Cleanup(func() { _ = resp.Body.Close() })
+		return resp
+	}
+
+	t.Run("login body is complete on the wire", func(t *testing.T) {
+		resp := post(t, "/api/auth/login")
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var sess workspaces.Session
+		if err := json.Unmarshal(body, &sess); err != nil {
+			t.Fatalf("unmarshal composed session (body=%q): %v", body, err)
+		}
+		if sess.User.ID != "u1" {
+			t.Fatalf("user.id = %q, want u1", sess.User.ID)
+		}
+		if got := resp.Header.Get("Set-Cookie"); got != SessionCookie+"=tok; Path=/" {
+			t.Fatalf("Set-Cookie = %q, want %q", got, SessionCookie+"=tok; Path=/")
+		}
+	})
+}
+
 func TestWorkspaceListEnrichment(t *testing.T) {
 	s := newTestServer(t)
 	rec := get(t, s, "/api/workspaces", "tok")

@@ -94,17 +94,11 @@ export function WorkspacesPage() {
               );
             })}
 
-            <button className="ws-card card" onClick={() => setCreating(true)} style={{ textAlign: "left", cursor: "pointer", border: "1px dashed var(--border)" }}>
-              <div className="center stack" style={{ padding: "var(--space-6)", color: "var(--muted)" }}>
-                <Icon name="plus" size={24} />
-                <span>Create workspace</span>
-              </div>
-            </button>
           </div>
         )}
       </AsyncBoundary>
 
-      <section className="card flush" style={{ marginTop: "var(--space-6)" }}>
+      <section className="card" style={{ marginTop: "var(--space-6)" }}>
         <div className="card-head">
           <h2 className="card-title">How workspace isolation works</h2>
         </div>
