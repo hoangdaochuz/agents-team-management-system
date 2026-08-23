@@ -1,0 +1,129 @@
+## Purpose
+
+The backend is over-decomposed into 11 microservices (~20K LOC total) for a single-operator MVP.
+Four services (Settings 716 LOC, Project 918 LOC, Admin 812 LOC, Resources 1,342 LOC) are
+nano-services with trivial domain logic that don't justify the overhead of their own container,
+database, migration pipeline, and Kafka consumer group. The Gateway currently makes 3+ synchronous
+fan-out calls per authenticated request (Auth → Orgs → enrichments), and Auth ↔ Orgs are so
+tightly coupled that separating them creates distributed transactions for what is fundamentally
+a single identity/authorization flow.
+
+The recommended re-decomposition consolidates 11 services into 5 services + Gateway BFF,
+aligned to true bounded contexts, reducing operational complexity by ~60%.
+
+## Consolidated Service Map
+
+| Service | Merged From | Bounded Context | Key Entities |
+|:--------|:------------|:----------------|:------------|
+| **Identity** | Auth + Orgs + Admin | Who you are + what you can access | users, sessions, organizations, workspaces, members, invites, feature_flags, audit_log |
+| **Workspace** | Project + Task + Catalog + Resources | What work + tools exist | projects, tasks, feedback, skills, mcp_servers, knowledge_sources, plugins, rules, mcp_connections |
+| **Agent** | Agent + Settings | How agents are configured | agents, agent_skills, agent_mcps, provider_keys |
+| **Executor** | Runner (unchanged) | Run tasks in sandboxed containers | runs, steps, findings, artifacts |
+| **Gateway** | Gateway BFF (simplified) | Route, auth, compose, SSE | routing, session composition, SSE fan-out |
+
+---
+
+## ADDED Requirements
+
+### Requirement: Identity Service consolidation
+The service SHALL merge Auth (1,982 LOC) + Orgs (2,408 LOC) + Admin (812 LOC) into a single
+Identity Service with a unified database schema (`identity_db`).
+- **Merged entities**: users, sessions, organizations, workspaces, members, invites, signup_requests, feature_flags, audit_log
+- **Rationale**: Auth and Orgs are tightly coupled (session → user → workspace memberships). Admin is pure reads against the same entities. The Gateway currently makes 3 synchronous calls to compose a session; merging turns these into local function calls.
+- **Bounded Context**: "Who are you, what can you access, and what has happened?" — Identity, authorization, tenancy, and audit form a single bounded context.
+- **Kafka**: Producer: `signup.*`, `invite.created`, `workspace.created`, `audit.recorded`. Consumer: same (internal projection). Most become in-process events.
+
+### Requirement: Workspace Service consolidation
+The service SHALL merge Project (918 LOC) + Task (2,130 LOC) + Catalog (1,526 LOC) + Resources (1,342 LOC) into a single Workspace Service with a unified database schema (`workspace_db`).
+- **Merged entities**: projects, tasks, task_thread, feedback, skills, mcp_servers, knowledge_sources, plugins, rules, mcp_connections
+- **Rationale**: These are all workspace-scoped entities that users manage together. Projects contain tasks, tasks use agents/skills/MCPs from the catalog, resources are workspace-level configurations. The Catalog→Resources Kafka projection becomes a simple local function call. Task saga coordinator gains direct access to project/skill data.
+- **Bounded Context**: "What work exists in this workspace, and what tools/resources are available?" — The workspace's complete operational surface.
+- **Kafka**: Producer: `task.run-requested`, `task.review-requested`, `task.stop-requested`, `task.status-changed`. Consumer: `run.completed`, `verdict`, `pr.opened`. (These are the only events that truly need Kafka — they cross the Workspace→Executor boundary.)
+
+### Requirement: Agent Service consolidation
+The service SHALL merge Agent (1,389 LOC) + Settings (716 LOC) into a single Agent Service with a unified database schema (`agent_db`).
+- **Merged entities**: agents, agent_skills, agent_mcps, provider_keys
+- **Rationale**: Agent configuration (persona, model, tools, attached skills/MCPs) is deeply linked to provider keys (which model to call with which key). The Runner already calls Settings internally to fetch decrypted keys — merging means the Executor calls one service for "give me agent config + decrypted credentials" instead of two. The encryption boundary is maintained within the service.
+- **Bounded Context**: "How are agents configured and credentialed?" — Agent identity and the secrets that power them.
+- **Kafka**: Consumer: `skill.created`, `skill.deleted` (catalog projections) — could become a direct HTTP call from Workspace Service on write.
+
+### Requirement: Executor Service preservation
+The Executor Service (Runner, 4,064 LOC) SHALL remain as a standalone service — unchanged.
+- **Rationale**: The Runner is the one service that genuinely deserves isolation: it manages Docker containers, long-running agent loops, sandbox security, step streaming, and LLM provider calls. Its failure modes (container crashes, OOM, timeouts) are fundamentally different from CRUD services.
+- **Kafka**: Producer: `step`, `run.completed`, `finding`, `verdict`, `pr.opened`, `run.started`. Consumer: `task.run-requested`, `task.review-requested`, `task.stop-requested`. (This is where Kafka earns its keep — async, ordered, at-least-once delivery for long-running operations.)
+
+### Requirement: Gateway BFF simplification
+The Gateway BFF SHALL be simplified from 10 upstream env vars to 4 (`UPSTREAM_IDENTITY`, `UPSTREAM_WORKSPACE`, `UPSTREAM_AGENT`, `UPSTREAM_EXECUTOR`).
+- **Session composition**: becomes a single call to Identity Service instead of Auth + Orgs.
+- **SSE composition**: unchanged pattern but with reduced upstream dependencies.
+- **Upstream reduction**: 10 → 4 environment variables.
+
+### Requirement: Database consolidation
+The system SHALL consolidate 10 logical databases to 4 (`identity_db`, `workspace_db`, `agent_db`, `runner_db`).
+- **Current**: 10 logical databases each with their own migration pipeline, sharing the same Postgres instance and credentials.
+- **Target**: 4 databases, single migration pipeline, same Postgres instance.
+- **Databases merged**:
+  - `identity_db`: merges auth_db, orgs_db, admin_db
+  - `workspace_db`: merges project_db, task_db, catalog_db, resources_db
+  - `agent_db`: merges agent_db, settings_db
+  - `runner_db`: unchanged
+- **Rationale**: These databases have no isolation benefit — they share the same Postgres instance, same credentials, same failure domain. The only thing they add is migration complexity and cross-service join impossibility.
+
+### Requirement: Kafka topic reduction
+The event bus SHALL reduce Kafka topics from ~22 to ~8, retaining only execution-boundary events.
+**Keep (execution boundary — genuinely async)**:
+| Topic | Producer → Consumer |
+|:------|:-------------------|
+| `task.run-requested` | Workspace → Executor |
+| `task.review-requested` | Workspace → Executor |
+| `task.stop-requested` | Workspace → Executor |
+| `step` | Executor → Gateway (SSE) |
+| `run.completed` | Executor → Workspace |
+| `finding` | Executor → Workspace |
+| `verdict` | Executor → Workspace |
+
+**Remove (become in-process or synchronous)**:
+| Topic | Why Unnecessary |
+|:------|:---------------|
+| `signup.requested/approved/declined` | All within Identity Service now |
+| `invite.created` | All within Identity Service now |
+| `workspace.created` | Identity can call Workspace directly, or Workspace polls |
+| `mcp.created/deleted` | All within Workspace Service now |
+| `skill.created/deleted` | Workspace→Agent can be a sync call on write |
+| `audit.recorded` | All within Identity Service now |
+| `run.started` | Executor→Agent projection; can be a sync callback |
+| `pr.opened` | Executor→Workspace; keep or make sync |
+| `task.status-changed` | Internal to Workspace Service now |
+
+### Requirement: DDD layering preservation
+Each consolidated service SHALL preserve the DDD 4-layer architecture (domain/application/infrastructure/interfaces).
+- Existing domain/application/infrastructure packages are restructured as internal subpackages within the new service (e.g., `internal/domain/auth/`, `internal/domain/orgs/`, `internal/domain/admin/` → `internal/domain/identity/`).
+- No layer violations are introduced during the merge.
+- Application tests use hand-rolled fakes; UnitOfWork only where multi-aggregate mutations exist.
+
+### Requirement: Security model preservation
+The following security properties SHALL be maintained:
+- **Credential-less sandbox**: Provider keys never reach container env/filesystem/logs.
+- **Sole-decryptor pattern**: Settings (now within Agent Service) is the sole decryptor of provider keys via internal token channel.
+- **mTLS handoff**: Gateway-to-service mTLS is maintained with the simplified upstream config.
+- **No provider key/git token leakage**: The credential-less-sandbox invariant carries over from the old design.
+
+---
+
+## Out of Scope
+
+- **Frontend changes**: The SPA is untouched; all change is behind the Gateway. The REST/SSE contract is unchanged.
+- **New features**: This is a pure architectural consolidation — no new capabilities, no new endpoints, no behavioral changes.
+- **Kafka removal**: Kafka is retained for the execution saga (Task↔Runner) and SSE step streaming where it genuinely earns its keep.
+- **Changing the DDD layering or shared platform packages**: `internal/platform/*` and `internal/contracts/*` remain as-is, with contracts potentially simplified.
+- **Changing the overall API shape**: Frontend-facing REST/SSE endpoints remain the same; only internal service boundaries change.
+
+---
+
+## Impact
+
+- **Code (refactor)**: Go services under `backend/services/` restructured: `auth/`, `orgs/`, `admin/` → `identity/`; `project/`, `task/`, `catalog/`, `resources/` → `workspace/`; `agent/`, `settings/` → `agent/` (enhanced); `runner/` → `executor/` (renamed). Old service directories deleted. `cmd/main.go` composition roots rewritten for each consolidated service. Internal packages become subpackages within the new service structure.
+- **APIs**: The frontend-facing REST/SSE contract is **unchanged**. Internal service-to-service API surfaces are simplified (fewer upstream services, fewer Kafka topics).
+- **Dependencies**: No new Go dependencies. Kafka and Postgres versions unchanged.
+- **Deploy**: `deploy/docker-compose.yml` simplified from 13 containers to 7 (4 services + Gateway + Postgres + Kafka). `deploy/postgres/01-create-databases.sql` reduced to 4 databases. Environment variable count reduced substantially.
+- **Docs**: `AGENTS.md`, `CLAUDE.md`, `docs/design.md`, and `docs/tasks.md` updated to reflect the new 5-service topology.
