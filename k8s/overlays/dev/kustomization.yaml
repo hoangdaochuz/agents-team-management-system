@@ -1,0 +1,137 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aaks
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - filestore-storage-class.yaml
+  - ingress.yaml
+  - env-configmap.yaml
+
+# Image tags - placeholders for CI to replace with actual digests
+images:
+  - name: gateway
+    newName: us-docker.pkg.dev/your-project-id/aaks/gateway
+    newTag: sha-PLACEHOLDER
+  - name: project
+    newName: us-docker.pkg.dev/your-project-id/aaks/project
+    newTag: sha-PLACEHOLDER
+  - name: task
+    newName: us-docker.pkg.dev/your-project-id/aaks/task
+    newTag: sha-PLACEHOLDER
+  - name: agent
+    newName: us-docker.pkg.dev/your-project-id/aaks/agent
+    newTag: sha-PLACEHOLDER
+  - name: catalog
+    newName: us-docker.pkg.dev/your-project-id/aaks/catalog
+    newTag: sha-PLACEHOLDER
+  - name: settings
+    newName: us-docker.pkg.dev/your-project-id/aaks/settings
+    newTag: sha-PLACEHOLDER
+  - name: runner
+    newName: us-docker.pkg.dev/your-project-id/aaks/runner
+    newTag: sha-PLACEHOLDER
+  - name: auth
+    newName: us-docker.pkg.dev/your-project-id/aaks/auth
+    newTag: sha-PLACEHOLDER
+  - name: orgs
+    newName: us-docker.pkg.dev/your-project-id/aaks/orgs
+    newTag: sha-PLACEHOLDER
+  - name: resources
+    newName: us-docker.pkg.dev/your-project-id/aaks/resources
+    newTag: sha-PLACEHOLDER
+  - name: admin
+    newName: us-docker.pkg.dev/your-project-id/aaks/admin
+    newTag: sha-PLACEHOLDER
+  - name: web
+    newName: us-docker.pkg.dev/your-project-id/aaks/web
+    newTag: sha-PLACEHOLDER
+
+# Dev-specific sizing patches
+patches:
+  - target:
+      kind: Deployment
+      name: runner
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: PersistentVolumeClaim
+      name: runner-clone-pvc
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 200Gi  # Smaller for dev
+  # Right-size the runner's DinD sidecar (containers[0]) for dev.
+  - target:
+      kind: Deployment
+      name: runner
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 250m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 1000m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+
+# ConfigMap generator for migration files (to be populated by CI)
+configMapGenerator:
+  - name: project-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/project.sql
+    options:
+      disableNameSuffixHash: true
+  - name: task-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/task.sql
+    options:
+      disableNameSuffixHash: true
+  - name: agent-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/agent.sql
+    options:
+      disableNameSuffixHash: true
+  - name: catalog-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/catalog.sql
+    options:
+      disableNameSuffixHash: true
+  - name: settings-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/settings.sql
+    options:
+      disableNameSuffixHash: true
+  - name: runner-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/runner.sql
+    options:
+      disableNameSuffixHash: true
+  - name: auth-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/auth.sql
+    options:
+      disableNameSuffixHash: true
+  - name: orgs-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/orgs.sql
+    options:
+      disableNameSuffixHash: true
+  - name: resources-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/resources.sql
+    options:
+      disableNameSuffixHash: true
+  - name: admin-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/admin.sql
+    options:
+      disableNameSuffixHash: true

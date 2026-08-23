@@ -26,7 +26,13 @@ backend/    Go service — self-contained module (go.mod lives HERE, not at repo
   internal/config/    env config
   internal/httpapi/   HTTP server, routes, middleware  (REST handlers/SSE/agent loop land in later phases)
   runner/             Dockerfile for the per-task credential-less sandbox image
-deploy/     docker-compose.yml, .env.example
+deploy/     docker-compose.yml, .env.example, service.Dockerfile (shared, distroless),
+            runner.Dockerfile (runner variant with git), pin-digests.sh
+infra/      Terraform IaC — modules/ + envs/{dev,prod}  (GKE, Cloud SQL, Managed Kafka,
+            Filestore, Artifact Registry, Secret Manager, WIF). Runbook: infra/README.md
+k8s/        Kustomize — base/ (12 workloads + PreSync migration jobs), overlays/{dev,prod},
+            components/ (Argo CD, Kyverno, External Secrets, Trivy Operator, Falco,
+            NetworkPolicies, PSS). Layout + promotion: k8s/README.md
 docs/       spec.md, design.md, tasks.md
 prototype/  static HTML prototype — the visual source of truth for the SPA (do not delete)
 ```
@@ -47,6 +53,7 @@ make lint             # cd backend && golangci-lint run
 make run              # cd backend && go run ./cmd/server   (API on :8080)
 make compose-up       # docker compose -f deploy/docker-compose.yml up --build  (app + postgres)
 make runner           # build the credential-less task-container base image
+make pin-digests      # refresh the digest pins on every Dockerfile base image
 
 make web-install      # cd frontend && npm install
 make web-dev          # cd frontend && npm run dev   (Vite :5173, proxies /api -> :8080)
@@ -58,7 +65,12 @@ Run a **single Go test**: `cd backend && go test ./internal/httpapi -run TestNam
 Run a **single package's tests**: `cd backend && go test ./internal/httpapi`
 
 CI (`.github/workflows/ci.yml`) runs the Go job in `working-directory: backend` and a separate
-`frontend` job (`npm ci && typecheck && build`). Both must pass.
+`frontend` job (`npm ci && typecheck && build`), plus DevSecOps PR gates (Semgrep, Gitleaks,
+terraform/kustomize/Trivy-config validation). Both must pass. `deploy.yml` (triggered after ci on
+master) builds all 13 images once, gates on Trivy, signs with Cosign, and promotes digests to the
+dev overlay; prod is a manual promotion PR. When touching `k8s/`, keep
+`kubectl kustomize k8s/overlays/dev` and `overlays/prod` clean; when touching `infra/`, keep
+`terraform fmt` clean. See the deployment section in `AGENTS.md` for the full picture.
 
 ## Architecture (the load-bearing parts)
 

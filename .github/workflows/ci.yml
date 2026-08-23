@@ -2,13 +2,36 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --error --config p/default --config p/golang --config p/typescript
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Full-history secret scan via the docker image directly (the hosted
+      # gitleaks-action needs a license for org repos; the binary does not).
+      - run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest detect --source /repo
+
   build-test:
     runs-on: ubuntu-latest
     defaults:
@@ -50,3 +73,53 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  iac-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: terraform fmt
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infra/
+
+      - name: Validate Terraform (dev)
+        run: |
+          cd infra/envs/dev
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate Terraform (prod)
+        run: |
+          cd infra/envs/prod
+          terraform init -backend=false
+          terraform validate
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v3
+
+      - name: Build Kustomize dev
+        run: kustomize build k8s/overlays/dev
+
+      - name: Build Kustomize prod
+        run: kustomize build k8s/overlays/prod
+
+      - name: Trivy IaC scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: k8s/
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Trivy infra scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: infra/
+          severity: CRITICAL,HIGH
+          exit-code: 1

@@ -1,0 +1,48 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: aaks
+  namespace: argocd
+spec:
+  description: AI Agent Kanban System
+  sourceRepos:
+    - '*'
+  destinations:
+    - namespace: aaks
+      server: https://kubernetes.default.svc
+    - namespace: aaks-dev
+      server: https://kubernetes.default.svc
+    - namespace: aaks-prod
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+---
+# ONE Application per cluster: Terraform provisions separate aaks-dev and
+# aaks-prod GKE clusters, each running its own Argo CD. Bootstrap each cluster
+# once with the Application that belongs to it (see k8s/README.md):
+#   dev cluster:  kubectl apply -f k8s/components/argocd/apps/app-of-apps.yaml
+#   prod cluster: kubectl apply -f k8s/components/argocd/apps/app-prod.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/your-org/agents-team-management-system
+    targetRevision: master
+    path: k8s/overlays/dev
+  destination:
+    namespace: aaks
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

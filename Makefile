@@ -34,6 +34,10 @@ e2e:
 runner:
 	docker build -t aaks-runner:latest backend/runner
 
+## Refresh the digest pins on every Dockerfile base image.
+pin-digests:
+	bash deploy/pin-digests.sh
+
 clean:
 	cd backend && go clean ./...
 

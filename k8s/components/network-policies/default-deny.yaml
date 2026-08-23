@@ -1,0 +1,20 @@
+# Default deny all ingress and egress in namespace aaks
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: aaks
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: aaks
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress

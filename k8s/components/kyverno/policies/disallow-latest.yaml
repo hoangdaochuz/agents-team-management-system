@@ -1,0 +1,34 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-immutable-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - kube-system
+                - argocd
+                - kyverno
+      validate:
+        message: "Image tags using 'latest' are not allowed."
+        foreach:
+          - list: request.object.spec.containers
+            context: []
+            pattern:
+              image: "!*:latest"
+          - list: request.object.spec.initContainers
+            context: []
+            pattern:
+              image: "!*:latest"

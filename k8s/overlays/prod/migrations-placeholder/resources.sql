@@ -1,0 +1,2 @@
+-- Placeholder for resources migrations
+-- CI will replace this with actual migration files from backend/services/resources/internal/infrastructure/repository/migrations

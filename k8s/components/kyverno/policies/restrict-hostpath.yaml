@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-hostpath
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: block-hostpath-except-sandbox
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - kube-system
+                - argocd
+                - kyverno
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                  matchLabels:
+                    aaks/sandbox: "true"
+      validate:
+        message: "HostPath volumes are only allowed in sandbox workloads."
+        pattern:
+          spec:
+            volumes:
+              - X(hostPath): null

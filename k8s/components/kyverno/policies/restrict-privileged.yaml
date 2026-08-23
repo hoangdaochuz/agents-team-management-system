@@ -1,0 +1,42 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-privileged
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: block-privileged-except-sandbox
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - kube-system
+                - argocd
+                - kyverno
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                  matchLabels:
+                    aaks/sandbox: "true"
+      validate:
+        message: "Privileged containers are only allowed in sandbox workloads."
+        foreach:
+          - list: request.object.spec.containers
+            context: []
+            pattern:
+              securityContext:
+                privileged: false
+          - list: request.object.spec.initContainers
+            context: []
+            pattern:
+              securityContext:
+                privileged: false

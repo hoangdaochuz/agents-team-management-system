@@ -1,0 +1,2 @@
+-- Placeholder for admin migrations
+-- CI will replace this with actual migration files from backend/services/admin/internal/infrastructure/repository/migrations

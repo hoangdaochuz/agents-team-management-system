@@ -1,0 +1,2 @@
+-- Placeholder for runner migrations
+-- CI will replace this with actual migration files from backend/services/runner/internal/infrastructure/repository/migrations

@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-custom-rules
+  namespace: falco
+data:
+  custom-rules.yaml: |
+    # Suppress expected DinD/sandbox churn for pods labeled aaks/sandbox
+    - macro: aaks_sandbox
+      condition:
+        k8s pod labels contain aaks/sandbox
+
+    - rule: Suppress Docker Socket Activity in Sandbox
+      desc: Suppress expected Docker socket activity in sandbox pods
+      condition: (aaks_sandbox)
+      suppress:
+        enabled: true
+
+    - rule: Suppress Container Spawn in Sandbox
+      desc: Suppress expected container creation in sandbox pods
+      condition: (aaks_sandbox)
+      suppress:
+        enabled: true
+
+    # Alert on shell spawns in service containers (not sandbox)
+    - rule: Shell Spawn in Service Container
+      desc: Detect shell spawn in non-sandbox service containers
+      condition: >
+        spawned_process
+        and container
+        and not aaks_sandbox
+        and shell_procs
+        and user.name != "root"
+      output: >
+        Shell spawned in service container (user=%user.name command=%proc.cmdline
+        container=%container.name image=%container.image.id)
+      priority: WARNING
+      tags:
+        - shell
+        - container

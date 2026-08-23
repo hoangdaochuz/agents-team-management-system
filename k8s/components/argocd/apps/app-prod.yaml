@@ -1,0 +1,27 @@
+# Prod Application — apply ONCE to the aaks-prod cluster's Argo CD (the prod
+# cluster is a separate GKE cluster; see app-of-apps.yaml for the dev twin).
+# Dev promotion is automatic; this app's overlay only changes via a reviewed
+# promotion PR, so auto-sync here converges the cluster to the approved state.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-prod
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/your-org/agents-team-management-system
+    targetRevision: master
+    path: k8s/overlays/prod
+  destination:
+    namespace: aaks
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels:
+    app: gateway
+    tier: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        tier: backend
+    spec:
+      serviceAccountName: gateway
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: gateway
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: HTTP_ADDR
+              value: ":8080"
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-brokers
+            # Managed Kafka: SASL/PLAIN over TLS (see platform/kafka
+            # applyAuthFromEnv — unset vars would mean the plaintext path).
+            - name: KAFKA_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-tls
+            - name: KAFKA_SASL_MECHANISM
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-sasl-mechanism
+            - name: KAFKA_SASL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: user
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: password
+            # The gateway is a pure reverse proxy: no DB of its own (the other
+            # ten services each carry their <SVC>_DB_DSN).
+            - name: SETTINGS_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: settings-internal-token
+                  key: token
+            - name: UPSTREAM_PROJECT
+              value: http://project:8081
+            - name: UPSTREAM_TASK
+              value: http://task:8082
+            - name: UPSTREAM_AGENT
+              value: http://agent:8083
+            - name: UPSTREAM_CATALOG
+              value: http://catalog:8084
+            - name: UPSTREAM_SETTINGS
+              value: http://settings:8085
+            - name: UPSTREAM_RUNNER
+              value: http://runner:8086
+            - name: UPSTREAM_AUTH
+              value: http://auth:8087
+            - name: UPSTREAM_ORGS
+              value: http://orgs:8088
+            - name: UPSTREAM_RESOURCES
+              value: http://resources:8089
+            - name: UPSTREAM_ADMIN
+              value: http://admin:8090
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      terminationGracePeriodSeconds: 60

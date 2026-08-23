@@ -1,0 +1,211 @@
+# Deploy pipeline: builds each image exactly once on master (after ci passes),
+# gates on Trivy, generates SBOMs, signs keyless with Cosign, then promotes the
+# digests to the dev overlay (prod is a manual promotion PR).
+#
+# Operator repository VARIABLES required:
+#   GCP_WIF_PROVIDER  projects/<num>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
+#   GCP_SA            <ci-sa>@<project>.iam.gserviceaccount.com        (roles/artifactregistry.writer)
+#   GCP_REGISTRY      us-central1-docker.pkg.dev                       (registry host)
+name: deploy
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  IMAGES: gateway project task agent catalog settings runner auth orgs resources admin web sandbox
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 11 services via the shared service Dockerfile (runner uses the
+          # git-capable variant: it execs `git worktree` host-side).
+          - name: gateway
+            dockerfile: deploy/service.Dockerfile
+            context: ./backend
+          - { name: project,  dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: task,     dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: agent,    dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: catalog,  dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: settings, dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: runner,   dockerfile: deploy/runner.Dockerfile,  context: ./backend }
+          - { name: auth,     dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: orgs,     dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: resources, dockerfile: deploy/service.Dockerfile, context: ./backend }
+          - { name: admin,    dockerfile: deploy/service.Dockerfile, context: ./backend }
+          # SPA
+          - { name: web, dockerfile: frontend/Dockerfile, context: ./frontend }
+          # Credential-less sandbox base image
+          - { name: sandbox, dockerfile: backend/runner/Dockerfile, context: ./backend }
+    steps:
+      - name: Guard on CI success
+        if: github.event.workflow_run.conclusion != 'success'
+        run: exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to GCP (OIDC, no stored keys)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Login to Artifact Registry
+        run: echo "AR_TOKEN=$(gcloud auth print-access-token)" >> "$GITHUB_ENV"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.GCP_REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ env.AR_TOKEN }}
+
+      - name: Build and push (once, by commit SHA)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          build-args: ${{ matrix.name != 'web' && matrix.name != 'sandbox' && matrix.name != 'runner' && format('SERVICE={0}', matrix.name) || '' }}
+          push: true
+          tags: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  scan-sign-publish:
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [gateway, project, task, agent, catalog, settings, runner, auth, orgs, resources, admin, web, sandbox]
+    env:
+      IMAGE: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP (OIDC, no stored keys)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Login to Artifact Registry
+        run: echo "AR_TOKEN=$(gcloud auth print-access-token)" >> "$GITHUB_ENV"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.GCP_REGISTRY }}
+          username: oauth2accesstoken
+          password: ${{ env.AR_TOKEN }}
+
+      # Vulnerability gate: a critical CVE stops promotion dead.
+      - name: Trivy image scan (fail on CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL
+          exit-code: 1
+          format: sarif
+          output: trivy-report.sarif
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif-${{ matrix.name }}
+          path: trivy-report.sarif
+
+      - name: Generate SBOM (Syft, SPDX-JSON)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}
+          tool: syft
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.name }}
+          path: sbom.spdx.json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign image (keyless)
+        run: cosign sign --yes "$IMAGE"
+
+      - name: Attest SBOM
+        run: cosign attest --yes --predicate sbom.spdx.json --type spdx "$IMAGE"
+
+      - name: Verify signature (smoke)
+        run: |
+          cosign verify "$IMAGE" \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
+  promote-dev:
+    runs-on: ubuntu-latest
+    needs: scan-sign-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # GITHUB_TOKEN pushes do not re-trigger workflows (recursion guard):
+          # the promotion commit only moves digests, which ci's iac-validate
+          # already covers on the next real change.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - uses: imranismail/setup-kustomize@v3
+
+      - name: Authenticate to GCP (OIDC, no stored keys)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SA }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Promote by DIGEST (immutable), not tag: resolve each sha-tag to its
+      # digest so the overlay records exactly what CI built, scanned and signed.
+      - name: Promote images to dev overlay (by digest)
+        run: |
+          cd k8s/overlays/dev
+          for name in $IMAGES; do
+            digest="$(gcloud artifacts docker images describe \
+              "${{ vars.GCP_REGISTRY }}/aaks/${name}:sha-${{ github.sha }}" \
+              --format='value(image_summary.digest)')"
+            kustomize edit set image "${name}=${{ vars.GCP_REGISTRY }}/aaks/${name}@${digest}"
+          done
+
+      - name: Commit and push promotion
+        run: |
+          git add k8s/overlays/dev
+          if git diff --staged --quiet; then
+            echo "No promotion changes"; exit 0
+          fi
+          git commit -m "promote dev images sha-${GITHUB_SHA::7}"
+          git push origin master

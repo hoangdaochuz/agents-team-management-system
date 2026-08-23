@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # Go modules in backend/
+  - directory: "/"
+    package-ecosystem: "gomod"
+    schedule:
+      interval: "weekly"
+    groups:
+      golang-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Ignore specific packages if needed
+      # - dependency-name: "example.com/pkg"
+
+  # npm packages in frontend/
+  - directory: "/frontend"
+    package-ecosystem: "npm"
+    schedule:
+      interval: "weekly"
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      # Ignore specific packages if needed
+      # - dependency-name: "example-package"
+
+  # GitHub Actions
+  - directory: "/"
+    package-ecosystem: "github-actions"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
