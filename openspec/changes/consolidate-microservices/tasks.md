@@ -50,8 +50,9 @@ Reference `specs/` for behavior and `design.md` for approach. The Go module stay
 
 - [ ] 4.1 Rename `services/runner/` → `services/executor/` (preserving all internal structure)
 - [ ] 4.2 Update `cmd/main.go` composition root if needed for new package path
-- [ ] 4.3 Kafka topics unchanged: `step`, `run.completed`, `finding`, `verdict`, `pr.opened`,
-  `run.started` as producer; `task.run-requested`, `task.review-requested`, `task.stop-requested` as consumer
+- [ ] 4.3 Kafka topics: produces `step`, `run.completed`, `finding`, `verdict`, `pr.opened`
+  (drop the `run.started` producer — no consumer); consumes `task.run-requested`,
+  `task.review-requested`, `task.stop-requested`, `task.pr-open-requested`
 - [ ] 4.4 Run `go vet ./... && go build ./...` — verify unchanged service compiles
 - [ ] 4.5 Run existing runner/executor tests
 
@@ -71,11 +72,11 @@ Reference `specs/` for behavior and `design.md` for approach. The Go module stay
 
 - [ ] 6.1 Update `deploy/postgres/01-create-databases.sql` from 10 databases to 4:
     - `identity_db`, `workspace_db`, `agent_db`, `runner_db`
-- [ ] 6.2 Reduce Kafka topic catalog from ~22 to ~8 surviving topics:
+- [ ] 6.2 Reduce Kafka topic catalog from 21 to 9 surviving topics:
     - Keep: `task.run-requested`, `task.review-requested`, `task.stop-requested`,
-      `step.*`, `run.completed`, `finding.*`, `verdict`, `task.status-changed`
+      `task.pr-open-requested`, `step`, `run.completed`, `finding`, `verdict`, `pr.opened`
     - Remove: `signup.*`, `invite.created`, `workspace.created`, `mcp.*`, `skill.*`,
-      `audit.recorded`, `run.started`, `pr.opened`
+      `audit.recorded`, `run.started` (no consumer), `task.status-changed` (no consumer)
 - [ ] 6.3 Update Kafka consumer groups to match surviving topics only
 - [ ] 6.4 Run `go vet ./... && go build ./...` — verify compilation
 - [ ] 6.5 Run Kafka integration tests if `AAKS_KAFKA_TEST_BROKERS` is set

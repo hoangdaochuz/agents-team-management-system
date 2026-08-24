@@ -7,7 +7,7 @@ container, database, migration pipeline, and Kafka consumer group. The Gateway c
 makes 3+ synchronous fan-out calls per authenticated request (Auth → Orgs → enrichments),
 and Auth ↔ Orgs are so tightly coupled that separating them creates distributed transactions
 for what is fundamentally a single identity/authorization flow. The system requires 13
-containers, 10 logical databases, and ~22 Kafka topics — excessive operational complexity
+containers, 10 logical databases, and 21 Kafka topics — excessive operational complexity
 for the system's actual scale.
 
 ## What Changes
@@ -35,9 +35,11 @@ for the system's actual scale.
   Session composition becomes a single call to the Identity Service.
 - **Consolidate 10 logical databases to 4** (`identity_db`, `workspace_db`, `agent_db`,
   `runner_db`). Same Postgres instance, fewer migration pipelines.
-- **Reduce Kafka topics from ~22 to ~8.** Only execution-boundary events survive (task
-  commands, run facts, step streaming). Intra-service events (signup flow, catalog
-  projections, audit recording) become in-process function calls.
+- **Reduce Kafka topics from 21 to 9.** Only execution-boundary events survive (task
+  commands including `task.pr-open-requested`, run facts including `pr.opened`, step
+  streaming). Intra-service events (signup flow, catalog projections, audit recording)
+  and the unconsumed `task.status-changed`/`run.started` topics become in-process function
+  calls or are dropped.
 - **Preserve DDD 4-layer architecture** within each consolidated service. Existing
   domain/application/infrastructure/interfaces packages are restructured as internal
   subpackages (e.g., `internal/domain/auth/`, `internal/domain/orgs/`) — no layer violations.
@@ -70,7 +72,7 @@ for the system's actual scale.
   management.
 - `consolidated-gateway`: Simplified gateway routing with 4 upstream services instead of 10.
   Covers reduced fan-out composition, simplified session resolution, and streamlined SSE.
-- `consolidated-event-bus`: Reduced Kafka topic catalog (~8 topics) retaining only
+- `consolidated-event-bus`: Reduced Kafka topic catalog (9 topics) retaining only
   execution-boundary events. Covers topic pruning, consumer group simplification, and
   in-process event replacement for intra-service flows.
 

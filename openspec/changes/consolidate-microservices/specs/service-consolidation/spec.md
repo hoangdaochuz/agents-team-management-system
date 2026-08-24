@@ -33,12 +33,28 @@ Identity Service with a unified database schema (`identity_db`).
 - **Bounded Context**: "Who are you, what can you access, and what has happened?" — Identity, authorization, tenancy, and audit form a single bounded context.
 - **Kafka**: Producer: `signup.*`, `invite.created`, `workspace.created`, `audit.recorded`. Consumer: same (internal projection). Most become in-process events.
 
+#### Scenario: Signup approval without distributed transactions
+- **WHEN** an operator approves a signup request
+- **THEN** user activation, org/workspace creation, membership assignment, and audit recording all complete inside the Identity Service as local operations with no cross-service calls or Kafka events
+
+#### Scenario: Session composed in one call
+- **WHEN** the Gateway asks the Identity Service to resolve a session
+- **THEN** one HTTP call returns user, workspaces, role, and superadmin flag — no Auth→Orgs fan-out
+
 ### Requirement: Workspace Service consolidation
 The service SHALL merge Project (918 LOC) + Task (2,130 LOC) + Catalog (1,526 LOC) + Resources (1,342 LOC) into a single Workspace Service with a unified database schema (`workspace_db`).
 - **Merged entities**: projects, tasks, task_thread, feedback, skills, mcp_servers, knowledge_sources, plugins, rules, mcp_connections
 - **Rationale**: These are all workspace-scoped entities that users manage together. Projects contain tasks, tasks use agents/skills/MCPs from the catalog, resources are workspace-level configurations. The Catalog→Resources Kafka projection becomes a simple local function call. Task saga coordinator gains direct access to project/skill data.
 - **Bounded Context**: "What work exists in this workspace, and what tools/resources are available?" — The workspace's complete operational surface.
-- **Kafka**: Producer: `task.run-requested`, `task.review-requested`, `task.stop-requested`, `task.status-changed`. Consumer: `run.completed`, `verdict`, `pr.opened`. (These are the only events that truly need Kafka — they cross the Workspace→Executor boundary.)
+- **Kafka**: Producer: `task.run-requested`, `task.review-requested`, `task.stop-requested`, `task.pr-open-requested`. Consumer: `run.completed`, `finding`, `verdict`, `pr.opened`. (These are the only events that truly need Kafka — they cross the Workspace→Executor boundary.)
+
+#### Scenario: Catalog projection is a function call
+- **WHEN** an MCP server is created in the catalog
+- **THEN** the resource projection updates as an in-process call inside the Workspace Service — no Kafka publish
+
+#### Scenario: Saga reads project data locally
+- **WHEN** the task saga coordinator needs the parent project's repository settings to dispatch a run
+- **THEN** it reads them directly from `workspace_db` without a cross-service HTTP call
 
 ### Requirement: Agent Service consolidation
 The service SHALL merge Agent (1,389 LOC) + Settings (716 LOC) into a single Agent Service with a unified database schema (`agent_db`).
@@ -47,16 +63,32 @@ The service SHALL merge Agent (1,389 LOC) + Settings (716 LOC) into a single Age
 - **Bounded Context**: "How are agents configured and credentialed?" — Agent identity and the secrets that power them.
 - **Kafka**: Consumer: `skill.created`, `skill.deleted` (catalog projections) — could become a direct HTTP call from Workspace Service on write.
 
+#### Scenario: Executor fetches config and credentials in one call
+- **WHEN** the Executor starts a run and needs the agent's persona/model plus a decrypted provider key
+- **THEN** it makes a single call to the Agent Service instead of separate Agent and Settings calls
+
 ### Requirement: Executor Service preservation
 The Executor Service (Runner, 4,064 LOC) SHALL remain as a standalone service — unchanged.
 - **Rationale**: The Runner is the one service that genuinely deserves isolation: it manages Docker containers, long-running agent loops, sandbox security, step streaming, and LLM provider calls. Its failure modes (container crashes, OOM, timeouts) are fundamentally different from CRUD services.
-- **Kafka**: Producer: `step`, `run.completed`, `finding`, `verdict`, `pr.opened`, `run.started`. Consumer: `task.run-requested`, `task.review-requested`, `task.stop-requested`. (This is where Kafka earns its keep — async, ordered, at-least-once delivery for long-running operations.)
+- **Kafka**: Producer: `step`, `run.completed`, `finding`, `verdict`, `pr.opened`. Consumer: `task.run-requested`, `task.review-requested`, `task.stop-requested`, `task.pr-open-requested`. (`run.started` is dropped — it has no consumer.) (This is where Kafka earns its keep — async, ordered, at-least-once delivery for long-running operations.)
+
+#### Scenario: Runner behavior preserved through rename
+- **WHEN** `services/runner/` is renamed to `services/executor/`
+- **THEN** the Docker sandbox driver, agent loop, worktree-per-task management, and step persistence/streaming behave identically
+
+#### Scenario: Executor failure does not take down CRUD
+- **WHEN** the Executor crashes or its container pool is exhausted
+- **THEN** the Identity, Workspace, Agent, and Gateway services keep serving CRUD and session requests
 
 ### Requirement: Gateway BFF simplification
 The Gateway BFF SHALL be simplified from 10 upstream env vars to 4 (`UPSTREAM_IDENTITY`, `UPSTREAM_WORKSPACE`, `UPSTREAM_AGENT`, `UPSTREAM_EXECUTOR`).
 - **Session composition**: becomes a single call to Identity Service instead of Auth + Orgs.
 - **SSE composition**: unchanged pattern but with reduced upstream dependencies.
 - **Upstream reduction**: 10 → 4 environment variables.
+
+#### Scenario: All frontend routes resolve against 4 upstreams
+- **WHEN** every route in the gateway route table is resolved post-consolidation
+- **THEN** each maps to one of identity, workspace, agent, or executor — no route references a removed upstream
 
 ### Requirement: Database consolidation
 The system SHALL consolidate 10 logical databases to 4 (`identity_db`, `workspace_db`, `agent_db`, `runner_db`).
@@ -69,20 +101,26 @@ The system SHALL consolidate 10 logical databases to 4 (`identity_db`, `workspac
   - `runner_db`: unchanged
 - **Rationale**: These databases have no isolation benefit — they share the same Postgres instance, same credentials, same failure domain. The only thing they add is migration complexity and cross-service join impossibility.
 
+#### Scenario: Database init script creates 4 databases
+- **WHEN** `deploy/postgres/01-create-databases.sql` runs on a fresh Postgres
+- **THEN** exactly `identity_db`, `workspace_db`, `agent_db`, and `runner_db` are created
+
 ### Requirement: Kafka topic reduction
-The event bus SHALL reduce Kafka topics from ~22 to ~8, retaining only execution-boundary events.
+The event bus SHALL reduce Kafka topics from 21 to 9, retaining only execution-boundary events.
 **Keep (execution boundary — genuinely async)**:
 | Topic | Producer → Consumer |
 |:------|:-------------------|
 | `task.run-requested` | Workspace → Executor |
 | `task.review-requested` | Workspace → Executor |
 | `task.stop-requested` | Workspace → Executor |
+| `task.pr-open-requested` | Workspace → Executor |
 | `step` | Executor → Gateway (SSE) |
 | `run.completed` | Executor → Workspace |
 | `finding` | Executor → Workspace |
 | `verdict` | Executor → Workspace |
+| `pr.opened` | Executor → Workspace |
 
-**Remove (become in-process or synchronous)**:
+**Remove (become in-process, synchronous, or dropped)**:
 | Topic | Why Unnecessary |
 |:------|:---------------|
 | `signup.requested/approved/declined` | All within Identity Service now |
@@ -91,9 +129,12 @@ The event bus SHALL reduce Kafka topics from ~22 to ~8, retaining only execution
 | `mcp.created/deleted` | All within Workspace Service now |
 | `skill.created/deleted` | Workspace→Agent can be a sync call on write |
 | `audit.recorded` | All within Identity Service now |
-| `run.started` | Executor→Agent projection; can be a sync callback |
-| `pr.opened` | Executor→Workspace; keep or make sync |
-| `task.status-changed` | Internal to Workspace Service now |
+| `run.started` | Executor→Agent projection; no consumer exists — dropped |
+| `task.status-changed` | Internal to Workspace Service now; no consumer exists — dropped |
+
+#### Scenario: Only execution-boundary topics remain
+- **WHEN** the consolidated system's Kafka catalog is inspected
+- **THEN** exactly the 9 execution-boundary topics exist; every other former topic is handled in-process, synchronously, or not at all
 
 ### Requirement: DDD layering preservation
 Each consolidated service SHALL preserve the DDD 4-layer architecture (domain/application/infrastructure/interfaces).
@@ -101,12 +142,24 @@ Each consolidated service SHALL preserve the DDD 4-layer architecture (domain/ap
 - No layer violations are introduced during the merge.
 - Application tests use hand-rolled fakes; UnitOfWork only where multi-aggregate mutations exist.
 
+#### Scenario: archlint still enforces dependencies
+- **WHEN** the `archlint` test runs against the consolidated services
+- **THEN** it fails if any domain or application package imports infrastructure, pgx, sarama, or platform transport packages — same rule as before the merge
+
 ### Requirement: Security model preservation
 The following security properties SHALL be maintained:
 - **Credential-less sandbox**: Provider keys never reach container env/filesystem/logs.
 - **Sole-decryptor pattern**: Settings (now within Agent Service) is the sole decryptor of provider keys via internal token channel.
 - **mTLS handoff**: Gateway-to-service mTLS is maintained with the simplified upstream config.
 - **No provider key/git token leakage**: The credential-less-sandbox invariant carries over from the old design.
+
+#### Scenario: Sandbox secret-leak test still passes
+- **WHEN** the sandbox secret-leak test inspects a running task container's environment, filesystem, and logs
+- **THEN** it finds no provider keys and no git credentials — all LLM calls and git operations ran on the host backend
+
+#### Scenario: mTLS covers the new topology
+- **WHEN** the Gateway connects to any of the 4 upstream services
+- **THEN** the connection is mutually authenticated with the same certificate pipeline as before consolidation
 
 ---
 
