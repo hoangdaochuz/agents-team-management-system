@@ -90,8 +90,9 @@ func (a *App) Stop(ctx context.Context, id identity.ID, ws []identity.ID) (tasks
 	if err != nil {
 		return tasks.Task{}, err
 	}
-	if prev.Status != out.Status {
-		}
+	// Idempotent: an already-stopped task still asks the Executor to abort,
+	// but no transition happened, so no event beyond stop-requested is emitted.
+	_ = prev
 	a.pub.Publish(ctx, events.TopicTaskStopRequested, events.StopRequestedData{TaskID: id}, id)
 	return out, nil
 }
