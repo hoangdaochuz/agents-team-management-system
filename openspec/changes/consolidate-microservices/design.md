@@ -84,7 +84,7 @@ All other previously-defined topics (`signup.*`, `invite.created`, `workspace.cr
 **Choice:** The following security properties are maintained:
 - **Credential-less sandbox**: Provider keys never reach container env/filesystem/logs
 - **Sole-decryptor pattern**: Settings (now within Agent Service) is the sole decryptor of provider keys via internal token channel
-- **mTLS handoff**: Gateway-to-service mTLS is maintained with the simplified upstream config
+- **Internal-channel hardening**: the Agent Service's plaintext-key endpoint is token-gated and, when `AGENT_MTLS=on`, mTLS-gated (the env-gated pipeline the former Settings service exposed as `SETTINGS_MTLS`). Gateway→upstream traffic is plain HTTP on the trusted compose network in the MVP deployment — no gateway mTLS pipeline existed before consolidation to maintain
 - **No provider key/git token leakage**: The credential-less-sandbox invariant carries over
 
 **Rationale / alternatives:** These properties are load-bearing across process boundaries. *Alternatives rejected:* (a) spreading decryption capability — spreads the secret surface; (b) env/mounted secrets — defeats the credential-less-sandbox invariant.

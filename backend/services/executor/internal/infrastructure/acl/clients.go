@@ -16,22 +16,22 @@ import (
 	"github.com/aaks/server/services/executor/internal/application"
 )
 
-// SettingsClient fetches provider keys from Settings (shared token; the
+// KeyClient fetches provider keys from the Agent service (shared token; the
 // plaintext key never leaves the process).
-type SettingsClient struct {
+type KeyClient struct {
 	url   string
 	token string
 	hc    *http.Client
 }
 
-// NewSettingsClient builds the Settings key client. An empty url makes it a
+// NewKeyClient builds the Agent-service key client. An empty url makes it a
 // no-op returning application.ErrNotConfigured.
-func NewSettingsClient(url, token string) *SettingsClient {
-	return &SettingsClient{url: strings.TrimSuffix(url, "/"), token: token, hc: &http.Client{Timeout: 5 * time.Second}}
+func NewKeyClient(url, token string) *KeyClient {
+	return &KeyClient{url: strings.TrimSuffix(url, "/"), token: token, hc: &http.Client{Timeout: 5 * time.Second}}
 }
 
-// FetchKey pulls a provider key from Settings.
-func (c *SettingsClient) FetchKey(ctx context.Context, provider string) (string, error) {
+// FetchKey pulls a provider key from the Agent service.
+func (c *KeyClient) FetchKey(ctx context.Context, provider string) (string, error) {
 	if c.url == "" {
 		return "", application.ErrNotConfigured
 	}
@@ -46,7 +46,7 @@ func (c *SettingsClient) FetchKey(ctx context.Context, provider string) (string,
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("settings returned %s", resp.Status)
+		return "", fmt.Errorf("agent service returned %s", resp.Status)
 	}
 	var out struct {
 		APIKey string `json:"api_key"`

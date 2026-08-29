@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/aaks/server/internal/platform/db"
+	admindomain "github.com/aaks/server/services/identity/internal/domain/admin"
 	authdomain "github.com/aaks/server/services/identity/internal/domain/auth"
 	orgsdomain "github.com/aaks/server/services/identity/internal/domain/orgs"
-	admindomain "github.com/aaks/server/services/identity/internal/domain/admin"
 	"github.com/aaks/server/services/identity/internal/infrastructure/repository/admin/audit"
 	"github.com/aaks/server/services/identity/internal/infrastructure/repository/admin/flag"
 	authinvite "github.com/aaks/server/services/identity/internal/infrastructure/repository/auth/invite"

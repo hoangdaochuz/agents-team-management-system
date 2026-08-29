@@ -24,7 +24,8 @@ for the system's actual scale.
   **BREAKING** vs. the current 4-service split.
 - **Merge Agent + Settings into a single Agent Service.** Agent configuration (persona,
   model, tools, attached skills/MCPs) and provider key encryption are combined. The Runner
-  calls one service for "agent config + decrypted credentials" instead of two. The
+  calls one service for "agent config + decrypted credentials" instead of two (still two
+internal endpoints — key decrypt and MCP hydration — but one upstream and one trust boundary). The
   encryption boundary is maintained within the service. **BREAKING** vs. the current
   2-service split.
 - **Keep Runner (Executor) as a standalone service** — unchanged. It manages Docker
@@ -91,7 +92,8 @@ for the system's actual scale.
   API surfaces are simplified (fewer upstream services, fewer Kafka topics).
 - **Dependencies:** No new Go dependencies. Kafka and Postgres versions unchanged.
 - **Deploy:** `deploy/docker-compose.yml` simplified from 13 containers to 7 (4 services +
-  Gateway + Postgres + Kafka). `deploy/postgres/01-create-databases.sql` reduced to 4
+  Gateway + Postgres + Kafka, plus a one-shot kafka-init helper that pre-creates
+  `__consumer_offsets`). `deploy/postgres/01-create-databases.sql` reduced to 4
   databases. Environment variable count reduced substantially.
 - **Docs:** `AGENTS.md`, `CLAUDE.md`, `docs/design.md`, and `docs/tasks.md` updated to
   reflect the new 5-service topology.

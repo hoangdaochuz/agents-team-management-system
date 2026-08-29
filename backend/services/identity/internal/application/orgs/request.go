@@ -25,9 +25,11 @@ func (a *App) ListPendingRequests(ctx context.Context, workspaceID identity.ID) 
 	return out, nil
 }
 
-// ApproveJoinRequest approves a pending join-mode request: the membership and
-// the request status commit atomically in a UoW, then signup.approved is
-// published and the action audited.
+// ApproveJoinRequest approves a pending join-mode request: the membership,
+// the request status, and the user activation commit atomically in a UoW,
+// then signup.approved is published and the action audited. Activation rides
+// the transaction (not the best-effort in-process event) so an approved
+// request can never leave an unactivated user behind.
 func (a *App) ApproveJoinRequest(ctx context.Context, actorID, workspaceID, requestID identity.ID) error {
 	var jr domain.JoinRequest
 	err := a.uow.Do(ctx, func(tx *Tx) error {
@@ -42,7 +44,10 @@ func (a *App) ApproveJoinRequest(ctx context.Context, actorID, workspaceID, requ
 		if _, err := tx.Members.Add(ctx, jr.WorkspaceID, jr.UserID, jr.Name, jr.Email, jr.RequestedRole); err != nil {
 			return err
 		}
-		return tx.JoinRequests.SetStatus(ctx, requestID, identity.SignupApproved)
+		if err := tx.JoinRequests.SetStatus(ctx, requestID, identity.SignupApproved); err != nil {
+			return err
+		}
+		return tx.Users.Activate(ctx, jr.UserID)
 	})
 	if err != nil {
 		return err

@@ -41,7 +41,7 @@ Reference `specs/` for behavior and `design.md` for approach. The Go module stay
     - Provider key encryption module stays isolated within `internal/infrastructure/crypto/`
 - [x] 3.3 Consolidate databases: single migration pipeline creating all tables in `agent_db`
     - Merge: agents, agent_skills, agent_mcps, provider_keys from agent_db, settings_db
-- [x] 3.4 Update Runner's credential fetch to point at Agent Service (single call instead of two)
+- [x] 3.4 Update Runner's credential fetch to point at Agent Service (one upstream service instead of two)
 - [x] 3.5 Preserve encryption boundary: provider keys encrypted at rest, master key in memory only
 - [x] 3.6 Run `go vet ./... && go build ./...` — ensure compilation and layer integrity
 - [x] 3.7 Run existing service tests to confirm no regressions
@@ -84,7 +84,7 @@ Reference `specs/` for behavior and `design.md` for approach. The Go module stay
 ## Phase 7: Clean up and verify
 
 - [x] 7.1 Remove 6 legacy Dockerfiles and DB init scripts for consolidated services
-- [x] 7.2 Simplify `deploy/docker-compose.yml` from 13 containers to 7 (4 services + Gateway + Postgres + Kafka)
+- [x] 7.2 Simplify `deploy/docker-compose.yml` from 13 containers to 7 (4 services + Gateway + Postgres + Kafka, plus a one-shot kafka-init helper that pre-creates __consumer_offsets)
 - [x] 7.3 Update `AGENTS.md`, `CLAUDE.md`, `docs/design.md`, and `docs/tasks.md` to reflect the new 5-service topology
 - [x] 7.4 Run full verification: `go vet ./... && go build ./... && go test ./...`
 - [x] 7.5 Run frontend: `make web-typecheck && make web-build`

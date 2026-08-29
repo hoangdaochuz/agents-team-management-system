@@ -45,7 +45,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	// Agent config and decrypted provider keys both live in the consolidated
 	// Agent service now: one URL serves both clients.
 	agentURL := os.Getenv("AGENT_URL")
-	keys := acl.NewSettingsClient(agentURL, os.Getenv("AGENT_INTERNAL_TOKEN"))
+	keys := acl.NewKeyClient(agentURL, os.Getenv("AGENT_INTERNAL_TOKEN"))
 	resClient := acl.NewResourcesClient(os.Getenv("WORKSPACE_URL"))
 	agents := acl.NewAgentClient(agentURL, log)
 

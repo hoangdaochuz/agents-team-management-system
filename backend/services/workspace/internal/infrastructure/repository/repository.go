@@ -20,13 +20,13 @@ import (
 	taskdomain "github.com/aaks/server/services/workspace/internal/domain/task"
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/catalog/mcp"
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/catalog/skill"
-	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/project/project"
+	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/project"
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/resources/knowledge"
 	resmcp "github.com/aaks/server/services/workspace/internal/infrastructure/repository/resources/mcp"
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/resources/plugin"
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/resources/rule"
+	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/task"
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository/task/feedback"
-	tasktask "github.com/aaks/server/services/workspace/internal/infrastructure/repository/task/task"
 )
 
 //go:embed migrations/*.sql
@@ -69,7 +69,7 @@ func New(ctx context.Context, dsn string, log *slog.Logger) (*Repos, error) {
 	}
 	st := &Repos{pool: pool, log: log}
 	st.Projects = project.New(pool)
-	st.Tasks = tasktask.New(pool)
+	st.Tasks = task.New(pool)
 	st.Feedback = feedback.New(pool)
 	st.Skills = skill.New(pool)
 	st.Mcps = mcp.New(pool)

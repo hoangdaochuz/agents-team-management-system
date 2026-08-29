@@ -169,13 +169,13 @@ func (f *fakeTools) SetupTools(context.Context, identity.ID, identity.ID, identi
 	return driver.ToolSet{}, nil
 }
 
-func newTestRunner(settings SettingsKeyClient, resources ResourcesRulesClient) (*Runner, *fakePub, *fakeDriver) {
+func newTestRunner(keys KeyClient, resources ResourcesRulesClient) (*Runner, *fakePub, *fakeDriver) {
 	pub := &fakePub{}
 	d := &fakeDriver{res: driver.Result{Status: agentexec.RunDone, TokenUsage: 12}}
 	r := New(
 		&fakeRuns{}, &fakeSteps{}, &fakeFindings{}, &fakeArtifacts{},
 		d, driver.Caps{MaxSteps: 5},
-		settings, resources, &fakeAgents{}, &fakeTools{}, pub,
+		keys, resources, &fakeAgents{}, &fakeTools{}, pub,
 		slog.New(slog.DiscardHandler), "",
 	)
 	return r, pub, d
@@ -207,8 +207,8 @@ func TestStartImplementerEmitsCompletionFacts(t *testing.T) {
 }
 
 func TestStartReviewerEmitsVerdict(t *testing.T) {
-	settings := &fakeSettings{key: "k"}
-	r, pub, d := newTestRunner(settings, &fakeResources{})
+	keys := &fakeSettings{key: "k"}
+	r, pub, d := newTestRunner(keys, &fakeResources{})
 	d.res = driver.Result{Status: agentexec.RunDone, Verdict: "APPROVE", VerdictSummary: "looks good"}
 
 	// Pre-seed the implementer run the reviewer reads.

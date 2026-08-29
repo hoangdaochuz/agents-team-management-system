@@ -52,9 +52,14 @@ type TaskRepository interface {
 	SetRoundNo(ctx context.Context, id identity.ID, roundNo int) error
 	Delete(ctx context.Context, id identity.ID, ws []identity.ID) error
 	CountOpenByWorkspace(ctx context.Context, workspaceID identity.ID) (int, error)
-	// SagaNew records (task_id, run_id) as processed by the saga coordinator;
-	// false when already seen (idempotency hook for at-least-once redelivery).
-	SagaNew(ctx context.Context, taskID, runID identity.ID) (bool, error)
+	// SagaAdvance atomically records (task_id, run_id) as processed by the
+	// saga coordinator AND moves the task from `from` to `to` (optionally
+	// setting the review round) in a single statement. It returns false when
+	// the run was already seen or the task is not in `from` — both are
+	// idempotent no-ops under at-least-once redelivery. Keeping the dedup mark
+	// and the transition in one statement is what makes the idempotency hook
+	// safe: a failure after the mark can never strand the task un-transitioned.
+	SagaAdvance(ctx context.Context, taskID, runID identity.ID, from, to tasks.TaskStatus, roundNo int, setRound bool) (bool, error)
 }
 
 // FeedbackRepository is the human-comment aggregate port.

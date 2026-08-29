@@ -124,7 +124,13 @@ func (f *fakeTasks) CountOpenByWorkspace(_ context.Context, _ identity.ID) (int,
 	return n, nil
 }
 
-func (f *fakeTasks) SagaNew(_ context.Context, taskID, runID identity.ID) (bool, error) {
+// SagaAdvance mirrors the repo's atomic CTE: the dedup mark and the from→to
+// transition happen together, so a failed transition never leaves the run
+// marked as processed.
+func (f *fakeTasks) SagaAdvance(_ context.Context, taskID, runID identity.ID, from, to tasks.TaskStatus, roundNo int, setRound bool) (bool, error) {
+	if f.fail != nil {
+		return false, f.fail
+	}
 	if f.claims == nil {
 		f.claims = map[string]bool{}
 	}
@@ -132,7 +138,16 @@ func (f *fakeTasks) SagaNew(_ context.Context, taskID, runID identity.ID) (bool,
 	if f.claims[key] {
 		return false, nil
 	}
+	// Match the SQL: the mark is recorded even when the task is not in `from`.
 	f.claims[key] = true
+	t := f.find(taskID)
+	if t == nil || t.Status != from {
+		return false, nil
+	}
+	t.Status = to
+	if setRound {
+		t.RoundNo = roundNo
+	}
 	return true, nil
 }
 
@@ -291,10 +306,10 @@ func TestPatchStatusDoingWithoutAgentBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("patch status: %v", err)
 	}
-	// The response carries the requested status (pre-blocked), mirroring the
-	// pre-refactor handler; the persisted task is blocked.
-	if out.Status != tasks.TaskDoing {
-		t.Fatalf("response must carry the requested doing status, got %s", out.Status)
+	// The response must reflect the persisted state: an un-runnable task is
+	// surfaced as blocked, not the transient doing status it never kept.
+	if out.Status != tasks.TaskBlocked {
+		t.Fatalf("response must carry the persisted blocked status, got %s", out.Status)
 	}
 	if tf.tasks[0].Status != tasks.TaskBlocked {
 		t.Fatalf("un-runnable task must be persisted as blocked, got %s", tf.tasks[0].Status)

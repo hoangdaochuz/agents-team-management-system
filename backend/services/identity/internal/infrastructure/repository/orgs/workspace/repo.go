@@ -61,6 +61,26 @@ func (r *Repo) ByID(ctx context.Context, id identity.ID) (workspaces.Workspace, 
 	return w, err
 }
 
+// List returns every workspace — the provisioning reconciler's sweep input
+// (not user-facing; single-operator scale).
+func (r *Repo) List(ctx context.Context) ([]workspaces.Workspace, error) {
+	rows, err := r.q.Query(ctx, `SELECT `+wsCols+` FROM workspaces ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []workspaces.Workspace{}
+	for rows.Next() {
+		var w workspaces.Workspace
+		var org identity.ID
+		if err := rows.Scan(&w.ID, &org, &w.Name, &w.RepoSource, &w.DefaultBranch, &w.Glyph, &w.Description, &w.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, w)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repo) ListByUser(ctx context.Context, userID identity.ID) ([]workspaces.Workspace, error) {
 	rows, err := r.q.Query(ctx, `
 		SELECT w.id, w.organization_id, w.name, w.repo_source, w.default_branch, w.glyph, w.description, w.created_at, m.role

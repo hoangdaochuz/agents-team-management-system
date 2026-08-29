@@ -15,5 +15,6 @@ type WorkspaceRepository interface {
 	Create(ctx context.Context, orgID identity.ID, name, repoSource, defaultBranch, glyph, description string) (Workspace, error)
 	ByID(ctx context.Context, id identity.ID) (Workspace, error)
 	ListByUser(ctx context.Context, userID identity.ID) ([]Workspace, error)
+	List(ctx context.Context) ([]Workspace, error)
 	GetByUser(ctx context.Context, userID, workspaceID identity.ID) (Workspace, error)
 }

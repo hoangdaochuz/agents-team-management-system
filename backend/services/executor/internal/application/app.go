@@ -25,9 +25,9 @@ type EventPublisher interface {
 	Publish(ctx context.Context, topic string, data any, key identity.ID)
 }
 
-// SettingsKeyClient fetches provider keys from Settings (Anti-Corruption Layer
+// KeyClient fetches provider keys from the Agent service (Anti-Corruption Layer
 // port: the plaintext key never leaves the process).
-type SettingsKeyClient interface {
+type KeyClient interface {
 	FetchKey(ctx context.Context, provider string) (string, error)
 }
 
@@ -58,7 +58,7 @@ type Runner struct {
 
 	driver    driver.Driver
 	caps      driver.Caps
-	settings  SettingsKeyClient
+	keys      KeyClient
 	resources ResourcesRulesClient
 	agents    AgentMcpClient
 	tools     ToolProvisioner
@@ -73,10 +73,10 @@ type Runner struct {
 }
 
 // New builds the Runner application service with its injected dependencies.
-func New(runs domain.RunRepository, steps domain.StepRepository, findings domain.FindingRepository, artifacts domain.ArtifactRepository, d driver.Driver, caps driver.Caps, settings SettingsKeyClient, resources ResourcesRulesClient, agents AgentMcpClient, tools ToolProvisioner, pub EventPublisher, log *slog.Logger, prBaseURL string) *Runner {
+func New(runs domain.RunRepository, steps domain.StepRepository, findings domain.FindingRepository, artifacts domain.ArtifactRepository, d driver.Driver, caps driver.Caps, keys KeyClient, resources ResourcesRulesClient, agents AgentMcpClient, tools ToolProvisioner, pub EventPublisher, log *slog.Logger, prBaseURL string) *Runner {
 	return &Runner{
 		runs: runs, steps: steps, findings: findings, artifacts: artifacts,
-		driver: d, caps: caps, settings: settings, resources: resources, agents: agents,
+		driver: d, caps: caps, keys: keys, resources: resources, agents: agents,
 		tools: tools, pub: pub, log: log, prBaseURL: prBaseURL,
 	}
 }

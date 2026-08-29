@@ -16,7 +16,7 @@ import (
 	"github.com/aaks/server/internal/platform/db"
 	agentdomain "github.com/aaks/server/services/agent/internal/domain/agent"
 	settingsdomain "github.com/aaks/server/services/agent/internal/domain/settings"
-	"github.com/aaks/server/services/agent/internal/infrastructure/repository/agent/agent"
+	"github.com/aaks/server/services/agent/internal/infrastructure/repository/agent"
 	"github.com/aaks/server/services/agent/internal/infrastructure/repository/agent/projection"
 	"github.com/aaks/server/services/agent/internal/infrastructure/repository/settings/key"
 )

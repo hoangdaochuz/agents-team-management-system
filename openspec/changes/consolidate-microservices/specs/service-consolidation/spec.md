@@ -63,9 +63,9 @@ The service SHALL merge Agent (1,389 LOC) + Settings (716 LOC) into a single Age
 - **Bounded Context**: "How are agents configured and credentialed?" — Agent identity and the secrets that power them.
 - **Kafka**: Consumer: `skill.created`, `skill.deleted` (catalog projections) — could become a direct HTTP call from Workspace Service on write.
 
-#### Scenario: Executor fetches config and credentials in one call
+#### Scenario: Executor fetches config and credentials from one service
 - **WHEN** the Executor starts a run and needs the agent's persona/model plus a decrypted provider key
-- **THEN** it makes a single call to the Agent Service instead of separate Agent and Settings calls
+- **THEN** both requests go to the Agent Service (its `/internal/keys/{provider}` and `/internal/agents/{id}/mcp-servers` endpoints) instead of the former separate Settings and Agent services — one upstream, two calls
 
 ### Requirement: Executor Service preservation
 The Executor Service (Runner, 4,064 LOC) SHALL remain as a standalone service — unchanged.
@@ -150,16 +150,16 @@ Each consolidated service SHALL preserve the DDD 4-layer architecture (domain/ap
 The following security properties SHALL be maintained:
 - **Credential-less sandbox**: Provider keys never reach container env/filesystem/logs.
 - **Sole-decryptor pattern**: Settings (now within Agent Service) is the sole decryptor of provider keys via internal token channel.
-- **mTLS handoff**: Gateway-to-service mTLS is maintained with the simplified upstream config.
+- **Internal-channel hardening**: the Agent Service's plaintext-key endpoint is gated by the shared internal token and, when `AGENT_MTLS=on`, by a mutually authenticated TLS listener (the same env-gated pipeline the pre-consolidation Settings service exposed as `SETTINGS_MTLS`). Gateway→upstream traffic runs plain HTTP on the trusted compose network in the MVP deployment — there was no gateway mTLS pipeline before consolidation to maintain.
 - **No provider key/git token leakage**: The credential-less-sandbox invariant carries over from the old design.
 
 #### Scenario: Sandbox secret-leak test still passes
 - **WHEN** the sandbox secret-leak test inspects a running task container's environment, filesystem, and logs
 - **THEN** it finds no provider keys and no git credentials — all LLM calls and git operations ran on the host backend
 
-#### Scenario: mTLS covers the new topology
-- **WHEN** the Gateway connects to any of the 4 upstream services
-- **THEN** the connection is mutually authenticated with the same certificate pipeline as before consolidation
+#### Scenario: Key decryption stays token-gated
+- **WHEN** the Executor fetches a decrypted provider key from the Agent Service
+- **THEN** the request carries the shared internal token, and with `AGENT_MTLS=on` the TLS peer is verified — no other caller can obtain plaintext key material
 
 ---
 
@@ -178,5 +178,5 @@ The following security properties SHALL be maintained:
 - **Code (refactor)**: Go services under `backend/services/` restructured: `auth/`, `orgs/`, `admin/` → `identity/`; `project/`, `task/`, `catalog/`, `resources/` → `workspace/`; `agent/`, `settings/` → `agent/` (enhanced); `runner/` → `executor/` (renamed). Old service directories deleted. `cmd/main.go` composition roots rewritten for each consolidated service. Internal packages become subpackages within the new service structure.
 - **APIs**: The frontend-facing REST/SSE contract is **unchanged**. Internal service-to-service API surfaces are simplified (fewer upstream services, fewer Kafka topics).
 - **Dependencies**: No new Go dependencies. Kafka and Postgres versions unchanged.
-- **Deploy**: `deploy/docker-compose.yml` simplified from 13 containers to 7 (4 services + Gateway + Postgres + Kafka). `deploy/postgres/01-create-databases.sql` reduced to 4 databases. Environment variable count reduced substantially.
+- **Deploy**: `deploy/docker-compose.yml` simplified from 13 containers to 7 (4 services + Gateway + Postgres + Kafka, plus a one-shot kafka-init helper that pre-creates __consumer_offsets). `deploy/postgres/01-create-databases.sql` reduced to 4 databases. Environment variable count reduced substantially.
 - **Docs**: `AGENTS.md`, `CLAUDE.md`, `docs/design.md`, and `docs/tasks.md` updated to reflect the new 5-service topology.

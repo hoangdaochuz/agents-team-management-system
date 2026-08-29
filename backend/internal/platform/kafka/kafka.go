@@ -68,9 +68,10 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, msg event
 	if msg.TaskID == "" && events.IsTaskPartitioned(topic) {
 		// Task-partitioned topics preserve per-task ordering; an empty key would
 		// silently collapse every such event onto a single partition, degrading
-		// the invariant — fail fast instead. Non-task topics (signup, invite,
-		// workspace, catalog projections, audit) key on their own correlation id
-		// and are unaffected.
+		// the invariant — fail fast instead. Post-consolidation every Kafka
+		// topic is task-partitioned; the former non-task topics (signup,
+		// invite, audit, catalog projections) now dispatch in-process inside
+		// the consolidated services and never reach this publisher.
 		return fmt.Errorf("kafka: publish to %s: TaskID is required for task-partitioned topics", topic)
 	}
 	buf, err := json.Marshal(msg)

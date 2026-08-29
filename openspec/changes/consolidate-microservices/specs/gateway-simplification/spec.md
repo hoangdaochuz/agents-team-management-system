@@ -29,16 +29,17 @@ The Gateway SHALL compose a user session with a single HTTP call to the Identity
 (`/internal/identity`) instead of the previous 3 synchronous fan-out calls (Auth → Orgs → enrichment).
 - **Before**: Gateway → Auth → Orgs → (enrichment services), with additive latency.
 - **After**: Gateway → Identity (single call), with local composition of session data.
-- **Response**: The Identity service returns `{ user, workspaces, active_workspace_id?, role, is_superadmin }`
-  shape, matching the `Session` type used by the frontend.
+- **Response**: The Identity service returns `{ user, workspaces, active_workspace_id? }`
+  shape, matching the `Session` type used by the frontend (role and the superadmin flag
+  live on the `User` object, per `frontend/src/api/types.ts` — the contract of record).
 
 #### Scenario: Session resolved in one call
 - **WHEN** an authenticated request arrives at the Gateway
-- **THEN** the Gateway issues exactly one call to the Identity Service to resolve the session (user, workspaces, role, superadmin flag)
+- **THEN** the Gateway issues exactly one call to the Identity Service to resolve the session (user + workspace union)
 
 #### Scenario: Session shape matches the frontend contract
 - **WHEN** the Identity Service responds to the session composition call
-- **THEN** the response contains `{ user, workspaces, active_workspace_id?, role, is_superadmin }` matching the frontend `Session` type
+- **THEN** the response contains `{ user, workspaces, active_workspace_id? }` matching the frontend `Session` type
 
 ### Requirement: SSE composition unchanged
 The Gateway's SSE replay stream (`/tasks/{id}/stream`) SHALL continue to replay steps

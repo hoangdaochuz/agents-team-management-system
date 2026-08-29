@@ -24,8 +24,8 @@ import (
 	"github.com/aaks/server/services/workspace/internal/infrastructure/repository"
 	cataloghttp "github.com/aaks/server/services/workspace/internal/interfaces/http/catalog"
 	projecthttp "github.com/aaks/server/services/workspace/internal/interfaces/http/project"
-	resourceshttp "github.com/aaks/server/services/workspace/internal/interfaces/http/resources"
 	provisionhttp "github.com/aaks/server/services/workspace/internal/interfaces/http/provision"
+	resourceshttp "github.com/aaks/server/services/workspace/internal/interfaces/http/resources"
 	taskhttp "github.com/aaks/server/services/workspace/internal/interfaces/http/task"
 	"github.com/aaks/server/services/workspace/internal/interfaces/messaging"
 )

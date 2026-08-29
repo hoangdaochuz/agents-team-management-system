@@ -80,7 +80,11 @@ func (a *App) ApproveOrgRequest(ctx context.Context, requestID identity.ID) erro
 		if _, err := tx.Members.Add(ctx, ws.ID, o.UserID, o.Name, o.Email, identity.RoleOwner); err != nil {
 			return err
 		}
-		return tx.OrgRequests.SetStatus(ctx, requestID, identity.SignupApproved)
+		if err := tx.OrgRequests.SetStatus(ctx, requestID, identity.SignupApproved); err != nil {
+			return err
+		}
+		// Activation commits with the approval — see Tx.Users.
+		return tx.Users.Activate(ctx, o.UserID)
 	})
 	if err != nil {
 		return err

@@ -1,9 +1,10 @@
 // Package bus adapts the application EventPublisher port for the consolidated
 // Identity service. Events that used to round-trip through Kafka between the
 // auth/orgs/admin services now dispatch synchronously to in-process handlers
-// (the in-process event bus); only genuinely cross-service events still travel
-// over Kafka (workspace.created, consumed by the Workspace plane) until that
-// handoff becomes a direct call.
+// (the in-process event bus). The Identity service emits nothing to Kafka:
+// the one former cross-service event, workspace.created, is a direct HTTP
+// provisioning call to the Workspace service (see infrastructure/provision),
+// with a periodic reconcile sweep as its retry leg.
 package bus
 
 import (

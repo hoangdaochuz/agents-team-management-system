@@ -77,6 +77,9 @@ func (f *fakeWorkspaces) ByID(_ context.Context, id identity.ID) (workspaces.Wor
 func (f *fakeWorkspaces) ListByUser(context.Context, identity.ID) ([]workspaces.Workspace, error) {
 	return f.wss, nil
 }
+func (f *fakeWorkspaces) List(context.Context) ([]workspaces.Workspace, error) {
+	return f.wss, nil
+}
 func (f *fakeWorkspaces) GetByUser(context.Context, identity.ID, identity.ID) (workspaces.Workspace, error) {
 	return workspaces.Workspace{}, domain.ErrNotFound
 }
@@ -205,7 +208,25 @@ type fakeRepo struct {
 	joins    *fakeJoinRequests
 	orgReqs  *fakeOrgRequests
 	invites  *fakeInvites
+	users    *fakeUsers
 	baseRepo *Repository
+}
+
+// fakeUsers records activations issued through the approving UoW.
+type fakeUsers struct {
+	activated map[identity.ID]bool
+	fail      error
+}
+
+func (f *fakeUsers) Activate(_ context.Context, id identity.ID) error {
+	if f.fail != nil {
+		return f.fail
+	}
+	if f.activated == nil {
+		f.activated = map[identity.ID]bool{}
+	}
+	f.activated[id] = true
+	return nil
 }
 
 func newFakeRepo() *fakeRepo {
@@ -216,6 +237,7 @@ func newFakeRepo() *fakeRepo {
 		joins:   &fakeJoinRequests{},
 		orgReqs: &fakeOrgRequests{},
 		invites: &fakeInvites{},
+		users:   &fakeUsers{},
 	}
 	f.baseRepo = &Repository{
 		Organizations: f.orgs,
@@ -254,21 +276,29 @@ func (u *fakeUoW) Do(ctx context.Context, fn func(tx *Tx) error) error {
 		Invites:       u.repo.invites,
 		JoinRequests:  u.repo.joins,
 		OrgRequests:   u.repo.orgReqs,
+		Users:         u.repo.users,
 	}
 	if err := fn(tx); err != nil {
+		u.rollback(snapOrgs, snapWS, snapMembers, snapJoins, snapOrgReqs, snapInvites, snapNext)
 		return err
 	}
 	if u.failAfter > 0 {
-		u.repo.orgs.orgs = snapOrgs
-		u.repo.ws.wss = snapWS
-		u.repo.members.members = snapMembers
-		u.repo.joins.reqs = snapJoins
-		u.repo.orgReqs.reqs = snapOrgReqs
-		u.repo.invites.invites = snapInvites
-		u.repo.orgs.next, u.repo.ws.next, u.repo.members.next, u.repo.invites.next = snapNext[0], snapNext[1], snapNext[2], snapNext[3]
+		u.rollback(snapOrgs, snapWS, snapMembers, snapJoins, snapOrgReqs, snapInvites, snapNext)
 		return errors.New("injected mid-transaction failure")
 	}
 	return nil
+}
+
+// rollback restores the pre-transaction snapshots, emulating the real UoW's
+// Postgres rollback (no partial state survives any failure inside fn).
+func (u *fakeUoW) rollback(snapOrgs []workspaces.Organization, snapWS []workspaces.Workspace, snapMembers []domain.Member, snapJoins []domain.JoinRequest, snapOrgReqs []domain.OrgRequest, snapInvites []domain.Invite, snapNext [4]int) {
+	u.repo.orgs.orgs = snapOrgs
+	u.repo.ws.wss = snapWS
+	u.repo.members.members = snapMembers
+	u.repo.joins.reqs = snapJoins
+	u.repo.orgReqs.reqs = snapOrgReqs
+	u.repo.invites.invites = snapInvites
+	u.repo.orgs.next, u.repo.ws.next, u.repo.members.next, u.repo.invites.next = snapNext[0], snapNext[1], snapNext[2], snapNext[3]
 }
 
 // fakePublisher records published events.
@@ -446,6 +476,44 @@ func TestApproveNonPendingRequest(t *testing.T) {
 	err := app.ApproveJoinRequest(context.Background(), "admin", "ws1", "jr1")
 	if !errors.Is(err, domain.ErrNotPending) {
 		t.Fatalf("non-pending request must be rejected, got %v", err)
+	}
+}
+
+// TestApproveActivatesUserAtomically pins the fix for the fire-and-forget
+// in-process event: user activation must ride the approving UoW so an
+// approved request can never leave an unactivated user behind, and a failed
+// activation must roll the whole approval back (retryable by the operator).
+func TestApproveActivatesUserAtomically(t *testing.T) {
+	app, f, _, _ := newTestApp()
+	rid := identity.ID("jr1")
+	f.joins.reqs = []domain.JoinRequest{{
+		SignupRequest: identity.SignupRequest{ID: rid, Name: "Bob", Email: "b@x.io", RequestedRole: identity.RoleMember},
+		UserID:        "u2", Status: identity.SignupPending,
+	}}
+
+	if err := app.ApproveJoinRequest(context.Background(), "admin", "ws1", rid); err != nil {
+		t.Fatalf("approve join: %v", err)
+	}
+	if !f.users.activated["u2"] {
+		t.Fatal("approval must activate the user in the same transaction")
+	}
+
+	// A failing activation rolls the approval back entirely.
+	f2 := newFakeRepo()
+	f2.joins.reqs = []domain.JoinRequest{{
+		SignupRequest: identity.SignupRequest{ID: rid, Name: "Bob", Email: "b@x.io", RequestedRole: identity.RoleMember},
+		UserID:        "u2", Status: identity.SignupPending,
+	}}
+	f2.users.fail = errors.New("db unavailable")
+	app2 := New(f2.baseRepo, &fakeUoW{repo: f2}, &fakePublisher{}, slog.New(slog.DiscardHandler))
+	if err := app2.ApproveJoinRequest(context.Background(), "admin", "ws1", rid); err == nil {
+		t.Fatal("failed activation must surface an error")
+	}
+	if f2.joins.reqs[0].Status != identity.SignupPending {
+		t.Fatalf("approval must roll back on activation failure, got %s", f2.joins.reqs[0].Status)
+	}
+	if len(f2.members.members) != 0 {
+		t.Fatal("membership must roll back on activation failure")
 	}
 }
 

@@ -80,9 +80,9 @@ func (r *Runner) runContext(ctx context.Context, taskID, runID, agentID identity
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if key, err := r.settings.FetchKey(ctx, string(rc.Provider)); err != nil {
+	if key, err := r.keys.FetchKey(ctx, string(rc.Provider)); err != nil {
 		if !errors.Is(err, ErrNotConfigured) {
-			r.log.Warn("no provider key from settings", "error", err)
+			r.log.Warn("no provider key from agent service", "error", err)
 		}
 	} else {
 		rc.APIKey = key

@@ -26,6 +26,16 @@ type EventPublisher interface {
 	Publish(ctx context.Context, topic string, data any, key identity.ID)
 }
 
+// UserActivator activates a user account — the auth plane's half of signup
+// approval. It is folded into the approving UnitOfWork (rather than left to
+// the in-process signup.approved event, whose handlers are best-effort) so the
+// approval and the activation commit atomically: a transient failure rolls
+// both back and the operator can retry, instead of a 200 with a user who can
+// never log in.
+type UserActivator interface {
+	Activate(ctx context.Context, id identity.ID) error
+}
+
 // Tx carries transactional repository handles scoped to one UnitOfWork
 // boundary. Repositories are the domain ports, so the UoW stays infra-shaped
 // without leaking SQL into domain.
@@ -36,6 +46,7 @@ type Tx struct {
 	Invites       domain.InviteRepository
 	JoinRequests  domain.JoinRequestRepository
 	OrgRequests   domain.OrgRequestRepository
+	Users         UserActivator
 }
 
 // UnitOfWork commits fn's repository operations atomically. Multi-aggregate

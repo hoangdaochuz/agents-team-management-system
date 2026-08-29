@@ -35,12 +35,14 @@ func (a *App) PatchStatus(ctx context.Context, id identity.ID, ws []identity.ID,
 	switch status {
 	case tasks.TaskDoing:
 		// Skip the run request when the task has no assigned agent (task 6.8):
-		// surface the un-runnable task as blocked instead.
+		// surface the un-runnable task as blocked instead. Return the blocked
+		// task, not the stale doing DTO from the SetStatus above.
 		if out.AgentID == nil || *out.AgentID == "" {
-			if _, err := a.repo.Tasks.SetStatus(ctx, id, tasks.TaskBlocked); err != nil {
+			out, err = a.repo.Tasks.SetStatus(ctx, id, tasks.TaskBlocked)
+			if err != nil {
 				return tasks.Task{}, err
 			}
-					return out, nil
+			return out, nil
 		}
 		a.pub.Publish(ctx, events.TopicTaskRunRequested, events.RunRequestedData{
 			TaskID:        out.ID,
@@ -147,24 +149,22 @@ func (a *App) Dispatch(ctx context.Context, msg events.EventEnvelope) error {
 }
 
 // onImplementerDone moves the task to review and requests a reviewer run.
+// The task is read BEFORE the atomic advance so a read failure retries on
+// redelivery (the mark is not yet made); the publish itself is necessarily
+// post-commit, the same publish-after-commit pattern PatchStatus uses.
 func (a *App) onImplementerDone(ctx context.Context, d events.RunCompletedData) error {
-	ok, err := a.repo.Tasks.SagaNew(ctx, d.TaskID, d.RunID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil // already processed (redelivery)
-	}
 	t, err := a.repo.Tasks.GetUnscoped(ctx, d.TaskID)
 	if err != nil {
 		return err
 	}
-	if t.Status != tasks.TaskDoing {
-		a.log.Info("implementer done ignored: task not in doing", "task_id", d.TaskID, "status", t.Status)
-		return nil
-	}
-	if _, err := a.repo.Tasks.SetStatus(ctx, d.TaskID, tasks.TaskReview); err != nil {
+	ok, err := a.repo.Tasks.SagaAdvance(ctx, d.TaskID, d.RunID, tasks.TaskDoing, tasks.TaskReview, 0, false)
+	if err != nil {
 		return err
+	}
+	if !ok {
+		// Already processed (redelivery) or the task is not in doing — either
+		// way an idempotent no-op.
+		return nil
 	}
 	if t.AgentID == nil {
 		a.log.Warn("no agent to review; task stuck in review", "task_id", d.TaskID)
@@ -177,44 +177,44 @@ func (a *App) onImplementerDone(ctx context.Context, d events.RunCompletedData) 
 	return nil
 }
 
-// onVerdict advances the task on the reviewer's decision.
+// onVerdict advances the task on the reviewer's decision. The dedup mark and
+// the status transition (including the round bump) commit atomically via
+// SagaAdvance, so a redelivered verdict can neither double-advance the task
+// nor — on a partially failed first delivery — leave it stranded in review.
 func (a *App) onVerdict(ctx context.Context, d events.VerdictData) error {
-	ok, err := a.repo.Tasks.SagaNew(ctx, d.TaskID, d.RunID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil // already processed (redelivery)
-	}
 	t, err := a.repo.Tasks.GetUnscoped(ctx, d.TaskID)
 	if err != nil {
 		return err
 	}
-	if t.Status != tasks.TaskReview {
-		a.log.Info("verdict ignored: task not in review", "task_id", d.TaskID, "status", t.Status)
-		return nil
-	}
+	var to tasks.TaskStatus
+	var next int
+	var setRound bool
 	switch d.Decision {
 	case agentexec.VerdictApprove:
-		if _, err := a.repo.Tasks.SetStatus(ctx, d.TaskID, tasks.TaskDone); err != nil {
-			return err
-		}
-		case agentexec.VerdictRequestChanges:
-		next := d.RoundNo + 1
+		to = tasks.TaskDone
+	case agentexec.VerdictRequestChanges:
+		next = d.RoundNo + 1
 		if next > maxReviewRounds {
-			if _, err := a.repo.Tasks.SetStatus(ctx, d.TaskID, tasks.TaskBlocked); err != nil {
-				return err
-			}
-			a.log.Warn("review rounds exhausted; task blocked", "task_id", d.TaskID, "rounds", next)
-					return nil
+			to = tasks.TaskBlocked
+		} else {
+			to = tasks.TaskDoing
+			setRound = true
 		}
-		if _, err := a.repo.Tasks.SetStatus(ctx, d.TaskID, tasks.TaskDoing); err != nil {
-			return err
-		}
-		if err := a.repo.Tasks.SetRoundNo(ctx, d.TaskID, next); err != nil {
-			return err
-		}
-			a.pub.Publish(ctx, events.TopicTaskRunRequested, events.RunRequestedData{
+	}
+	ok, err := a.repo.Tasks.SagaAdvance(ctx, d.TaskID, d.RunID, tasks.TaskReview, to, next, setRound)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		// Already processed (redelivery) or the task is not in review.
+		return nil
+	}
+	if d.Decision == agentexec.VerdictRequestChanges && to == tasks.TaskBlocked {
+		a.log.Warn("review rounds exhausted; task blocked", "task_id", d.TaskID, "rounds", next)
+		return nil
+	}
+	if d.Decision == agentexec.VerdictRequestChanges {
+		a.pub.Publish(ctx, events.TopicTaskRunRequested, events.RunRequestedData{
 			TaskID: d.TaskID, AgentID: derefAgentID(t.AgentID), ProjectID: t.ProjectID,
 			WorkspaceID: t.WorkspaceID, RoundNo: next, Prompt: t.Prompt, ModelOverride: derefStr(t.ModelOverride),
 		}, d.TaskID)

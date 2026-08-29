@@ -51,7 +51,10 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 
 	// Application handlers for the three merged planes. Workspace creation
 	// provisions the Workspace service over a direct HTTP call (the former
-	// workspace.created event).
+	// workspace.created event); the sweeper re-issues that call on an
+	// interval because the direct call is best-effort and the endpoint is
+	// idempotent — the retry leg the Kafka consumer used to provide.
+	provisioner := provision.New(os.Getenv("WORKSPACE_URL"))
 	authApp := authapp.New(&authapp.Repository{
 		Users:          st.Users,
 		Sessions:       st.Sessions,
@@ -65,7 +68,10 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		Invites:       st.Invites,
 		JoinRequests:  st.JoinRequests,
 		OrgRequests:   st.OrgRequests,
-	}, repository.NewUnitOfWork(st), pub, log, provision.New(os.Getenv("WORKSPACE_URL")))
+	}, repository.NewUnitOfWork(st), pub, log, provisioner)
+	if provisioner != nil {
+		go provision.NewSweeper(provisioner, st.Workspaces.List, log).Run(ctx)
+	}
 	adminApp := adminapp.New(&adminapp.Repository{
 		Audit: st.Audit,
 		Flags: st.Flags,
