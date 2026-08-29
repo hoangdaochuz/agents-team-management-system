@@ -15,33 +15,19 @@ import (
 
 // ── Fakes ───────────────────────────────────────────────────────────────────
 
-// fakeSessions scripts session resolutions per token.
-type fakeSessions struct {
+// fakeIdentities scripts full identity resolutions (user + workspace union)
+// per token — the single call the Identity service serves.
+type fakeIdentities struct {
 	calls int
-	byTok map[string]Session
+	byTok map[string]Identity
 }
 
-func (f *fakeSessions) Resolve(_ context.Context, token string) (Session, error) {
+func (f *fakeIdentities) Resolve(_ context.Context, token string) (Identity, error) {
 	f.calls++
-	if s, ok := f.byTok[token]; ok {
-		return s, nil
+	if id, ok := f.byTok[token]; ok {
+		return id, nil
 	}
-	return Session{}, errors.New("no session for token")
-}
-
-// fakeMemberships scripts workspace unions per user id.
-type fakeMemberships struct {
-	calls int
-	byUID map[string][]workspaces.Workspace
-	err   error // when set, every call fails (membership outage)
-}
-
-func (f *fakeMemberships) List(_ context.Context, userID string) ([]workspaces.Workspace, error) {
-	f.calls++
-	if f.err != nil {
-		return nil, f.err
-	}
-	return f.byUID[userID], nil
+	return Identity{}, errors.New("no session for token")
 }
 
 // fakeTasks scripts task → workspace ownership.
@@ -58,28 +44,27 @@ func (f *fakeTasks) Workspace(_ context.Context, taskID identity.ID) (identity.I
 	return "", errors.New("task not found")
 }
 
-func newTestACL(s *fakeSessions, m *fakeMemberships, ts *fakeTasks) (*ACL, *fakeSessions, *fakeMemberships, *fakeTasks) {
-	if s == nil {
-		s = &fakeSessions{byTok: map[string]Session{}}
-	}
-	if m == nil {
-		m = &fakeMemberships{byUID: map[string][]workspaces.Workspace{}}
+func newTestACL(ids *fakeIdentities, ts *fakeTasks) (*ACL, *fakeIdentities, *fakeTasks) {
+	if ids == nil {
+		ids = &fakeIdentities{byTok: map[string]Identity{}}
 	}
 	if ts == nil {
 		ts = &fakeTasks{byID: map[string]string{}}
 	}
-	acl := NewACL(s, m, ts, slog.New(slog.DiscardHandler))
-	return acl, s, m, ts
+	acl := NewACL(ids, ts, slog.New(slog.DiscardHandler))
+	return acl, ids, ts
 }
 
-// ── Session → identity → memberships ────────────────────────────────────────
+// ── Session → identity (single call) ────────────────────────────────────────
 
 func TestResolveValidSession(t *testing.T) {
-	acl, s, m, _ := newTestACL(nil, nil, nil)
-	s.byTok["tok"] = Session{UserID: "u1", Name: "Ada", Email: "ada@aaks.dev"}
-	m.byUID["u1"] = []workspaces.Workspace{
-		{ID: "w1", Name: "A", Role: identity.RoleOwner},
-		{ID: "w2", Name: "B", Role: identity.RoleMember},
+	acl, ids, _ := newTestACL(nil, nil)
+	ids.byTok["tok"] = Identity{
+		UserID: "u1", Name: "Ada", Email: "ada@aaks.dev",
+		Workspaces: []workspaces.Workspace{
+			{ID: "w1", Name: "A", Role: identity.RoleOwner},
+			{ID: "w2", Name: "B", Role: identity.RoleMember},
+		},
 	}
 
 	id, ok := acl.Resolve(context.Background(), "tok")
@@ -92,10 +77,13 @@ func TestResolveValidSession(t *testing.T) {
 	if len(id.Workspaces) != 2 || id.Workspaces[0].ID != "w1" {
 		t.Fatalf("workspaces: got %+v", id.Workspaces)
 	}
+	if ids.calls != 1 {
+		t.Fatalf("resolve must be a single identity call, got %d", ids.calls)
+	}
 }
 
 func TestResolveInvalidSession(t *testing.T) {
-	acl, _, _, _ := newTestACL(nil, nil, nil)
+	acl, _, _ := newTestACL(nil, nil)
 
 	if _, ok := acl.Resolve(context.Background(), "bogus"); ok {
 		t.Fatal("unresolvable token must not resolve")
@@ -105,8 +93,8 @@ func TestResolveInvalidSession(t *testing.T) {
 // TestResolveSuperadmin checks the superadmin flag round-trips into the
 // identity and the injected header.
 func TestResolveSuperadmin(t *testing.T) {
-	acl, s, _, _ := newTestACL(nil, nil, nil)
-	s.byTok["sadm"] = Session{UserID: "u9", Name: "Root", Email: "root@aaks.dev", Superadmin: true}
+	acl, ids, _ := newTestACL(nil, nil)
+	ids.byTok["sadm"] = Identity{UserID: "u9", Name: "Root", Email: "root@aaks.dev", Superadmin: true}
 
 	id, ok := acl.Resolve(context.Background(), "sadm")
 	if !ok || !id.Superadmin {
@@ -120,7 +108,7 @@ func TestResolveSuperadmin(t *testing.T) {
 // workspace union, single-workspace context, superadmin flag, and the
 // derived strongest role.
 func TestInjectHeaders(t *testing.T) {
-	acl, _, _, _ := newTestACL(nil, nil, nil)
+	acl, _, _ := newTestACL(nil, nil)
 	id := Identity{
 		UserID: "u1", Name: "Ada", Email: "ada@aaks.dev", Superadmin: true,
 		Workspaces: []workspaces.Workspace{
@@ -156,7 +144,7 @@ func TestInjectHeaders(t *testing.T) {
 }
 
 func TestInjectHeadersSingleWorkspace(t *testing.T) {
-	acl, _, _, _ := newTestACL(nil, nil, nil)
+	acl, _, _ := newTestACL(nil, nil)
 	id := Identity{
 		UserID: "u1", Name: "Ada", Email: "ada@aaks.dev",
 		Workspaces: []workspaces.Workspace{{ID: "w1", Name: "A", Role: identity.RoleMember}},
@@ -179,7 +167,7 @@ func TestInjectHeadersSingleWorkspace(t *testing.T) {
 // the scoping headers; the HTTP adapter overwrites via Header.Set so no stale
 // value can survive.
 func TestHeadersNeverContainStaleValues(t *testing.T) {
-	acl, _, _, _ := newTestACL(nil, nil, nil)
+	acl, _, _ := newTestACL(nil, nil)
 	h := acl.Headers(Identity{
 		UserID: "u1", Name: "Ada", Email: "a@b.c",
 		Workspaces: []workspaces.Workspace{{ID: "w1", Role: identity.RoleMember}},
@@ -218,17 +206,17 @@ func TestStrongestRole(t *testing.T) {
 // ── Cache: TTL, expiry, failed-resolution caching ───────────────────────────
 
 // newClockACL builds an ACL with a fake clock for expiry tests.
-func newClockACL(s *fakeSessions, m *fakeMemberships, now *time.Time) (*ACL, *fakeSessions, *fakeMemberships) {
-	acl, fs, fm, _ := newTestACL(s, m, nil)
+func newClockACL(ids *fakeIdentities, now *time.Time) (*ACL, *fakeIdentities) {
+	acl, fs, _ := newTestACL(ids, nil)
 	acl.now = func() time.Time { return *now }
-	return acl, fs, fm
+	return acl, fs
 }
 
-func TestMembershipCacheTTL(t *testing.T) {
+func TestIdentityCacheTTL(t *testing.T) {
 	now := time.Now()
-	acl, fs, fm := newClockACL(nil, nil, &now)
-	fs.byTok["tok"] = Session{UserID: "u1", Name: "Ada", Email: "a@b.c"}
-	fm.byUID["u1"] = []workspaces.Workspace{{ID: "w1", Name: "A", Role: identity.RoleMember}}
+	acl, fs := newClockACL(nil, &now)
+	fs.byTok["tok"] = Identity{UserID: "u1", Name: "Ada", Email: "a@b.c",
+		Workspaces: []workspaces.Workspace{{ID: "w1", Name: "A", Role: identity.RoleMember}}}
 
 	if _, ok := acl.Resolve(context.Background(), "tok"); !ok {
 		t.Fatal("first resolve failed")
@@ -236,8 +224,8 @@ func TestMembershipCacheTTL(t *testing.T) {
 	if _, ok := acl.Resolve(context.Background(), "tok"); !ok {
 		t.Fatal("cached resolve failed")
 	}
-	if fs.calls != 1 || fm.calls != 1 {
-		t.Fatalf("cache must absorb the second resolve: session calls=%d membership calls=%d", fs.calls, fm.calls)
+	if fs.calls != 1 {
+		t.Fatalf("cache must absorb the second resolve: identity calls=%d", fs.calls)
 	}
 
 	// Advance past the TTL: the entry is evicted and refetched.
@@ -245,14 +233,14 @@ func TestMembershipCacheTTL(t *testing.T) {
 	if _, ok := acl.Resolve(context.Background(), "tok"); !ok {
 		t.Fatal("post-expiry resolve failed")
 	}
-	if fs.calls != 2 || fm.calls != 2 {
-		t.Fatalf("expired cache must refetch: session calls=%d membership calls=%d", fs.calls, fm.calls)
+	if fs.calls != 2 {
+		t.Fatalf("expired cache must refetch: identity calls=%d", fs.calls)
 	}
 }
 
 func TestFailedResolutionCached(t *testing.T) {
 	now := time.Now()
-	acl, fs, _ := newClockACL(nil, nil, &now)
+	acl, fs := newClockACL(nil, &now)
 
 	if _, ok := acl.Resolve(context.Background(), "bogus"); ok {
 		t.Fatal("bogus token must not resolve")
@@ -261,39 +249,21 @@ func TestFailedResolutionCached(t *testing.T) {
 		t.Fatal("bogus token must stay unresolvable")
 	}
 	if fs.calls != 1 {
-		t.Fatalf("failed resolution must be cached: session calls=%d", fs.calls)
+		t.Fatalf("failed resolution must be cached: identity calls=%d", fs.calls)
 	}
 
 	// The token becomes valid later; the cached failure expires.
 	now = now.Add(61 * time.Second)
-	fs.byTok["bogus"] = Session{UserID: "u1"}
+	fs.byTok["bogus"] = Identity{UserID: "u1"}
 	if _, ok := acl.Resolve(context.Background(), "bogus"); !ok {
 		t.Fatal("expired failure must be refetched")
-	}
-}
-
-// ── Degradation ─────────────────────────────────────────────────────────────
-
-// TestMembershipFailureNonFatal: an Orgs outage must not invalidate a valid
-// session — the identity resolves with an empty workspace union.
-func TestMembershipFailureNonFatal(t *testing.T) {
-	acl, s, m, _ := newTestACL(nil, nil, nil)
-	s.byTok["tok"] = Session{UserID: "u1", Name: "Ada", Email: "a@b.c"}
-	m.err = errors.New("orgs down")
-
-	id, ok := acl.Resolve(context.Background(), "tok")
-	if !ok {
-		t.Fatal("valid session must resolve despite membership outage")
-	}
-	if len(id.Workspaces) != 0 {
-		t.Fatalf("workspaces must be empty on outage, got %+v", id.Workspaces)
 	}
 }
 
 // ── Workspace + task ownership checks ───────────────────────────────────────
 
 func TestIsWorkspaceMember(t *testing.T) {
-	acl, _, _, _ := newTestACL(nil, nil, nil)
+	acl, _, _ := newTestACL(nil, nil)
 	if !acl.IsWorkspaceMember([]string{"w1", "w2"}, "w2") {
 		t.Fatal("w2 must be a member workspace")
 	}
@@ -306,7 +276,7 @@ func TestIsWorkspaceMember(t *testing.T) {
 }
 
 func TestTaskAccessible(t *testing.T) {
-	acl, _, _, ts := newTestACL(nil, nil, nil)
+	acl, _, ts := newTestACL(nil, nil)
 	ts.byID["t1"] = "w1"
 
 	// Task in the caller's union.

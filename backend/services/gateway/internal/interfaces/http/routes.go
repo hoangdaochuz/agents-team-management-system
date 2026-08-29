@@ -212,7 +212,7 @@ func (s *Server) proxy(u application.Upstream) *httputil.ReverseProxy {
 // serveSession composes /auth/login + /auth/me into the full Session shape.
 func (s *Server) serveSession(w http.ResponseWriter, r *http.Request) {
 	rec := &responseRecorder{}
-	s.proxy(application.UpstreamAuth).ServeHTTP(rec, r)
+	s.proxy(application.UpstreamIdentity).ServeHTTP(rec, r)
 	// The recorder captures headers (session cookie on login) — put them back
 	// on the wire or the client never receives the cookie. Content-Length must
 	// NOT survive: it sizes the upstream user JSON, while the body written
@@ -254,7 +254,7 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request) {
 // serveWorkspaces merges agent_count + open_task_count into the workspace list.
 func (s *Server) serveWorkspaces(w http.ResponseWriter, r *http.Request) {
 	rec := &responseRecorder{}
-	s.proxy(application.UpstreamOrgs).ServeHTTP(rec, r)
+	s.proxy(application.UpstreamIdentity).ServeHTTP(rec, r)
 	if rec.code != http.StatusOK {
 		w.WriteHeader(rec.code)
 		_, _ = w.Write(rec.body)
@@ -294,11 +294,9 @@ func (s *Server) serveHealth(w http.ResponseWriter, _ *http.Request) {
 		name     string
 		upstream application.Upstream
 	}{
-		{"gateway", ""}, {"project", application.UpstreamProject}, {"task", application.UpstreamTask},
-		{"agent", application.UpstreamAgent}, {"catalog", application.UpstreamCatalog},
-		{"settings", application.UpstreamSettings}, {"runner", application.UpstreamRunner},
-		{"auth", application.UpstreamAuth}, {"orgs", application.UpstreamOrgs},
-		{"resources", application.UpstreamResources}, {"admin", application.UpstreamAdmin},
+		{"gateway", ""}, {"identity", application.UpstreamIdentity},
+		{"workspace", application.UpstreamWorkspace}, {"agent", application.UpstreamAgent},
+		{"executor", application.UpstreamExecutor},
 	}
 	out := admin.SystemHealth{Services: []admin.ServiceHealth{}}
 	for _, p := range probes {

@@ -1,12 +1,13 @@
 # Design
 
-> **STATUS: SUPERSEDED IN PART by `openspec/changes/event-driven-microservices-backend/`**
-> (and `AGENTS.md`). This document is the original monolith design. Sections below that no
-> longer hold — §1 Components, §6 Realtime, §7 Deployment, §8 ADR-09 — are annotated
-> inline. The microservices backend is the implementation of record: one service per domain,
-> Kafka event bus (partitioned by `task_id`), Gateway BFF, multi-tenant Auth/Orgs/Resources/
-> Admin plane. The per-task sandbox container model in §3–§5 remains the target design for
-> the Runner's execution surface (currently a simulated driver; Docker driver pending).
+> **STATUS: SUPERSEDED IN PART by the OpenSpec changes `event-driven-microservices-backend/`**
+> and `consolidate-microservices/` (plus `AGENTS.md`). This document is the original monolith
+> design. Sections below that no longer hold — §1 Components, §6 Realtime, §7 Deployment,
+> §8 ADR-09 — are annotated inline. The consolidated backend is the implementation of record:
+> **5 Go services** (gateway, identity, workspace, agent, executor) over 4 logical databases
+> and a 9-topic Kafka bus (partitioned by `task_id`), Gateway BFF, multi-tenant Auth/Orgs/
+> Resources/Admin plane. The per-task sandbox container model in §3–§5 remains the target
+> design for the Executor's execution surface (simulated + Docker/local drivers).
  — AI Agent Kanban System (MVP)
 
 Companion to `spec.md`. Captures architecture, data model, the agent execution model, security
@@ -52,20 +53,23 @@ model, and the rationale for the load-bearing decisions (ADR-style).
 ```
 
 ### Components
-- **Go backend** — originally a single binary; now an **event-driven microservices backend**:
-  11 Go services under `backend/services/` (gateway, project, task, agent, catalog, settings,
-  runner, auth, orgs, resources, admin), one logical Postgres database each, communicating via
-  Kafka (choreography, task_id-partitioned topics; task service is the saga coordinator).
+- **Go backend** — originally a single binary; now a **consolidated event-driven backend**
+  (OpenSpec change `consolidate-microservices`): **5 Go services** under `backend/services/`
+  (gateway, identity, workspace, agent, executor — identity merging auth+orgs+admin, workspace
+  merging project+task+catalog+resources, agent merging agent+settings), 4 logical Postgres
+  databases, communicating via Kafka (choreography, task_id-partitioned topics; the workspace
+  service is the saga coordinator) plus an in-process bus for intra-service events.
 - **Gateway (BFF)** — sole HTTP entrypoint on :8080; path-aware reverse proxy
   (`/api/<domain>/...` → owning service), session composition, workspace-context header
   injection (`X-Workspace-ID`/`X-Workspace-IDs`), SSE fan-out for `/tasks/:id/stream`.
 - **React SPA** — Vite + TypeScript; served separately (static bundle), talks only to the
   Gateway.
-- **Postgres** — one server, 10 logical databases (`deploy/postgres/01-create-databases.sql`),
-  each service owns its schema + embedded migrations.
+- **Postgres** — one server, 4 logical databases (`deploy/postgres/01-create-databases.sql`:
+  `identity_db`, `workspace_db`, `agent_db`, `runner_db`), each service owns its schema +
+  embedded migrations.
 - **Kafka** — KRaft single broker in compose; events in `backend/internal/contracts/events.go`.
 - **Task containers** — ephemeral, one per active agent run; build/test sandbox only
-  (target design; Runner currently ships a simulated driver — see 5.1).
+  (target design; Executor ships simulated + Docker/local drivers — see 5.1).
 - **MCP servers** — external stdio processes spawned by the backend on the host per agent run.
 
 ## 2. Data model (Postgres)
@@ -174,20 +178,21 @@ type Provider interface {
   (the operator installed them). They are not arbitrary agent code.
 
 ## 6. Realtime (SSE)
-- Steps are persisted to PG by the Runner and published to Kafka `step.*` topics (partitioned
+- Steps are persisted to PG by the Executor and published to the Kafka `step` topic (partitioned
   by `task_id`; `step.id` is the dedup key).
 - `GET /api/tasks/:id/stream` is served by the Gateway: it replays persisted steps from the
-  Runner (`GET /internal/tasks/{id}/steps`, seq order), then tails the Kafka topic with
+  Executor (`GET /internal/tasks/{id}/steps`, seq order), then tails the Kafka topic with
   dedup-by-`step.id` and 15s keepalive pings. Browser `EventSource` reconnects natively on
   drop; the replay+dedup makes reconnect resume cleanly.
 - *(Superseded from: in-process pub/sub channel keyed by `task_id`.)*
 
 ## 7. Deployment (docker-compose)
-- `deploy/docker-compose.yml` runs Postgres (10 logical DBs) + Kafka (KRaft) + the 11 service
-  containers (per-service image via `deploy/service.Dockerfile`, `ARG SERVICE`) + the Gateway
+- `deploy/docker-compose.yml` runs Postgres (4 logical DBs) + Kafka (KRaft) + the 4 consolidated
+  service containers (per-service image via `deploy/service.Dockerfile`, `ARG SERVICE`) + the Gateway
   on :8080. The SPA is served separately (`make web-dev` or any static host).
-- Upstreams are wired via `UPSTREAM_*` env vars on the gateway; Settings holds the master key
-  (`SETTINGS_MASTER_KEY`) and serves provider keys only over the internal token/mTLS path.
+- Upstreams are wired via `UPSTREAM_*` env vars on the gateway; the Agent service holds the
+  master key (`AGENT_MASTER_KEY`) and serves provider keys only over the internal token path
+  (`AGENT_INTERNAL_TOKEN`).
 - *(Superseded from: single `app` container owning the loop + Docker socket + task containers.)*
 - Task containers are created by the backend (Docker API) with `--mount` of the relevant
   worktree subpath under `aaks-data`, read-write, using a shared base image

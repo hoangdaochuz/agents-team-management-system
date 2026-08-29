@@ -1,6 +1,7 @@
-// ACL logic: the session cookie → identity (Auth) → workspace union (Orgs)
-// chain, cached for 60s, plus the scoping-header injection and the workspace /
-// task ownership checks that gate cross-service routes.
+// ACL logic: the session cookie → full identity (user + workspace union,
+// resolved in a single Identity-service call), cached for 60s, plus the
+// scoping-header injection and the workspace / task ownership checks that
+// gate cross-service routes.
 package application
 
 import (
@@ -16,22 +17,10 @@ import (
 	"github.com/aaks/server/internal/platform/tenancy"
 )
 
-// Session is the identity the Auth service resolves for a session token.
-type Session struct {
-	UserID     string
-	Name       string
-	Email      string
-	Superadmin bool
-}
-
-// SessionClient resolves a session token to a user identity (Auth service).
-type SessionClient interface {
-	Resolve(ctx context.Context, token string) (Session, error)
-}
-
-// MembershipClient lists a user's workspace memberships (Orgs service).
-type MembershipClient interface {
-	List(ctx context.Context, userID string) ([]workspaces.Workspace, error)
+// IdentityClient resolves a session token to the full identity view — user
+// plus workspace union — in a single call to the Identity service.
+type IdentityClient interface {
+	Resolve(ctx context.Context, token string) (Identity, error)
 }
 
 // TaskWorkspaceClient resolves the workspace that owns a task (Task service).
@@ -54,29 +43,29 @@ type Identity struct {
 }
 
 // ACL resolves sessions into identities and injects the tenancy scoping
-// headers. Identity + workspace union are cached per token for 60s; failed
-// resolutions are cached too so a bad token cannot hammer Auth/Orgs.
+// headers. The identity (user + workspace union) is cached per token for 60s;
+// failed resolutions are cached too so a bad token cannot hammer Identity.
 type ACL struct {
-	sessions    SessionClient
-	memberships MembershipClient
-	tasks       TaskWorkspaceClient
-	log         *slog.Logger
-	ttl         time.Duration
-	now         func() time.Time
-	cache       sync.Map // token -> Identity
+	identities IdentityClient
+	tasks      TaskWorkspaceClient
+	log        *slog.Logger
+	ttl        time.Duration
+	now        func() time.Time
+	cache      sync.Map // token -> Identity
 }
 
 // NewACL builds the ACL service with the injected inter-service clients.
-func NewACL(sessions SessionClient, memberships MembershipClient, tasks TaskWorkspaceClient, log *slog.Logger) *ACL {
+func NewACL(identities IdentityClient, tasks TaskWorkspaceClient, log *slog.Logger) *ACL {
 	return &ACL{
-		sessions: sessions, memberships: memberships, tasks: tasks,
+		identities: identities, tasks: tasks,
 		log: log, ttl: 60 * time.Second, now: time.Now,
 	}
 }
 
-// Resolve returns the cached identity for token, or fetches it from Auth +
-// Orgs and caches it for the TTL. The second result reports whether the token
-// resolved to a real user (a cached failed resolution returns false).
+// Resolve returns the cached identity for token, or fetches it from the
+// Identity service (one call: user + workspace union) and caches it for the
+// TTL. The second result reports whether the token resolved to a real user (a
+// cached failed resolution returns false).
 func (a *ACL) Resolve(ctx context.Context, token string) (Identity, bool) {
 	if v, ok := a.cache.Load(token); ok {
 		id := v.(Identity)
@@ -87,18 +76,12 @@ func (a *ACL) Resolve(ctx context.Context, token string) (Identity, bool) {
 		// (each distinct token is only ever held for one TTL window).
 		a.cache.Delete(token)
 	}
-	id := Identity{resolvedAt: a.now()}
-	u, err := a.sessions.Resolve(ctx, token)
+	id, err := a.identities.Resolve(ctx, token)
 	if err != nil {
 		a.cache.Store(token, Identity{resolvedAt: a.now()})
 		return Identity{}, false
 	}
-	id.UserID, id.Name, id.Email, id.Superadmin = u.UserID, u.Name, u.Email, u.Superadmin
-	// Membership failure is non-fatal: the identity stays valid with an empty
-	// workspace union (the pre-DDD gateway behaved the same way).
-	if wss, err := a.memberships.List(ctx, u.UserID); err == nil {
-		id.Workspaces = wss
-	}
+	id.resolvedAt = a.now()
 	a.cache.Store(token, id)
 	return id, true
 }

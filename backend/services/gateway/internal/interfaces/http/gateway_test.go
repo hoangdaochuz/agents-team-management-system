@@ -59,16 +59,16 @@ func tag(t *testing.T, name string) *httptest.Server {
 	return srv
 }
 
-// taskWorkspaceBackend resolves /internal/tasks/{id}/workspace to ws and
-// echoes every other path.
-func taskWorkspaceBackend(t *testing.T, ws string) *httptest.Server {
+// workspaceBackend stands in for the consolidated Workspace service: it
+// resolves /internal/tasks/{id}/workspace to ws and echoes every other path.
+func taskWorkspaceBackend(t *testing.T, ws, echo string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/internal/tasks/") {
 			writeJSON(t, w, http.StatusOK, map[string]string{"workspace_id": ws})
 			return
 		}
-		_, _ = io.WriteString(w, r.URL.Path)
+		_, _ = io.WriteString(w, echo+r.URL.Path)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -95,20 +95,23 @@ func memberships() []map[string]string {
 	}
 }
 
-// startAuthBackend resolves sessions (/internal/identity: "tok" → u1
-// non-superadmin, "sadm" → u9 superadmin, anything else → 401) and serves the
-// public session surface (/auth/login POST → 201 + Set-Cookie, /auth/me GET →
-// user JSON).
-func startAuthBackend(t *testing.T) *httptest.Server {
+// identityBackend is the consolidated Identity fixture (the former Auth +
+// Orgs + Admin backends on one server): session resolution (/internal/identity:
+// "tok" → u1 non-superadmin with workspaces [w1 w2], "sadm" → u9 superadmin
+// with workspaces [w1], anything else → 401 — one call returns user + workspace
+// union), the public session surface (/auth/login POST → 201 + Set-Cookie,
+// /auth/me GET → user JSON), and the workspace list (/workspaces). Other paths
+// fall through to echo (+ optional prefix).
+func identityBackend(t *testing.T, echo string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/internal/identity":
 			switch sessionValue(r) {
 			case "tok":
-				writeJSON(t, w, http.StatusOK, map[string]string{"user_id": "u1", "name": "Ada", "email": "ada@aaks.dev"})
+				writeJSON(t, w, http.StatusOK, map[string]any{"user_id": "u1", "name": "Ada", "email": "ada@aaks.dev", "workspaces": memberships()})
 			case "sadm":
-				writeJSON(t, w, http.StatusOK, map[string]any{"user_id": "u9", "name": "Root", "email": "root@aaks.dev", "is_superadmin": true})
+				writeJSON(t, w, http.StatusOK, map[string]any{"user_id": "u9", "name": "Root", "email": "root@aaks.dev", "is_superadmin": true, "workspaces": memberships()[:1]})
 			default:
 				writeJSON(t, w, http.StatusUnauthorized, map[string]string{"error": "invalid session"})
 			}
@@ -121,46 +124,12 @@ func startAuthBackend(t *testing.T) *httptest.Server {
 			writeJSON(t, w, http.StatusOK, map[string]string{"id": "u1", "name": "Ada", "email": "ada@aaks.dev"})
 		case "/auth/me":
 			writeJSON(t, w, http.StatusOK, map[string]string{"id": "u1", "name": "Ada", "email": "ada@aaks.dev"})
-		default:
-			_, _ = io.WriteString(w, r.URL.Path)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// orgsHandler serves memberships (/internal/users/{id}/workspaces) and the
-// public workspace list (/workspaces); other paths fall through to echo.
-func orgsHandler(echo string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/internal/users/u1/workspaces", "/internal/users/u9/workspaces":
-			wss := memberships()
-			if r.URL.Path == "/internal/users/u9/workspaces" {
-				wss = wss[:1]
-			}
-			_ = json.NewEncoder(w).Encode(wss)
 		case "/workspaces":
 			_ = json.NewEncoder(w).Encode(memberships()[:1])
 		default:
 			_, _ = io.WriteString(w, echo+r.URL.Path)
 		}
-	})
-}
-
-// startOrgsBackend is the standard orgs fixture: u1 → w1+w2, u9 → w1.
-func startOrgsBackend(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(orgsHandler(""))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// taggedOrgs echoes non-special paths with an "orgs:" prefix for ownership
-// assertions.
-func taggedOrgs(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(orgsHandler("orgs:"))
+	}))
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -194,19 +163,22 @@ func headerBackend(t *testing.T) (*httptest.Server, func() map[string]string) {
 	return srv, snapshot
 }
 
-// superadminGate serves like startOrgsBackend but rejects /sysadmin/* requests
-// without the injected X-User-Superadmin header — mirroring how the real Orgs
-// and Admin services enforce the boundary downstream of the gateway.
+// superadminGate serves like identityBackend but rejects /sysadmin/* requests
+// without the injected X-User-Superadmin header — mirroring how the real
+// Identity service enforces the boundary downstream of the gateway.
 func superadminGate(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/internal/users/u1/workspaces", "/internal/users/u9/workspaces":
-			wss := memberships()
-			if r.URL.Path == "/internal/users/u9/workspaces" {
-				wss = wss[:1]
+		case "/internal/identity":
+			switch sessionValue(r) {
+			case "tok":
+				writeJSON(t, w, http.StatusOK, map[string]any{"user_id": "u1", "name": "Ada", "email": "ada@aaks.dev", "workspaces": memberships()})
+			case "sadm":
+				writeJSON(t, w, http.StatusOK, map[string]any{"user_id": "u9", "name": "Root", "email": "root@aaks.dev", "is_superadmin": true, "workspaces": memberships()[:1]})
+			default:
+				writeJSON(t, w, http.StatusUnauthorized, map[string]string{"error": "invalid session"})
 			}
-			writeJSON(t, w, http.StatusOK, wss)
 		case "/workspaces":
 			writeJSON(t, w, http.StatusOK, memberships()[:1])
 		default:
@@ -225,7 +197,7 @@ func superadminGate(t *testing.T) *httptest.Server {
 
 // buildServer wires the gateway composition root around the given backends.
 // brokers is "" so the SSE path is disabled (503), exactly as in CI.
-func buildServer(t *testing.T, project, task, agent, catalog, settings, runner, auth, orgs, resources, adminSrv *httptest.Server) *Server {
+func buildServer(t *testing.T, identity, workspace, agent, executor *httptest.Server) *Server {
 	t.Helper()
 	log := testLog()
 	mkProxy := func(u application.Upstream, srv *httptest.Server) *httputil.ReverseProxy {
@@ -236,16 +208,10 @@ func buildServer(t *testing.T, project, task, agent, catalog, settings, runner, 
 		return rp
 	}
 	proxies := map[application.Upstream]*httputil.ReverseProxy{
-		application.UpstreamProject:   mkProxy(application.UpstreamProject, project),
-		application.UpstreamTask:      mkProxy(application.UpstreamTask, task),
+		application.UpstreamIdentity:  mkProxy(application.UpstreamIdentity, identity),
+		application.UpstreamWorkspace: mkProxy(application.UpstreamWorkspace, workspace),
 		application.UpstreamAgent:     mkProxy(application.UpstreamAgent, agent),
-		application.UpstreamCatalog:   mkProxy(application.UpstreamCatalog, catalog),
-		application.UpstreamSettings:  mkProxy(application.UpstreamSettings, settings),
-		application.UpstreamRunner:    mkProxy(application.UpstreamRunner, runner),
-		application.UpstreamAuth:      mkProxy(application.UpstreamAuth, auth),
-		application.UpstreamOrgs:      mkProxy(application.UpstreamOrgs, orgs),
-		application.UpstreamResources: mkProxy(application.UpstreamResources, resources),
-		application.UpstreamAdmin:     mkProxy(application.UpstreamAdmin, adminSrv),
+		application.UpstreamExecutor:  mkProxy(application.UpstreamExecutor, executor),
 	}
 	bases := make(map[application.Upstream]string, len(proxies))
 	for u, rp := range proxies {
@@ -253,14 +219,13 @@ func buildServer(t *testing.T, project, task, agent, catalog, settings, runner, 
 	}
 	app := application.New(
 		application.NewACL(
-			acl.NewAuthClient(auth.URL, SessionCookie, log),
-			acl.NewOrgsClient(orgs.URL, log),
-			acl.NewTaskClient(task.URL, log),
+			acl.NewIdentityClient(identity.URL, SessionCookie, log),
+			acl.NewTaskClient(workspace.URL, log),
 			log,
 		),
-		application.NewStream(acl.NewStepsClient(runner.URL, log), nil, log),
+		application.NewStream(acl.NewStepsClient(executor.URL, log), nil, log),
 		application.NewRouteTable(),
-		acl.NewStatsClient(agent.URL, task.URL, orgs.URL, auth.URL, log),
+		acl.NewStatsClient(agent.URL, workspace.URL, identity.URL, identity.URL, log),
 	)
 	return New(app, proxies, bases, "", log)
 }
@@ -270,18 +235,16 @@ func buildServer(t *testing.T, project, task, agent, catalog, settings, runner, 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	return buildServer(t,
-		startBackend(t), taskWorkspaceBackend(t, "w1"), startBackend(t), startBackend(t),
-		startBackend(t), startBackend(t), startAuthBackend(t), startOrgsBackend(t),
-		startBackend(t), startBackend(t))
+		identityBackend(t, ""), taskWorkspaceBackend(t, "w1", ""), startBackend(t),
+		startBackend(t))
 }
 
 // newTaggedServer tags every upstream so ownership is asserted by body prefix.
 func newTaggedServer(t *testing.T) *Server {
 	t.Helper()
 	return buildServer(t,
-		tag(t, "project"), taskWorkspaceBackend(t, "w1"), tag(t, "agent"), tag(t, "catalog"),
-		tag(t, "settings"), tag(t, "runner"), startAuthBackend(t), taggedOrgs(t),
-		tag(t, "resources"), tag(t, "admin"))
+		identityBackend(t, "identity:"), taskWorkspaceBackend(t, "w1", "workspace:"), tag(t, "agent"),
+		tag(t, "executor"))
 }
 
 func request(t *testing.T, s *Server, method, path, token string) *httptest.ResponseRecorder {
@@ -308,22 +271,22 @@ func TestGatewayRouting(t *testing.T) {
 		name, path, token, wantPath string
 		wantCode                    int
 	}{
-		{"projects to project", "/api/projects", "tok", "/projects", 200},
+		{"projects to workspace", "/api/projects", "tok", "/projects", 200},
 		{"project by id", "/api/projects/abc", "tok", "/projects/abc", 200},
 		{"tasks to task", "/api/tasks", "tok", "/tasks", 200},
 		{"task by id", "/api/tasks/1", "tok", "/tasks/1", 200},
 		{"agents to agent", "/api/agents/1", "tok", "/agents/1", 200},
-		{"skills to catalog", "/api/skills", "tok", "/skills", 200},
+		{"skills to workspace", "/api/skills", "tok", "/skills", 200},
 		{"mcp-servers to catalog", "/api/mcp-servers", "tok", "/mcp-servers", 200},
 		{"provider-keys to settings", "/api/provider-keys", "tok", "/provider-keys", 200},
 		{"runs to runner", "/api/runs/9/steps", "tok", "/runs/9/steps", 200},
-		{"orgs to orgs", "/api/orgs", "tok", "/orgs", 200},
-		{"workspace members to orgs", "/api/workspaces/w1/members", "tok", "/workspaces/w1/members", 200},
-		{"workspace skills to catalog", "/api/workspaces/w1/skills", "tok", "/workspaces/w1/skills", 200},
-		{"workspace rules to resources", "/api/workspaces/w1/rules", "tok", "/workspaces/w1/rules", 200},
-		{"workspace knowledge to resources", "/api/workspaces/w1/knowledge", "tok", "/workspaces/w1/knowledge", 200},
-		{"workspace mcp to resources", "/api/workspaces/w1/mcp", "tok", "/workspaces/w1/mcp", 200},
-		{"workspace audit to admin", "/api/workspaces/w1/audit", "tok", "/workspaces/w1/audit", 200},
+		{"orgs to identity", "/api/orgs", "tok", "/orgs", 200},
+		{"workspace members to identity", "/api/workspaces/w1/members", "tok", "/workspaces/w1/members", 200},
+		{"workspace skills to workspace", "/api/workspaces/w1/skills", "tok", "/workspaces/w1/skills", 200},
+		{"workspace rules to workspace", "/api/workspaces/w1/rules", "tok", "/workspaces/w1/rules", 200},
+		{"workspace knowledge to workspace", "/api/workspaces/w1/knowledge", "tok", "/workspaces/w1/knowledge", 200},
+		{"workspace mcp to workspace", "/api/workspaces/w1/mcp", "tok", "/workspaces/w1/mcp", 200},
+		{"workspace audit to identity", "/api/workspaces/w1/audit", "tok", "/workspaces/w1/audit", 200},
 		{"workspace remap outside union 403", "/api/workspaces/w9/rules", "tok", "", 403},
 		{"tasks without session 401", "/api/tasks", "", "", 401},
 		{"agents without session 401", "/api/agents", "", "", 401},
@@ -355,25 +318,25 @@ func TestOwnerSplit(t *testing.T) {
 		name, path, token, wantPrefix string
 		wantCode                      int
 	}{
-		{"sysadmin orgs to orgs", "/api/sysadmin/orgs", "tok", "orgs:", 200},
-		{"sysadmin requests to orgs", "/api/sysadmin/requests", "tok", "orgs:", 200},
-		{"sysadmin flags to admin", "/api/sysadmin/flags", "tok", "admin:", 200},
-		{"sysadmin audit to admin", "/api/sysadmin/audit", "tok", "admin:", 200},
-		{"sysadmin maintenance to admin", "/api/sysadmin/maintenance", "tok", "admin:", 200},
+		{"sysadmin orgs to identity", "/api/sysadmin/orgs", "tok", "identity:", 200},
+		{"sysadmin requests to identity", "/api/sysadmin/requests", "tok", "identity:", 200},
+		{"sysadmin flags to admin", "/api/sysadmin/flags", "tok", "identity:", 200},
+		{"sysadmin audit to admin", "/api/sysadmin/audit", "tok", "identity:", 200},
+		{"sysadmin maintenance to admin", "/api/sysadmin/maintenance", "tok", "identity:", 200},
 		{"sysadmin kpis composed", "/api/sysadmin/kpis", "tok", "", 200},
 		{"sysadmin health composed", "/api/sysadmin/health", "tok", "", 200},
-		{"workspace rules to resources", "/api/workspaces/w1/rules", "tok", "resources:", 200},
-		{"workspace knowledge to resources", "/api/workspaces/w1/knowledge", "tok", "resources:", 200},
-		{"workspace plugins to resources", "/api/workspaces/w1/plugins", "tok", "resources:", 200},
-		{"workspace mcp to resources", "/api/workspaces/w1/mcp", "tok", "resources:", 200},
-		{"workspace audit to admin", "/api/workspaces/w1/audit", "tok", "admin:", 200},
-		{"workspace skills to catalog", "/api/workspaces/w1/skills", "tok", "catalog:", 200},
-		{"task runs to runner", "/api/tasks/1/runs", "tok", "runner:", 200},
-		{"task artifacts to runner", "/api/tasks/1/artifacts", "tok", "runner:", 200},
-		{"projects to project", "/api/projects", "tok", "project:", 200},
+		{"workspace rules to workspace", "/api/workspaces/w1/rules", "tok", "workspace:", 200},
+		{"workspace knowledge to workspace", "/api/workspaces/w1/knowledge", "tok", "workspace:", 200},
+		{"workspace plugins to workspace", "/api/workspaces/w1/plugins", "tok", "workspace:", 200},
+		{"workspace mcp to workspace", "/api/workspaces/w1/mcp", "tok", "workspace:", 200},
+		{"workspace audit to identity", "/api/workspaces/w1/audit", "tok", "identity:", 200},
+		{"workspace skills to workspace", "/api/workspaces/w1/skills", "tok", "workspace:", 200},
+		{"task runs to executor", "/api/tasks/1/runs", "tok", "executor:", 200},
+		{"task artifacts to executor", "/api/tasks/1/artifacts", "tok", "executor:", 200},
+		{"projects to workspace", "/api/projects", "tok", "workspace:", 200},
 		{"agents to agent", "/api/agents", "tok", "agent:", 200},
-		{"skills to catalog", "/api/skills", "tok", "catalog:", 200},
-		{"provider-keys to settings", "/api/provider-keys", "tok", "settings:", 200},
+		{"skills to workspace", "/api/skills", "tok", "workspace:", 200},
+		{"provider-keys to agent", "/api/provider-keys", "tok", "agent:", 200},
 		{"sysadmin without session 401", "/api/sysadmin/orgs", "", "", 401},
 		{"sysadmin with invalid session 401", "/api/sysadmin/orgs", "bogus", "", 401},
 	}
@@ -393,9 +356,8 @@ func TestOwnerSplit(t *testing.T) {
 func TestTaskOwnershipChecks(t *testing.T) {
 	t.Run("task outside union 403", func(t *testing.T) {
 		s := buildServer(t,
-			startBackend(t), taskWorkspaceBackend(t, "w9"), startBackend(t), startBackend(t),
-			startBackend(t), startBackend(t), startAuthBackend(t), startOrgsBackend(t),
-			startBackend(t), startBackend(t))
+			identityBackend(t, ""), taskWorkspaceBackend(t, "w9", ""), startBackend(t),
+			startBackend(t))
 		rec := get(t, s, "/api/tasks/1/runs", "tok")
 		if rec.Code != http.StatusForbidden {
 			t.Fatalf("code = %d, want 403 (body %s)", rec.Code, rec.Body.String())
@@ -407,9 +369,8 @@ func TestTaskOwnershipChecks(t *testing.T) {
 
 	t.Run("unknown task 404", func(t *testing.T) {
 		s := buildServer(t,
-			startBackend(t), missingTaskBackend(t), startBackend(t), startBackend(t),
-			startBackend(t), startBackend(t), startAuthBackend(t), startOrgsBackend(t),
-			startBackend(t), startBackend(t))
+			identityBackend(t, ""), missingTaskBackend(t), startBackend(t),
+			startBackend(t))
 		rec := get(t, s, "/api/tasks/1/runs", "tok")
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("code = %d, want 404 (body %s)", rec.Code, rec.Body.String())
@@ -604,8 +565,8 @@ func TestHealthProbes(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &h); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(h.Services) != 11 {
-		t.Fatalf("services = %d, want 11", len(h.Services))
+	if len(h.Services) != 5 {
+		t.Fatalf("services = %d, want 5", len(h.Services))
 	}
 	for _, svc := range h.Services {
 		if svc.Status != "ok" || svc.Pct != 100 {
@@ -615,11 +576,10 @@ func TestHealthProbes(t *testing.T) {
 }
 
 func TestInjectedIdentityReachesUpstream(t *testing.T) {
-	project, snapshot := headerBackend(t)
+	ws, snapshot := headerBackend(t)
 	s := buildServer(t,
-		project, taskWorkspaceBackend(t, "w1"), startBackend(t), startBackend(t),
-		startBackend(t), startBackend(t), startAuthBackend(t), startOrgsBackend(t),
-		startBackend(t), startBackend(t))
+		identityBackend(t, ""), ws, startBackend(t),
+		startBackend(t))
 
 	t.Run("multi-workspace session", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
@@ -671,11 +631,10 @@ func TestInjectedIdentityReachesUpstream(t *testing.T) {
 }
 
 func TestStripInboundIdentity(t *testing.T) {
-	project, snapshot := headerBackend(t)
+	ws, snapshot := headerBackend(t)
 	s := buildServer(t,
-		project, taskWorkspaceBackend(t, "w1"), startBackend(t), startBackend(t),
-		startBackend(t), startBackend(t), startAuthBackend(t), startOrgsBackend(t),
-		startBackend(t), startBackend(t))
+		identityBackend(t, ""), ws, startBackend(t),
+		startBackend(t))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
 	for _, h := range tenancy.IdentityHeaders {
@@ -692,12 +651,9 @@ func TestStripInboundIdentity(t *testing.T) {
 }
 
 func TestSysadminSuperadminGate(t *testing.T) {
-	orgs := superadminGate(t)
-	adminSrv := superadminGate(t)
 	s := buildServer(t,
-		startBackend(t), taskWorkspaceBackend(t, "w1"), startBackend(t), startBackend(t),
-		startBackend(t), startBackend(t), startAuthBackend(t), orgs,
-		startBackend(t), adminSrv)
+		superadminGate(t), taskWorkspaceBackend(t, "w1", ""), startBackend(t),
+		startBackend(t))
 
 	t.Run("non-superadmin rejected downstream 403", func(t *testing.T) {
 		rec := get(t, s, "/api/sysadmin/orgs", "tok")

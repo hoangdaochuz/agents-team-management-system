@@ -1,4 +1,10 @@
-// Package main is the Agent service entrypoint (owns Agent CRUD + skill/mcp links).
+// Package main is the Agent service entrypoint: the consolidated
+// Agent + Settings bounded context over a single agent_db. It serves agent
+// CRUD (persona, model, tools, attached skills/MCPs) and is the sole
+// decryptor of provider keys, exposed to the Executor over the internal token
+// channel only. The provider-key cipher stays isolated in
+// infrastructure/crypto: the master key lives in memory and plaintext keys
+// never leave the process.
 package main
 
 import (
@@ -9,18 +15,21 @@ import (
 	"os"
 
 	"github.com/aaks/server/internal/platform/svcrun"
-	"github.com/aaks/server/services/agent/internal/application"
+	agentapp "github.com/aaks/server/services/agent/internal/application/agent"
+	settingsapp "github.com/aaks/server/services/agent/internal/application/settings"
 	"github.com/aaks/server/services/agent/internal/infrastructure/acl"
+	"github.com/aaks/server/services/agent/internal/infrastructure/crypto"
 	"github.com/aaks/server/services/agent/internal/infrastructure/repository"
-	interfacehttp "github.com/aaks/server/services/agent/internal/interfaces/http"
+	agenthttp "github.com/aaks/server/services/agent/internal/interfaces/http/agent"
+	settingshttp "github.com/aaks/server/services/agent/internal/interfaces/http/settings"
 )
 
 func main() {
 	svcrun.Run("agent", getenv("HTTP_ADDR", ":8083"), register)
 }
 
-// register is the explicit composition root (D5): config → platform deps →
-// repositories/ACL client → application handlers → HTTP adapter.
+// register is the explicit composition root: config → platform deps →
+// repositories + key cipher → application handlers → HTTP adapters.
 func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	dsn := os.Getenv("AGENT_DB_DSN")
 	if dsn == "" {
@@ -30,22 +39,27 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-
-	repo := &application.Repository{
-		Agents:      st.Agents,
-		Projections: st.Projections,
+	cipher, err := crypto.New(os.Getenv("AGENT_MASTER_KEY"))
+	if err != nil {
+		return err
 	}
-	// The Catalog client is optional: without CATALOG_URL the internal
-	// mcp-servers endpoint returns an empty list.
-	var catalog application.McpCatalogClient
-	if url := os.Getenv("CATALOG_URL"); url != "" {
+
+	// The Workspace catalog client is optional: without WORKSPACE_URL the
+	// internal mcp-servers endpoint returns an empty list.
+	var catalog agentapp.McpCatalogClient
+	if url := os.Getenv("WORKSPACE_URL"); url != "" {
 		catalog = acl.NewCatalogClient(url)
 	}
-	app := application.New(repo, catalog, log)
+	agentApp := agentapp.New(&agentapp.Repository{
+		Agents:      st.Agents,
+		Projections: st.Projections,
+	}, catalog, log)
+	settingsApp := settingsapp.New(&settingsapp.Repository{Keys: st.Keys}, cipher, log)
 
-	interfacehttp.New(app, log).Register(mux)
+	agenthttp.New(agentApp, log).Register(mux)
+	settingshttp.New(settingsApp, log, os.Getenv("AGENT_INTERNAL_TOKEN")).Register(mux)
 
-	log.Info("agent routes registered", "endpoints", 11)
+	log.Info("agent routes registered", "endpoints", 16, "mtls", os.Getenv("AGENT_MTLS") == "on")
 	return nil
 }
 

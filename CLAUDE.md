@@ -10,10 +10,11 @@ See `docs/spec.md` (requirements), `docs/design.md` (architecture, data model, A
 `AGENTS.md` (authoritative current state).
 
 **Current state:** the **frontend SPA is fully built** against the declared API contract
-(`frontend/src/api/*.ts`), and the **backend is an event-driven microservices implementation**
-(see the OpenSpec change `event-driven-microservices-backend`, `AGENTS.md`): 11 Go services,
-Kafka event bus, Gateway BFF, multi-tenant Auth/Orgs/Resources/Admin plane, plus the Docker
-sandbox driver, MCP client bridging, and the sandbox secret-leak test — all 70 change tasks
+(`frontend/src/api/*.ts`), and the **backend is a consolidated event-driven implementation**
+(see the OpenSpec changes `event-driven-microservices-backend` and
+`consolidate-microservices`, `AGENTS.md`): **5 Go services** (gateway, identity, workspace,
+agent, executor) over 4 logical databases and a 9-topic Kafka bus, plus the Docker
+sandbox driver, MCP client bridging, and the sandbox secret-leak test — all change tasks
 checked. UI must always render its full layout in
 the error/empty state, never crash.
 
@@ -62,14 +63,18 @@ CI (`.github/workflows/ci.yml`) runs the Go job in `working-directory: backend` 
 
 ## Architecture (the load-bearing parts)
 
-**All 11 services follow a DDD four-layer layout** (`backend/services/<name>/internal/`): `domain`
+**All 5 services follow a DDD four-layer layout** (`backend/services/<name>/internal/`): `domain`
 (entity/aggregate value types + per-aggregate repository port interfaces + sentinel errors — imports
 nothing infrastructural), `application` (use-case orchestration, business rules, EventPublisher /
 UnitOfWork / ACL ports — no pgx/sarama/net-http), `infrastructure` (pgx repo adapters as
-per-aggregate subpackages over a shared `querier` that serves both plain and tx paths, `bus` sarama
-publisher adapter, ACL HTTP clients, crypto, tool provisioning — plus
+per-aggregate subpackages over a shared `querier` that serves both plain and tx paths, `bus`
+publisher adapters — an in-process dispatch bus in identity/workspace, sarama for the surviving
+Kafka topics — ACL HTTP clients, crypto, tool provisioning — plus
 `infrastructure/repository/migrations/`), and `interfaces` (thin `http` handlers
-+ `messaging` Kafka consumers). Each `cmd/main.go` is an explicit **composition root**: config →
++ `messaging` Kafka consumers). Consolidated services keep one layer tree per merged plane as
+subpackages (identity: `internal/domain/{auth,orgs,admin}`, workspace:
+`internal/domain/{project,task,catalog,resources}`, agent: `internal/domain/{agent,settings}`).
+Each `cmd/main.go` is an explicit **composition root**: config →
 platform deps → repos/publisher/ACL clients → application handlers → HTTP/Kafka adapters, with the
 `svcrun` lifecycle ctx threaded into consumers for graceful drain. `internal/archlint` enforces the
 dependency direction as a failing test (domain/application must not import infra, pgx, sarama, or
