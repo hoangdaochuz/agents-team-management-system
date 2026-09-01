@@ -8,4 +8,7 @@ import "errors"
 
 // Sentinels shared by the application and interface layers. The HTTP layer maps
 // these to status codes; application handlers never touch net/http.
-var ErrNotFound = errors.New("project not found")
+var (
+	ErrNotFound      = errors.New("project not found")
+	ErrDuplicateName = errors.New("project name already exists in this workspace")
+)

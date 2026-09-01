@@ -41,6 +41,12 @@ func (a *App) ApproveJoinRequest(ctx context.Context, actorID, workspaceID, requ
 		if jr.Status != identity.SignupPending {
 			return domain.ErrNotPending
 		}
+		// The handler authorized the caller against the PATH workspace; the
+		// request itself must belong to it too, or an admin of workspace A
+		// could approve (and inject a member into) workspace B's request.
+		if jr.WorkspaceID != workspaceID {
+			return domain.ErrNotFound
+		}
 		if _, err := tx.Members.Add(ctx, jr.WorkspaceID, jr.UserID, jr.Name, jr.Email, jr.RequestedRole); err != nil {
 			return err
 		}
@@ -69,6 +75,10 @@ func (a *App) DeclineJoinRequest(ctx context.Context, workspaceID, requestID ide
 		jr, err = tx.JoinRequests.Get(ctx, requestID)
 		if err != nil {
 			return err
+		}
+		// Same cross-workspace guard as approval (see ApproveJoinRequest).
+		if jr.WorkspaceID != workspaceID {
+			return domain.ErrNotFound
 		}
 		return tx.JoinRequests.SetStatus(ctx, requestID, identity.SignupDeclined)
 	})

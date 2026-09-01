@@ -73,6 +73,10 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := s.app.Create(r.Context(), identity.ID(ws), in)
 	if err != nil {
+		if errors.Is(err, domain.ErrDuplicateName) {
+			httputil.Error(w, http.StatusConflict, err.Error())
+			return
+		}
 		httputil.ServerError(w, s.log, "project.Create", err)
 		return
 	}

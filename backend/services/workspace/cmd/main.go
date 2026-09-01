@@ -15,6 +15,7 @@ import (
 	"os"
 
 	"github.com/aaks/server/internal/contracts/events"
+	"github.com/aaks/server/internal/platform/internaltoken"
 	"github.com/aaks/server/internal/platform/svcrun"
 	catalogapp "github.com/aaks/server/services/workspace/internal/application/catalog"
 	projectapp "github.com/aaks/server/services/workspace/internal/application/project"
@@ -53,7 +54,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	// projections) dispatch in-process; the saga commands to the Executor stay
 	// external (the only Kafka traffic this service produces).
 	routes := map[string][]bus.HandlerFunc{}
-	pub := bus.NewPublisher(os.Getenv("KAFKA_BROKERS"), log, bus.NewInProc(log, routes),
+	pub := bus.NewPublisher(ctx, os.Getenv("KAFKA_BROKERS"), log, bus.NewInProc(log, routes),
 		map[string]bool{
 			events.TopicTaskRunRequested:    true,
 			events.TopicTaskReviewRequested: true,
@@ -74,10 +75,11 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	routes[events.TopicMcpCreated] = []bus.HandlerFunc{forward(resourcesApp.ProjectMcpCreated)}
 	routes[events.TopicMcpDeleted] = []bus.HandlerFunc{forward(resourcesApp.ProjectMcpDeleted)}
 
-	projecthttp.New(projectApp, log).Register(mux)
-	taskhttp.New(taskApp, log).Register(mux)
-	cataloghttp.New(catalogApp, log).Register(mux)
-	resourceshttp.New(resourcesApp, log).Register(mux)
+	inner := http.NewServeMux()
+	projecthttp.New(projectApp, log).Register(inner)
+	taskhttp.New(taskApp, log).Register(inner)
+	cataloghttp.New(catalogApp, log).Register(inner)
+	resourceshttp.New(resourcesApp, log).Register(inner)
 
 	messaging.New(log,
 		messaging.DispatchHandler{App: taskApp},
@@ -86,7 +88,10 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	// Workspace provisioning: the Identity service calls the internal endpoint
 	// below instead of the former workspace.created Kafka event (repo binding +
 	// default rule seeding, both idempotent).
-	provisionhttp.New(projectApp, resourcesApp, log).Register(mux)
+	provisionhttp.New(projectApp, resourcesApp, log).Register(inner)
+	// Gate the /internal/* surface (provision, task workspace, counts) behind
+	// the shared service token (unset = open, for dev/tests; compose sets it).
+	mux.Handle("/", internaltoken.Wrap(os.Getenv("INTERNAL_TOKEN"), inner))
 
 	log.Info("workspace routes registered", "endpoints", 40, "saga_enabled", pub.Enabled())
 	return nil

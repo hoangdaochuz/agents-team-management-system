@@ -29,9 +29,14 @@ The Gateway SHALL compose a user session with a single HTTP call to the Identity
 (`/internal/identity`) instead of the previous 3 synchronous fan-out calls (Auth → Orgs → enrichment).
 - **Before**: Gateway → Auth → Orgs → (enrichment services), with additive latency.
 - **After**: Gateway → Identity (single call), with local composition of session data.
-- **Response**: The Identity service returns `{ user, workspaces, active_workspace_id? }`
-  shape, matching the `Session` type used by the frontend (role and the superadmin flag
-  live on the `User` object, per `frontend/src/api/types.ts` — the contract of record).
+- **Response**: The Identity service's `/internal/identity` returns the flat
+  `{ user_id, name, email, is_superadmin, workspaces }` view; the Gateway composes it
+  into the frontend `Session` shape (role and the superadmin flag live on the `User`
+  object; `active_workspace_id` is synthesized from the first workspace), per
+  `frontend/src/api/types.ts` — the contract of record.
+- **Authentication**: the call carries the shared `INTERNAL_TOKEN`
+  (`X-Internal-Token` header); when the token is configured on Identity, requests
+  without it are rejected 403. Unset = open (dev/tests).
 
 #### Scenario: Session resolved in one call
 - **WHEN** an authenticated request arrives at the Gateway

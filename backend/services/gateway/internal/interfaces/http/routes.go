@@ -99,9 +99,15 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		if !s.inject(w, r, route.RequireIdentity) {
 			return
 		}
+		if !s.requireSuperadmin(w, r) {
+			return
+		}
 		s.serveKpis(w, r)
 	case application.RouteHealth:
 		if !s.inject(w, r, route.RequireIdentity) {
+			return
+		}
+		if !s.requireSuperadmin(w, r) {
 			return
 		}
 		s.serveHealth(w, r)
@@ -169,11 +175,27 @@ func (s *Server) requireMember(w http.ResponseWriter, r *http.Request, wid strin
 	return false
 }
 
-// requireTask returns false after writing a 403/404 when the task does not
-// belong to a workspace in the caller's union.
+// requireSuperadmin returns false after writing a 403 when the session is not
+// superadmin. The identity headers must already be injected (X-User-Superadmin
+// reflects the ACL's resolution, never the client's own claim — inbound values
+// were stripped at the boundary).
+func (s *Server) requireSuperadmin(w http.ResponseWriter, r *http.Request) bool {
+	if tenancy.UserSuperadmin(r) {
+		return true
+	}
+	apiutil.Error(w, http.StatusForbidden, "superadmin access required")
+	return false
+}
+
+// requireTask returns false after writing a 403/404/502 when the task does
+// not belong to a workspace in the caller's union, or the lookup fails.
 func (s *Server) requireTask(w http.ResponseWriter, r *http.Request, taskID identity.ID) bool {
 	ok, err := s.app.ACL.TaskAccessible(r.Context(), tenancy.WorkspaceIDs(r), taskID)
 	if err != nil {
+		if errors.Is(err, application.ErrUpstream) {
+			apiutil.Error(w, http.StatusBadGateway, "task service unavailable")
+			return false
+		}
 		apiutil.Error(w, http.StatusNotFound, "task not found")
 		return false
 	}
@@ -252,6 +274,8 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveWorkspaces merges agent_count + open_task_count into the workspace list.
+// The two counts per workspace fan out concurrently (bounded, one goroutine
+// per call) so list latency is one round trip, not 2N serial ones.
 func (s *Server) serveWorkspaces(w http.ResponseWriter, r *http.Request) {
 	rec := &responseRecorder{}
 	s.proxy(application.UpstreamIdentity).ServeHTTP(rec, r)
@@ -265,31 +289,46 @@ func (s *Server) serveWorkspaces(w http.ResponseWriter, r *http.Request) {
 		apiutil.Error(w, http.StatusBadGateway, "orgs returned an unparsable workspace list")
 		return
 	}
+	var wg sync.WaitGroup
 	for i := range wss {
-		if n, err := s.app.Stats.AgentCount(r.Context(), wss[i].ID); err == nil {
-			wss[i].AgentCount = &n
-		}
-		if n, err := s.app.Stats.OpenTaskCount(r.Context(), wss[i].ID); err == nil {
-			wss[i].OpenTaskCount = &n
-		}
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			if n, err := s.app.Stats.AgentCount(r.Context(), wss[i].ID); err == nil {
+				wss[i].AgentCount = &n
+			}
+		}(i)
+		go func(i int) {
+			defer wg.Done()
+			if n, err := s.app.Stats.OpenTaskCount(r.Context(), wss[i].ID); err == nil {
+				wss[i].OpenTaskCount = &n
+			}
+		}(i)
 	}
+	wg.Wait()
 	apiutil.WriteJSON(w, http.StatusOK, wss)
 }
 
-// serveKpis fans out to Auth (active users) + Orgs (org/workspace/seats).
-func (s *Server) serveKpis(w http.ResponseWriter, _ *http.Request) {
+// serveKpis fans out to Identity (org/workspace/seats + active users).
+func (s *Server) serveKpis(w http.ResponseWriter, r *http.Request) {
 	kpis := admin.SystemKpis{}
-	if org, err := s.app.Stats.OrgStats(context.Background()); err == nil {
+	if org, err := s.app.Stats.OrgStats(r.Context()); err == nil {
 		kpis.Organizations, kpis.Workspaces, kpis.OpenSeats = org.Organizations, org.Workspaces, org.OpenSeats
 	}
-	if n, err := s.app.Stats.ActiveUsers24h(context.Background()); err == nil {
+	if n, err := s.app.Stats.ActiveUsers24h(r.Context()); err == nil {
 		kpis.ActiveUsers24h = n
 	}
 	apiutil.WriteJSON(w, http.StatusOK, kpis)
 }
 
-// serveHealth probes every service /healthz and reports ok/warn/down.
-func (s *Server) serveHealth(w http.ResponseWriter, _ *http.Request) {
+// probeClient is the shared health-probe client (one Transport, keep-alive
+// across requests; per-probe timeout via the request context).
+var probeClient = &http.Client{Timeout: 3 * time.Second}
+
+// serveHealth probes every service /healthz and reports ok/warn/down. The
+// probes run concurrently so a slow upstream delays the snapshot by one
+// timeout, not one per service.
+func (s *Server) serveHealth(w http.ResponseWriter, r *http.Request) {
 	probes := []struct {
 		name     string
 		upstream application.Upstream
@@ -298,20 +337,38 @@ func (s *Server) serveHealth(w http.ResponseWriter, _ *http.Request) {
 		{"workspace", application.UpstreamWorkspace}, {"agent", application.UpstreamAgent},
 		{"executor", application.UpstreamExecutor},
 	}
-	out := admin.SystemHealth{Services: []admin.ServiceHealth{}}
-	for _, p := range probes {
-		sh := admin.ServiceHealth{Name: p.name, Pct: 100, Status: "ok"}
-		if base := s.bases[p.upstream]; p.upstream != "" && base != "" {
-			client := &http.Client{Timeout: 3 * time.Second}
-			resp, err := client.Get(base + "/healthz")
-			if err != nil {
-				sh.Pct, sh.Status = 0, "down"
-			} else {
-				_ = resp.Body.Close()
-				sh.Pct, sh.Status = 100, "ok"
+	type result struct{ idx int; sh admin.ServiceHealth }
+	results := make(chan result, len(probes))
+	var wg sync.WaitGroup
+	for i, p := range probes {
+		wg.Add(1)
+		go func(i int, p struct {
+			name     string
+			upstream application.Upstream
+		}) {
+			defer wg.Done()
+			sh := admin.ServiceHealth{Name: p.name, Pct: 100, Status: "ok"}
+			if p.upstream != "" {
+				if base := s.bases[p.upstream]; base != "" {
+					req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, base+"/healthz", nil)
+					if err != nil {
+						sh.Pct, sh.Status = 0, "down"
+					} else if resp, err := probeClient.Do(req); err != nil {
+						sh.Pct, sh.Status = 0, "down"
+					} else {
+						_ = resp.Body.Close()
+						sh.Pct, sh.Status = 100, "ok"
+					}
+				}
 			}
-		}
-		out.Services = append(out.Services, sh)
+			results <- result{i, sh}
+		}(i, p)
+	}
+	wg.Wait()
+	close(results)
+	out := admin.SystemHealth{Services: make([]admin.ServiceHealth, len(probes))}
+	for res := range results {
+		out.Services[res.idx] = res.sh
 	}
 	apiutil.WriteJSON(w, http.StatusOK, out)
 }

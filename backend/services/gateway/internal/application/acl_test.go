@@ -3,8 +3,8 @@ package application
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
-
 	"testing"
 	"time"
 
@@ -18,30 +18,40 @@ import (
 // fakeIdentities scripts full identity resolutions (user + workspace union)
 // per token — the single call the Identity service serves.
 type fakeIdentities struct {
-	calls int
-	byTok map[string]Identity
+	calls           int
+	byTok           map[string]Identity
+	rejectTransient bool // transport/5xx-style failure (no ErrSessionRejected)
 }
 
 func (f *fakeIdentities) Resolve(_ context.Context, token string) (Identity, error) {
 	f.calls++
+	if f.rejectTransient {
+		return Identity{}, errors.New("dial tcp: connection refused")
+	}
 	if id, ok := f.byTok[token]; ok {
 		return id, nil
 	}
-	return Identity{}, errors.New("no session for token")
+	// Mirrors the real client: an unknown token is a definitive rejection.
+	return Identity{}, fmt.Errorf("%w: no session for token", ErrSessionRejected)
 }
 
 // fakeTasks scripts task → workspace ownership.
 type fakeTasks struct {
-	calls int
-	byID  map[string]string
+	calls          int
+	byID           map[string]string
+	failTransient  bool // transport/5xx-style failure
 }
 
 func (f *fakeTasks) Workspace(_ context.Context, taskID identity.ID) (identity.ID, error) {
 	f.calls++
+	if f.failTransient {
+		return "", errors.New("context deadline exceeded")
+	}
 	if ws, ok := f.byID[string(taskID)]; ok {
 		return identity.ID(ws), nil
 	}
-	return "", errors.New("task not found")
+	// Mirrors the real client: a 404 is a definitive ErrTaskNotFound.
+	return "", fmt.Errorf("%w: no such task", ErrTaskNotFound)
 }
 
 func newTestACL(ids *fakeIdentities, ts *fakeTasks) (*ACL, *fakeIdentities, *fakeTasks) {
@@ -260,6 +270,37 @@ func TestFailedResolutionCached(t *testing.T) {
 	}
 }
 
+// TestTransientResolutionNotCached pins the availability fix: a transport
+// failure or 5xx during an Identity deploy must NOT be negative-cached —
+// users recover on the next request once Identity is healthy, instead of
+// waiting out the TTL with 401s.
+func TestTransientResolutionNotCached(t *testing.T) {
+	now := time.Now()
+	acl, fs := newClockACL(nil, &now)
+	fs.rejectTransient = true
+
+	if _, ok := acl.Resolve(context.Background(), "tok"); ok {
+		t.Fatal("transient failure must not resolve")
+	}
+	if fs.calls != 1 {
+		t.Fatalf("first resolve must call identity, calls=%d", fs.calls)
+	}
+	// NOT cached: the second resolve retries instead of serving the failure.
+	if _, ok := acl.Resolve(context.Background(), "tok"); ok {
+		t.Fatal("transient failure must stay unresolvable")
+	}
+	if fs.calls != 2 {
+		t.Fatalf("transient failure must be retried, not cached: calls=%d", fs.calls)
+	}
+
+	// Identity recovers: the very next request resolves.
+	fs.rejectTransient = false
+	fs.byTok["tok"] = Identity{UserID: "u1"}
+	if _, ok := acl.Resolve(context.Background(), "tok"); !ok {
+		t.Fatal("recovered identity must resolve immediately (no TTL wait)")
+	}
+}
+
 // ── Workspace + task ownership checks ───────────────────────────────────────
 
 func TestIsWorkspaceMember(t *testing.T) {
@@ -296,5 +337,11 @@ func TestTaskAccessible(t *testing.T) {
 	_, err = acl.TaskAccessible(context.Background(), []string{"w1"}, "nope")
 	if !errors.Is(err, ErrTaskNotFound) {
 		t.Fatalf("unknown task: got %v want ErrTaskNotFound", err)
+	}
+	// Upstream failure (timeout, 5xx) → ErrUpstream, not a fake 404.
+	ts.failTransient = true
+	_, err = acl.TaskAccessible(context.Background(), []string{"w1"}, "t1")
+	if !errors.Is(err, ErrUpstream) {
+		t.Fatalf("upstream failure: got %v want ErrUpstream", err)
 	}
 }

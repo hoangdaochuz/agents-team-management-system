@@ -94,14 +94,20 @@ func (s *Server) requireAdmin(r *http.Request, workspaceID identity.ID) (identit
 	return uid, nil
 }
 
-func writeMemberErr(w http.ResponseWriter, err error) {
+// writeMemberErr maps RequireMember/RequireAdmin failures: the sentinels get
+// their 403s, a missing identity header is the only 401, and anything else
+// (a DB failure inside the role lookup) is a logged 500 — answering 401 to a
+// server fault sends clients re-authenticating against a healthy session.
+func (s *Server) writeMemberErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrNotMember):
 		httputil.Error(w, http.StatusForbidden, "not a member of this workspace")
 	case errors.Is(err, domain.ErrForbidden):
 		httputil.Error(w, http.StatusForbidden, "admin role required")
-	default:
+	case errors.Is(err, errMissingIdentity):
 		httputil.Error(w, http.StatusUnauthorized, "missing user identity")
+	default:
+		httputil.ServerError(w, s.log, "identity.membership", err)
 	}
 }
 
@@ -171,7 +177,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listMembers(w http.ResponseWriter, r *http.Request) {
 	wsID := identity.ID(r.PathValue("id"))
 	if _, _, err := s.requireMember(r, wsID); err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	rows, err := s.app.ListMembers(r.Context(), wsID)
@@ -191,7 +197,7 @@ func (s *Server) updateMemberRole(w http.ResponseWriter, r *http.Request) {
 	mid := identity.ID(r.PathValue("mid"))
 	uid, err := s.requireAdmin(r, wsID)
 	if err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	var body struct {
@@ -223,7 +229,7 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 	mid := identity.ID(r.PathValue("mid"))
 	uid, err := s.requireAdmin(r, wsID)
 	if err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	err = s.app.Remove(r.Context(), uid, wsID, mid)
@@ -246,7 +252,7 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 func (s *Server) resendInvite(w http.ResponseWriter, r *http.Request) {
 	wsID := identity.ID(r.PathValue("id"))
 	if _, err := s.requireAdmin(r, wsID); err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	s.log.Info("invite notification resent (stub)", "workspace", wsID, "member", r.PathValue("mid"))
@@ -258,7 +264,7 @@ func (s *Server) resendInvite(w http.ResponseWriter, r *http.Request) {
 func (s *Server) listPendingRequests(w http.ResponseWriter, r *http.Request) {
 	wsID := identity.ID(r.PathValue("id"))
 	if _, err := s.requireAdmin(r, wsID); err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	out, err := s.app.ListPendingRequests(r.Context(), wsID)
@@ -273,7 +279,7 @@ func (s *Server) approveRequest(w http.ResponseWriter, r *http.Request) {
 	wsID := identity.ID(r.PathValue("id"))
 	uid, err := s.requireAdmin(r, wsID)
 	if err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	rid := identity.ID(r.PathValue("rid"))
@@ -293,7 +299,7 @@ func (s *Server) approveRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) declineRequest(w http.ResponseWriter, r *http.Request) {
 	wsID := identity.ID(r.PathValue("id"))
 	if _, err := s.requireAdmin(r, wsID); err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	rid := identity.ID(r.PathValue("rid"))
@@ -311,7 +317,7 @@ func (s *Server) declineRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sendInvites(w http.ResponseWriter, r *http.Request) {
 	wsID := identity.ID(r.PathValue("id"))
 	if _, err := s.requireAdmin(r, wsID); err != nil {
-		writeMemberErr(w, err)
+		s.writeMemberErr(w, err)
 		return
 	}
 	var body struct {

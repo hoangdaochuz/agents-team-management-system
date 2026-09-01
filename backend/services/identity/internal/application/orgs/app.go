@@ -82,7 +82,10 @@ func New(repo *Repository, uow UnitOfWork, pub EventPublisher, log *slog.Logger,
 }
 
 // provisionWorkspace notifies every provisioner of a new workspace. Best-effort
-// with logged failures, matching the former publish semantics.
+// with logged failures, matching the former publish semantics. A confirmed
+// provisioning marks the workspace provisioned so the reconciler's sweep stops
+// re-issuing the POST (a failed mark just leaves it in the sweep set — the
+// endpoint is idempotent, so an extra sweep is harmless).
 func (a *App) provisionWorkspace(ctx context.Context, d events.WorkspaceCreatedData) {
 	for _, p := range a.provisioners {
 		if p == nil {
@@ -90,6 +93,10 @@ func (a *App) provisionWorkspace(ctx context.Context, d events.WorkspaceCreatedD
 		}
 		if err := p.Provision(ctx, d); err != nil {
 			a.log.Error("workspace provisioning failed", "workspace_id", d.WorkspaceID, "error", err)
+			return
 		}
+	}
+	if err := a.repo.Workspaces.MarkProvisioned(ctx, d.WorkspaceID); err != nil {
+		a.log.Error("workspace provisioning mark failed", "workspace_id", d.WorkspaceID, "error", err)
 	}
 }

@@ -48,8 +48,14 @@ type TaskRepository interface {
 	GetUnscoped(ctx context.Context, id identity.ID) (Task, error)
 	Create(ctx context.Context, workspaceID identity.ID, in CreateInput) (Task, error)
 	Update(ctx context.Context, id identity.ID, ws []identity.ID, fields map[string]any) (Task, error)
+	// SetStatus transitions a task's status. The WHERE status <> $2 guard makes
+	// a no-op PATCH atomic against concurrent PATCHes: two racing callers both
+	// see "changed", but only one UPDATE matches rows and emits events.
 	SetStatus(ctx context.Context, id identity.ID, status tasks.TaskStatus) (Task, error)
-	SetRoundNo(ctx context.Context, id identity.ID, roundNo int) error
+	// SetStatusAndRound transitions status and round in ONE statement (ReRun's
+	// two-write mutation — a crash between two statements must not bump the
+	// round without the transition).
+	SetStatusAndRound(ctx context.Context, id identity.ID, status tasks.TaskStatus, roundNo int) (Task, error)
 	Delete(ctx context.Context, id identity.ID, ws []identity.ID) error
 	CountOpenByWorkspace(ctx context.Context, workspaceID identity.ID) (int, error)
 	// SagaAdvance atomically records (task_id, run_id) as processed by the

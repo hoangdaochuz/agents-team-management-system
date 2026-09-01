@@ -75,7 +75,19 @@ func (r *Repo) Upsert(ctx context.Context, req events.SignupRequestedData) error
 	return err
 }
 
+// SetStatus transitions a request's status. The pending guard makes the
+// transition atomic against concurrent approvals: a second approver's UPDATE
+// matches zero rows and surfaces ErrNotPending instead of double-committing.
 func (r *Repo) SetStatus(ctx context.Context, requestID identity.ID, status identity.SignupState) error {
-	_, err := r.q.Exec(ctx, `UPDATE join_requests SET status = $2 WHERE request_id = $1`, requestID, status)
-	return err
+	tag, err := r.q.Exec(ctx, `
+		UPDATE join_requests SET status = $2
+		WHERE request_id = $1 AND status = 'pending'`,
+		requestID, status)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotPending
+	}
+	return nil
 }

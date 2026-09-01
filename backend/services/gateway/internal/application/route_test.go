@@ -98,24 +98,24 @@ func TestResolveRouting(t *testing.T) {
 	}
 }
 
-// TestResolveTaskRunsCheckUpstream locks the ownership-check upstream: task
-// sub-routes owned by the runner resolve their ownership against the Task
-// service.
-func TestResolveTaskRunsCheckUpstream(t *testing.T) {
+// TestResolveTaskRoutes pins the task sub-route kinds: runs/artifacts remap to
+// the executor and stream resolves as the SSE route (ownership is always
+// checked against the workspace ACL in the HTTP adapter).
+func TestResolveTaskRoutes(t *testing.T) {
 	tbl := NewRouteTable()
 
 	r, err := tbl.Resolve([]string{"tasks", "1", "runs"}, "GET")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if r.TaskCheck != UpstreamWorkspace {
-		t.Fatalf("task check: got %q want %q", r.TaskCheck, UpstreamWorkspace)
+	if r.Kind != RouteTaskRuns || r.TaskID != "1" {
+		t.Fatalf("runs route: got kind=%v taskID=%q", r.Kind, r.TaskID)
 	}
 	r, err = tbl.Resolve([]string{"tasks", "1", "stream"}, "GET")
 	if err != nil {
 		t.Fatalf("resolve stream: %v", err)
 	}
-	if r.TaskCheck != UpstreamWorkspace {
-		t.Fatalf("stream task check: got %q want %q", r.TaskCheck, UpstreamWorkspace)
+	if r.Kind != RouteStream || r.TaskID != "1" {
+		t.Fatalf("stream route: got kind=%v taskID=%q", r.Kind, r.TaskID)
 	}
 }

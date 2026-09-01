@@ -12,6 +12,7 @@ import (
 
 	"github.com/aaks/server/internal/contracts/identity"
 	"github.com/aaks/server/internal/contracts/resources"
+	"github.com/aaks/server/internal/platform/internaltoken"
 	"github.com/aaks/server/internal/platform/svcrun"
 	"github.com/aaks/server/services/executor/internal/application"
 	"github.com/aaks/server/services/executor/internal/driver"
@@ -43,17 +44,20 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	}
 
 	// Agent config and decrypted provider keys both live in the consolidated
-	// Agent service now: one URL serves both clients.
+	// Agent service now: one URL serves both clients. The shared internal
+	// token authenticates every /internal/* call to the peer services.
 	agentURL := os.Getenv("AGENT_URL")
-	keys := acl.NewKeyClient(agentURL, os.Getenv("AGENT_INTERNAL_TOKEN"))
-	resClient := acl.NewResourcesClient(os.Getenv("WORKSPACE_URL"))
-	agents := acl.NewAgentClient(agentURL, log)
+	internalToken := os.Getenv("INTERNAL_TOKEN")
+	keys := acl.NewKeyClient(agentURL, os.Getenv("AGENT_INTERNAL_TOKEN"), internalToken)
+	resClient := acl.NewResourcesClient(os.Getenv("WORKSPACE_URL"), internalToken)
+	agents := acl.NewAgentClient(agentURL, internalToken, log)
 
 	prov := tools.New(sandbox.New(sandbox.Config{
-		Kind:      os.Getenv("EXECUTOR_SANDBOX"),
-		Image:     os.Getenv("EXECUTOR_SANDBOX_IMAGE"),
-		Socket:    os.Getenv("EXECUTOR_DOCKER_SOCKET"),
-		CloneRoot: os.Getenv("EXECUTOR_CLONE_ROOT"),
+		Kind:        os.Getenv("EXECUTOR_SANDBOX"),
+		Image:       os.Getenv("EXECUTOR_SANDBOX_IMAGE"),
+		Socket:      os.Getenv("EXECUTOR_DOCKER_SOCKET"),
+		CloneRoot:   os.Getenv("EXECUTOR_CLONE_ROOT"),
+		NetworkMode: os.Getenv("EXECUTOR_SANDBOX_NETWORK"),
 	}, log), log).WithMcpFetcher(func(ctx context.Context, agentID identity.ID) []resources.McpServer {
 		servers, err := agents.FetchMcpServers(ctx, agentID)
 		if err != nil {
@@ -62,7 +66,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		return servers
 	})
 
-	pub := bus.NewPublisher(os.Getenv("KAFKA_BROKERS"), log)
+	pub := bus.NewPublisher(ctx, os.Getenv("KAFKA_BROKERS"), log)
 	app := application.New(
 		st.Runs, st.Steps, st.Findings, st.Artifacts,
 		driver.New(os.Getenv("EXECUTOR_DRIVER"), log),
@@ -76,7 +80,9 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		os.Getenv("EXECUTOR_PR_BASE_URL"),
 	)
 
-	interfacehttp.New(app, log).Register(mux)
+	inner := http.NewServeMux()
+	interfacehttp.New(app, log).Register(inner)
+	mux.Handle("/", internaltoken.Wrap(internalToken, inner))
 	messaging.New(log, messaging.DispatchHandler{App: app}).Start(ctx, os.Getenv("KAFKA_BROKERS"))
 
 	log.Info("executor routes registered", "endpoints", 4, "driver", os.Getenv("EXECUTOR_DRIVER"))

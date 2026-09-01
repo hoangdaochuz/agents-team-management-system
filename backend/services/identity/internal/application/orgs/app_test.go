@@ -57,7 +57,8 @@ func (f *fakeOrgs) Stats(context.Context) (int, int, int, error) { return len(f.
 
 type fakeWorkspaces struct {
 	wss  []workspaces.Workspace
-	next int
+	next        int
+	provisioned []identity.ID
 }
 
 func (f *fakeWorkspaces) Create(_ context.Context, orgID identity.ID, name, repoSource, defaultBranch, glyph, description string) (workspaces.Workspace, error) {
@@ -77,8 +78,17 @@ func (f *fakeWorkspaces) ByID(_ context.Context, id identity.ID) (workspaces.Wor
 func (f *fakeWorkspaces) ListByUser(context.Context, identity.ID) ([]workspaces.Workspace, error) {
 	return f.wss, nil
 }
-func (f *fakeWorkspaces) List(context.Context) ([]workspaces.Workspace, error) {
+func (f *fakeWorkspaces) ListUnprovisioned(context.Context) ([]workspaces.Workspace, error) {
 	return f.wss, nil
+}
+func (f *fakeWorkspaces) MarkProvisioned(_ context.Context, id identity.ID) error {
+	for i := range f.wss {
+		if f.wss[i].ID == id {
+			f.provisioned = append(f.provisioned, id)
+			return nil
+		}
+	}
+	return domain.ErrNotFound
 }
 func (f *fakeWorkspaces) GetByUser(context.Context, identity.ID, identity.ID) (workspaces.Workspace, error) {
 	return workspaces.Workspace{}, domain.ErrNotFound
@@ -318,6 +328,56 @@ func newTestApp() (*App, *fakeRepo, *fakeUoW, *fakePublisher) {
 	return app, f, u, p
 }
 
+// fakeProvisioner records provisioning calls; err makes them fail.
+type fakeProvisioner struct {
+	calls []events.WorkspaceCreatedData
+	err   error
+}
+
+func (f *fakeProvisioner) Provision(_ context.Context, d events.WorkspaceCreatedData) error {
+	f.calls = append(f.calls, d)
+	return f.err
+}
+
+// TestApproveOrgRequestMarksProvisioned pins the sweeper contract: a confirmed
+// provisioning call must mark the workspace provisioned (removing it from the
+// sweep set), and a failed call must not.
+func TestApproveOrgRequestMarksProvisioned(t *testing.T) {
+	f := newFakeRepo()
+	prov := &fakeProvisioner{}
+	app := New(f.baseRepo, &fakeUoW{repo: f}, &fakePublisher{}, slog.New(slog.DiscardHandler), prov)
+	rid := identity.ID("or1")
+	f.orgReqs.reqs = []domain.OrgRequest{{
+		SignupRequest: identity.SignupRequest{ID: rid, Name: "Alice", Email: "a@x.io", RequestedRole: identity.RoleOwner},
+		UserID:        "u3", OrganizationName: "Acme", Status: identity.SignupPending,
+	}}
+
+	if err := app.ApproveOrgRequest(context.Background(), rid); err != nil {
+		t.Fatalf("approve org: %v", err)
+	}
+	if len(prov.calls) != 1 {
+		t.Fatalf("expected one provisioning call, got %d", len(prov.calls))
+	}
+	if len(f.ws.provisioned) != 1 {
+		t.Fatalf("confirmed provisioning must mark the workspace, got %v", f.ws.provisioned)
+	}
+
+	// A failing provisioner must not mark the workspace (it stays sweepable).
+	f2 := newFakeRepo()
+	prov2 := &fakeProvisioner{err: errors.New("workspace down")}
+	app2 := New(f2.baseRepo, &fakeUoW{repo: f2}, &fakePublisher{}, slog.New(slog.DiscardHandler), prov2)
+	f2.orgReqs.reqs = []domain.OrgRequest{{
+		SignupRequest: identity.SignupRequest{ID: "or2", Name: "Bo", Email: "b@x.io", RequestedRole: identity.RoleOwner},
+		UserID:        "u4", OrganizationName: "Bee", Status: identity.SignupPending,
+	}}
+	if err := app2.ApproveOrgRequest(context.Background(), "or2"); err != nil {
+		t.Fatalf("approve org (failed provisioning must be best-effort): %v", err)
+	}
+	if len(f2.ws.provisioned) != 0 {
+		t.Fatalf("failed provisioning must not mark the workspace, got %v", f2.ws.provisioned)
+	}
+}
+
 // ── Role enforcement ─────────────────────────────────────────────────────────
 
 func TestRequireMemberAndAdmin(t *testing.T) {
@@ -419,7 +479,7 @@ func TestApproveJoinRequest(t *testing.T) {
 	wsID := identity.ID("ws1")
 	rid := identity.ID("jr1")
 	f.joins.reqs = []domain.JoinRequest{{
-		SignupRequest: identity.SignupRequest{ID: rid, Name: "Bob", Email: "b@x.io", RequestedRole: identity.RoleMember},
+		SignupRequest: identity.SignupRequest{ID: rid, Name: "Bob", Email: "b@x.io", RequestedRole: identity.RoleMember, WorkspaceID: wsID},
 		UserID:        "u2", Status: identity.SignupPending,
 	}}
 
@@ -467,6 +527,33 @@ func TestApproveOrgRequest(t *testing.T) {
 	}
 }
 
+// TestApproveJoinRequestWrongWorkspace pins the tenancy guard: an admin of
+// workspace A cannot approve (and inject a member into) workspace B's request
+// by guessing its request id.
+func TestApproveJoinRequestWrongWorkspace(t *testing.T) {
+	app, f, _, p := newTestApp()
+	f.joins.reqs = []domain.JoinRequest{{
+		SignupRequest: identity.SignupRequest{ID: "jr9", Name: "Eve", Email: "e@x.io", RequestedRole: identity.RoleAdmin, WorkspaceID: "ws-b"},
+		UserID:        "u9", Status: identity.SignupPending,
+	}}
+
+	if err := app.ApproveJoinRequest(context.Background(), "admin", "ws-a", "jr9"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("cross-workspace approve must be rejected with ErrNotFound, got %v", err)
+	}
+	if len(f.members.members) != 0 {
+		t.Fatal("no member may be added to the other workspace")
+	}
+	if len(p.events) != 0 {
+		t.Fatalf("no events may fire, got %v", p.events)
+	}
+	if err := app.DeclineJoinRequest(context.Background(), "ws-a", "jr9"); !errors.Is(err, domain.ErrNotFound) {
+		t.Fatalf("cross-workspace decline must be rejected with ErrNotFound, got %v", err)
+	}
+	if f.joins.reqs[0].Status != identity.SignupPending {
+		t.Fatalf("request must stay pending, got %s", f.joins.reqs[0].Status)
+	}
+}
+
 func TestApproveNonPendingRequest(t *testing.T) {
 	app, f, _, _ := newTestApp()
 	f.joins.reqs = []domain.JoinRequest{{
@@ -487,7 +574,7 @@ func TestApproveActivatesUserAtomically(t *testing.T) {
 	app, f, _, _ := newTestApp()
 	rid := identity.ID("jr1")
 	f.joins.reqs = []domain.JoinRequest{{
-		SignupRequest: identity.SignupRequest{ID: rid, Name: "Bob", Email: "b@x.io", RequestedRole: identity.RoleMember},
+		SignupRequest: identity.SignupRequest{ID: rid, Name: "Bob", Email: "b@x.io", RequestedRole: identity.RoleMember, WorkspaceID: "ws1"},
 		UserID:        "u2", Status: identity.SignupPending,
 	}}
 

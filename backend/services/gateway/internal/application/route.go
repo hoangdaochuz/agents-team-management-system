@@ -53,7 +53,6 @@ type Route struct {
 	Kind            RouteKind
 	Domain          string
 	Upstream        Upstream    // proxy target (Proxy/WorkspaceRemap/TaskRuns/SysadminAdmin)
-	TaskCheck       Upstream    // upstream resolving task ownership (TaskRuns/Stream)
 	RequireIdentity bool        // session required (401 when absent)
 	WorkspaceID     string      // workspace membership check target (WorkspaceRemap)
 	TaskID          identity.ID // task ownership check target (TaskRuns/Stream)
@@ -119,7 +118,7 @@ func (t *RouteTable) Resolve(segs []string, method string) (Route, error) {
 	// Realtime: /tasks/{id}/stream — replay then tail (SSE).
 	if domain == "tasks" && len(segs) >= 3 && segs[2] == "stream" {
 		return Route{
-			Kind: RouteStream, Domain: domain, TaskCheck: UpstreamWorkspace,
+			Kind: RouteStream, Domain: domain,
 			TaskID: identity.ID(segs[1]), RequireIdentity: true,
 		}, nil
 	}
@@ -132,23 +131,15 @@ func (t *RouteTable) Resolve(segs []string, method string) (Route, error) {
 	// Workspace sub-routes owned by other services.
 	if domain == "workspaces" && len(segs) >= 3 {
 		switch segs[2] {
-		case "skills":
+		case "skills", "knowledge", "plugins", "rules", "mcp":
+			// Workspace-owned sub-routes (skills moved with the catalog merge).
 			return Route{
 				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamWorkspace,
-				WorkspaceID: segs[1], RequireIdentity: true,
-			}, nil
-		case "knowledge", "plugins", "rules", "mcp":
-			return Route{
-				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamWorkspace,
-				WorkspaceID: segs[1], RequireIdentity: true,
-			}, nil
-		case "audit":
-			return Route{
-				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamIdentity,
 				WorkspaceID: segs[1], RequireIdentity: true,
 			}, nil
 		default:
-			// Workspace sub-routes owned by orgs (members, invites, requests).
+			// Every other /workspaces/{wid}/... sub-route (audit, members,
+			// invites, requests, ...) is owned by identity.
 			return Route{
 				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamIdentity,
 				WorkspaceID: segs[1], RequireIdentity: true,
@@ -160,7 +151,7 @@ func (t *RouteTable) Resolve(segs []string, method string) (Route, error) {
 	if domain == "tasks" && len(segs) >= 3 && (segs[2] == "runs" || segs[2] == "artifacts") {
 		return Route{
 			Kind: RouteTaskRuns, Domain: domain, Upstream: UpstreamExecutor,
-			TaskCheck: UpstreamWorkspace, TaskID: identity.ID(segs[1]), RequireIdentity: true,
+			TaskID: identity.ID(segs[1]), RequireIdentity: true,
 		}, nil
 	}
 

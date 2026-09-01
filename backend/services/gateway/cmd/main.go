@@ -45,14 +45,19 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 
 	brokers := os.Getenv("KAFKA_BROKERS")
 	identityURL := ups[application.UpstreamIdentity]
+	internalToken := os.Getenv("INTERNAL_TOKEN")
+	a := application.NewACL(
+		acl.NewIdentityClient(identityURL, interfacehttp.SessionCookie, internalToken, log),
+		acl.NewTaskClient(ups[application.UpstreamWorkspace], internalToken, log),
+		log,
+	)
+	// Evict stale session-cache entries periodically — re-read eviction alone
+	// cannot bound the map against rotating distinct cookies.
+	go a.StartJanitor(ctx)
 	app := application.New(
-		application.NewACL(
-			acl.NewIdentityClient(identityURL, interfacehttp.SessionCookie, log),
-			acl.NewTaskClient(ups[application.UpstreamWorkspace], log),
-			log,
-		),
+		a,
 		application.NewStream(
-			acl.NewStepsClient(ups[application.UpstreamExecutor], log),
+			acl.NewStepsClient(ups[application.UpstreamExecutor], internalToken, log),
 			kafkaTailerFactory(brokers, log),
 			log,
 		),
@@ -61,7 +66,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 			ups[application.UpstreamAgent],
 			ups[application.UpstreamWorkspace],
 			identityURL,
-			identityURL,
+			internalToken,
 			log,
 		),
 	)

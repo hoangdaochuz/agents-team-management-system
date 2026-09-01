@@ -51,17 +51,21 @@ func New(log *slog.Logger, handlers ...Handler) *Consumer {
 }
 
 // Start runs the consumer group on the lifecycle context until it is cancelled
-// (graceful drain: in-flight messages finish before the group exits).
+// (graceful drain: in-flight messages finish before the group exits). Group
+// construction retries with backoff (the service may boot before Kafka is
+// ready); the group id stays "runner-commands" — the pre-rename name — so
+// committed offsets survive the runner→executor rename; do not "fix" it
+// without a migration plan for the offset commits.
 func (c *Consumer) Start(ctx context.Context, brokers string) {
 	if brokers == "" {
 		return
 	}
-	cg, err := kafka.NewConsumerGroup(kafka.Brokers(strings.Split(brokers, ",")), "runner-commands", c.log)
-	if err != nil {
-		c.log.Warn("runner consumers unavailable", "error", err)
-		return
-	}
 	go func() {
+		cg, err := kafka.NewConsumerGroupUntilReady(ctx, kafka.Brokers(strings.Split(brokers, ",")), "runner-commands", c.log)
+		if err != nil {
+			c.log.Warn("runner consumers stopped before Kafka was reachable", "error", err)
+			return
+		}
 		if err := cg.Run(ctx, c.topics, c.consume); err != nil {
 			c.log.Error("runner consumer stopped", "error", err)
 		}

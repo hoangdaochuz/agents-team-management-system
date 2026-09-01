@@ -37,7 +37,7 @@ func (a *App) DeleteKey(ctx context.Context, provider identity.Provider) error {
 
 // Plaintext returns the decrypted key. This is the ONLY path that yields
 // plaintext; the interface layer gates it with the shared service token (the
-// Runner's mTLS + token channel).
+// Executor's internal token channel).
 func (a *App) Plaintext(ctx context.Context, provider identity.Provider) (string, error) {
 	ct, err := a.repo.Keys.Ciphertext(ctx, provider)
 	if err != nil {

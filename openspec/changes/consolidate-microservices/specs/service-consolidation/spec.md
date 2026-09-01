@@ -46,7 +46,7 @@ The service SHALL merge Project (918 LOC) + Task (2,130 LOC) + Catalog (1,526 LO
 - **Merged entities**: projects, tasks, task_thread, feedback, skills, mcp_servers, knowledge_sources, plugins, rules, mcp_connections
 - **Rationale**: These are all workspace-scoped entities that users manage together. Projects contain tasks, tasks use agents/skills/MCPs from the catalog, resources are workspace-level configurations. The Catalog→Resources Kafka projection becomes a simple local function call. Task saga coordinator gains direct access to project/skill data.
 - **Bounded Context**: "What work exists in this workspace, and what tools/resources are available?" — The workspace's complete operational surface.
-- **Kafka**: Producer: `task.run-requested`, `task.review-requested`, `task.stop-requested`, `task.pr-open-requested`. Consumer: `run.completed`, `finding`, `verdict`, `pr.opened`. (These are the only events that truly need Kafka — they cross the Workspace→Executor boundary.)
+- **Kafka**: Producer: `task.run-requested`, `task.review-requested`, `task.stop-requested`, `task.pr-open-requested`. Consumer: `run.completed`, `verdict`, `pr.opened`. (These are the only events that truly need Kafka — they cross the Workspace→Executor boundary. `finding` is produced by the Executor and persisted+served from `runner_db`; no Workspace consumer exists.)
 
 #### Scenario: Catalog projection is a function call
 - **WHEN** an MCP server is created in the catalog

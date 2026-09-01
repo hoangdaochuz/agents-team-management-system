@@ -61,10 +61,11 @@ func (r *Repo) ByID(ctx context.Context, id identity.ID) (workspaces.Workspace, 
 	return w, err
 }
 
-// List returns every workspace — the provisioning reconciler's sweep input
-// (not user-facing; single-operator scale).
-func (r *Repo) List(ctx context.Context) ([]workspaces.Workspace, error) {
-	rows, err := r.q.Query(ctx, `SELECT `+wsCols+` FROM workspaces ORDER BY created_at`)
+// ListUnprovisioned returns workspaces whose provisioning POST has not been
+// confirmed (provisioned_at IS NULL) — the provisioning reconciler's sweep
+// input, so confirmed workspaces are never re-POSTed.
+func (r *Repo) ListUnprovisioned(ctx context.Context) ([]workspaces.Workspace, error) {
+	rows, err := r.q.Query(ctx, `SELECT `+wsCols+` FROM workspaces WHERE provisioned_at IS NULL ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +80,13 @@ func (r *Repo) List(ctx context.Context) ([]workspaces.Workspace, error) {
 		out = append(out, w)
 	}
 	return out, rows.Err()
+}
+
+// MarkProvisioned records the Workspace service's confirmation of the
+// provisioning POST for one workspace.
+func (r *Repo) MarkProvisioned(ctx context.Context, id identity.ID) error {
+	_, err := r.q.Exec(ctx, `UPDATE workspaces SET provisioned_at = now() WHERE id = $1`, id)
+	return err
 }
 
 func (r *Repo) ListByUser(ctx context.Context, userID identity.ID) ([]workspaces.Workspace, error) {

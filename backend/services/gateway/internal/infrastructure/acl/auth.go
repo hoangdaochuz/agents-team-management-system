@@ -3,12 +3,14 @@ package acl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aaks/server/internal/contracts/workspaces"
+	"github.com/aaks/server/internal/platform/internaltoken"
 	"github.com/aaks/server/services/gateway/internal/application"
 )
 
@@ -18,14 +20,15 @@ import (
 type IdentityClient struct {
 	url    string
 	cookie string
+	token  string
 	hc     *http.Client
 	log    *slog.Logger
 }
 
 // NewIdentityClient builds the Identity session client.
-func NewIdentityClient(url, sessionCookie string, log *slog.Logger) *IdentityClient {
+func NewIdentityClient(url, sessionCookie, internalToken string, log *slog.Logger) *IdentityClient {
 	return &IdentityClient{
-		url: strings.TrimSuffix(url, "/"), cookie: sessionCookie,
+		url: strings.TrimSuffix(url, "/"), cookie: sessionCookie, token: internalToken,
 		hc: &http.Client{Timeout: 5 * time.Second}, log: log,
 	}
 }
@@ -40,6 +43,9 @@ func (c *IdentityClient) Resolve(ctx context.Context, token string) (application
 		return application.Identity{}, err
 	}
 	req.Header.Set("Cookie", c.cookie+"="+token)
+	if c.token != "" {
+		req.Header.Set(internaltoken.Header, c.token)
+	}
 	var u struct {
 		UserID       string                 `json:"user_id"`
 		Name         string                 `json:"name"`
@@ -48,10 +54,16 @@ func (c *IdentityClient) Resolve(ctx context.Context, token string) (application
 		Workspaces   []workspaces.Workspace `json:"workspaces"`
 	}
 	if err := doGet(c.hc, c.log, ctx, req.URL.String(), req.Header, &u); err != nil {
+		var se *StatusError
+		if errors.As(err, &se) && (se.Code == http.StatusUnauthorized || se.Code == http.StatusForbidden) {
+			// The Identity service saw the token and rejected it — definitive.
+			return application.Identity{}, fmt.Errorf("%w: %s", application.ErrSessionRejected, se.Error())
+		}
 		return application.Identity{}, err
 	}
 	if u.UserID == "" {
-		return application.Identity{}, errors.New("identity returned an empty user")
+		// Identity answered but resolved no session — definitive rejection.
+		return application.Identity{}, fmt.Errorf("%w: empty user", application.ErrSessionRejected)
 	}
 	if u.Workspaces == nil {
 		u.Workspaces = []workspaces.Workspace{}

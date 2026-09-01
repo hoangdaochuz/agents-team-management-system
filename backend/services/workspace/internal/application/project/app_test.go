@@ -56,6 +56,17 @@ func (f *fakeProjects) Create(_ context.Context, workspaceID identity.ID, in dom
 	return p, nil
 }
 
+// Ensure mirrors the adapter's upsert: an existing same-name project in the
+// workspace is returned unchanged; otherwise the row is created.
+func (f *fakeProjects) Ensure(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Project, error) {
+	for _, p := range f.ps {
+		if p.WorkspaceID == workspaceID && p.Name == in.Name {
+			return p, nil
+		}
+	}
+	return f.Create(ctx, workspaceID, in)
+}
+
 func (f *fakeProjects) Update(_ context.Context, id identity.ID, _ []identity.ID, in domain.UpdateInput) (tasks.Project, error) {
 	for i := range f.ps {
 		if f.ps[i].ID == id {
@@ -109,6 +120,27 @@ func TestBindWorkspaceCreatesDefaultProject(t *testing.T) {
 	}
 	if p.DefaultBranch != "develop" {
 		t.Fatalf("default branch must carry over, got %q", p.DefaultBranch)
+	}
+}
+
+// TestBindWorkspaceIsIdempotent asserts a redelivered workspace-creation fact
+// (the reconciler re-POSTs on an interval) does not create a second binding.
+func TestBindWorkspaceIsIdempotent(t *testing.T) {
+	app, f := newTestApp()
+	d := events.WorkspaceCreatedData{
+		WorkspaceID: "ws1", Name: "Team", RepoSource: "git@x/y.git", DefaultBranch: "develop",
+	}
+
+	if err := app.BindWorkspace(context.Background(), d); err != nil {
+		t.Fatalf("first bind: %v", err)
+	}
+	for i := 0; i < 3; i++ { // reconciler re-delivery
+		if err := app.BindWorkspace(context.Background(), d); err != nil {
+			t.Fatalf("rebind %d: %v", i, err)
+		}
+	}
+	if len(f.ps) != 1 {
+		t.Fatalf("redelivery must not duplicate the binding, got %d projects", len(f.ps))
 	}
 }
 

@@ -92,16 +92,17 @@ func (f *fakeTasks) SetStatus(_ context.Context, id identity.ID, status tasks.Ta
 	return *t, nil
 }
 
-func (f *fakeTasks) SetRoundNo(_ context.Context, id identity.ID, roundNo int) error {
+func (f *fakeTasks) SetStatusAndRound(_ context.Context, id identity.ID, status tasks.TaskStatus, roundNo int) (tasks.Task, error) {
 	if f.fail != nil {
-		return f.fail
+		return tasks.Task{}, f.fail
 	}
 	t := f.find(id)
 	if t == nil {
-		return domain.ErrNotFound
+		return tasks.Task{}, domain.ErrNotFound
 	}
+	t.Status = status
 	t.RoundNo = roundNo
-	return nil
+	return *t, nil
 }
 
 func (f *fakeTasks) Delete(_ context.Context, id identity.ID, _ []identity.ID) error {
@@ -293,7 +294,9 @@ func TestPatchStatusDoingPublishesRunRequested(t *testing.T) {
 		t.Fatalf("expected run-requested, got %v", p.topics())
 	}
 	rr := p.events[0].data.(events.RunRequestedData)
-	if rr.TaskID != "t1" || rr.AgentID != "a1" || rr.ProjectID != "p1" || rr.RoundNo != 0 || rr.Prompt != "do it" {
+	// WorkspaceID must ride the command: the Executor gates workspace rules and
+	// MCP tool hydration on it. ReRun and the verdict path already send it.
+	if rr.TaskID != "t1" || rr.AgentID != "a1" || rr.ProjectID != "p1" || rr.WorkspaceID != "ws1" || rr.RoundNo != 0 || rr.Prompt != "do it" {
 		t.Fatalf("unexpected run-requested: %+v", rr)
 	}
 }
@@ -433,11 +436,14 @@ func TestRunCompletedRedeliveryIsDeduped(t *testing.T) {
 	if err := app.Dispatch(context.Background(), msg); err != nil {
 		t.Fatalf("redelivered dispatch: %v", err)
 	}
-	if len(p.events) != first {
-		t.Fatalf("redelivery must not re-emit events, got %v", p.topics())
-	}
+	// Redelivery must not advance the task again, but it DOES re-emit the
+	// review command once: the recovery leg for a lost post-commit publish
+	// (a duplicate is absorbed by the Executor's per-round run dedup).
 	if tf.tasks[0].Status != tasks.TaskReview {
 		t.Fatalf("task must stay in review, got %s", tf.tasks[0].Status)
+	}
+	if len(p.events) != first+1 || p.events[first].topic != events.TopicTaskReviewRequested {
+		t.Fatalf("redelivery must re-emit exactly one recovery command, got %v", p.topics())
 	}
 }
 
@@ -461,8 +467,10 @@ func TestRunCompletedNonImplementerIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dispatch aborted: %v", err)
 	}
-	if tf.tasks[0].Status != tasks.TaskDoing || len(p.events) != 0 {
-		t.Fatalf("reviewer/aborted runs must not advance the task, status=%s events=%v", tf.tasks[0].Status, p.topics())
+	// Reviewer runs never advance the task; an aborted implementer run
+	// surfaces the task as blocked (nothing is in flight, needs attention).
+	if tf.tasks[0].Status != tasks.TaskBlocked || len(p.events) != 0 {
+		t.Fatalf("reviewer runs ignored; aborted implementer must block the task — status=%s events=%v", tf.tasks[0].Status, p.topics())
 	}
 }
 

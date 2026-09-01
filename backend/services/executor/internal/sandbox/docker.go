@@ -25,11 +25,12 @@ const dockerAPIVersion = "v1.44"
 // API over its unix socket. Only run_command (Exec) crosses into the container;
 // file ops hit the host worktree (bind-mounted RW at /workspace).
 type dockerEnv struct {
-	cfg        Config
-	wt         *Worktree
-	log        *slog.Logger
-	container  string
-	httpClient *http.Client
+	cfg         Config
+	wt          *Worktree
+	log         *slog.Logger
+	container   string
+	networkMode string
+	httpClient  *http.Client
 }
 
 func newDockerEnv(ctx context.Context, cfg Config, wt *Worktree, log *slog.Logger) (*dockerEnv, error) {
@@ -41,7 +42,11 @@ func newDockerEnv(ctx context.Context, cfg Config, wt *Worktree, log *slog.Logge
 		},
 		Timeout: 60 * time.Second,
 	}
-	e := &dockerEnv{cfg: cfg, wt: wt, log: log, httpClient: hc}
+	networkMode := cfg.NetworkMode
+	if networkMode == "" {
+		networkMode = "none" // pure sandbox: no egress
+	}
+	e := &dockerEnv{cfg: cfg, wt: wt, log: log, networkMode: networkMode, httpClient: hc}
 	if err := e.createAndStart(ctx); err != nil {
 		return nil, err
 	}
@@ -58,8 +63,14 @@ func (e *dockerEnv) createAndStart(ctx context.Context) error {
 		"Cmd":        []string{"sleep", "infinity"},
 		"WorkingDir": "/workspace",
 		"HostConfig": map[string]any{
-			"Binds":      []string{e.wt.Path + ":/workspace:rw"},
-			"AutoRemove": false,
+			"Binds": []string{e.wt.Path + ":/workspace:rw"},
+			// Pure sandbox: no network egress by default. The container only
+			// execs build/test/edit commands against the bind mount; giving it
+			// network would let an LLM-directed run_command reach the host
+			// gateway (where postgres/kafka listen). Opt out per deployment
+			// when tasks need dependency installs.
+			"NetworkMode": e.networkMode,
+			"AutoRemove":  false,
 		},
 	}
 	var resp struct {

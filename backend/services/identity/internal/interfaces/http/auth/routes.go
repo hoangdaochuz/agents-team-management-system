@@ -186,10 +186,15 @@ func (s *Server) identity(w http.ResponseWriter, r *http.Request) {
 	}
 	// One call composes the full Gateway session: user identity + workspace
 	// union (the former Auth→Orgs fan-out is a local read in this service).
+	// A failed union is non-fatal (valid session, empty union) — but it is
+	// logged: a silently-empty union looks exactly like "user lost access to
+	// everything" from the outside.
 	wss := []workspaces.Workspace{}
 	if s.ws != nil {
 		if list, err := s.ws.InternalWorkspaces(r.Context(), u.ID); err == nil && list != nil {
 			wss = list
+		} else if err != nil {
+			s.log.Error("identity composition: workspace union failed", "user_id", u.ID, "error", err)
 		}
 	}
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{

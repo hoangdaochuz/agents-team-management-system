@@ -34,6 +34,10 @@ type ProjectRepository interface {
 	List(ctx context.Context, ws []identity.ID) ([]Project, error)
 	Get(ctx context.Context, id identity.ID, ws []identity.ID) (Project, error)
 	Create(ctx context.Context, workspaceID identity.ID, in CreateInput) (Project, error)
+	// Ensure inserts the project unless one with the same name already exists
+	// in the workspace, returning the existing row in that case. This is the
+	// idempotent form the provisioning binding needs (redelivery-safe).
+	Ensure(ctx context.Context, workspaceID identity.ID, in CreateInput) (Project, error)
 	Update(ctx context.Context, id identity.ID, ws []identity.ID, in UpdateInput) (Project, error)
 	Delete(ctx context.Context, id identity.ID, ws []identity.ID) error
 }

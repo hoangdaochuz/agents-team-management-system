@@ -13,21 +13,31 @@ import (
 
 	"github.com/aaks/server/internal/contracts/identity"
 	"github.com/aaks/server/internal/contracts/resources"
+	"github.com/aaks/server/internal/platform/internaltoken"
 	"github.com/aaks/server/services/executor/internal/application"
 )
+
+// setInternal authenticates a service-to-service request with the shared
+// internal token (no-op when unconfigured — the target's guard is off too).
+func setInternal(req *http.Request, token string) {
+	if token != "" {
+		req.Header.Set(internaltoken.Header, token)
+	}
+}
 
 // KeyClient fetches provider keys from the Agent service (shared token; the
 // plaintext key never leaves the process).
 type KeyClient struct {
-	url   string
-	token string
-	hc    *http.Client
+	url           string
+	token         string
+	internalToken string
+	hc            *http.Client
 }
 
 // NewKeyClient builds the Agent-service key client. An empty url makes it a
 // no-op returning application.ErrNotConfigured.
-func NewKeyClient(url, token string) *KeyClient {
-	return &KeyClient{url: strings.TrimSuffix(url, "/"), token: token, hc: &http.Client{Timeout: 5 * time.Second}}
+func NewKeyClient(url, token, internalToken string) *KeyClient {
+	return &KeyClient{url: strings.TrimSuffix(url, "/"), token: token, internalToken: internalToken, hc: &http.Client{Timeout: 5 * time.Second}}
 }
 
 // FetchKey pulls a provider key from the Agent service.
@@ -40,6 +50,7 @@ func (c *KeyClient) FetchKey(ctx context.Context, provider string) (string, erro
 		return "", err
 	}
 	req.Header.Set("X-Agent-Token", c.token)
+	setInternal(req, c.internalToken)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return "", err
@@ -59,13 +70,14 @@ func (c *KeyClient) FetchKey(ctx context.Context, provider string) (string, erro
 
 // ResourcesClient fetches the workspace's enabled rules from Resources.
 type ResourcesClient struct {
-	url string
-	hc  *http.Client
+	url           string
+	internalToken string
+	hc            *http.Client
 }
 
 // NewResourcesClient builds the Resources rules client.
-func NewResourcesClient(url string) *ResourcesClient {
-	return &ResourcesClient{url: strings.TrimSuffix(url, "/"), hc: &http.Client{Timeout: 5 * time.Second}}
+func NewResourcesClient(url, internalToken string) *ResourcesClient {
+	return &ResourcesClient{url: strings.TrimSuffix(url, "/"), internalToken: internalToken, hc: &http.Client{Timeout: 5 * time.Second}}
 }
 
 // FetchEnabledRules pulls the workspace's enabled rules (internal endpoint).
@@ -78,6 +90,7 @@ func (c *ResourcesClient) FetchEnabledRules(ctx context.Context, workspaceID ide
 	if err != nil {
 		return nil, err
 	}
+	setInternal(req, c.internalToken)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		return nil, err
@@ -102,9 +115,10 @@ func (c *ResourcesClient) FetchEnabledRules(ctx context.Context, workspaceID ide
 // AgentClient fetches the agent's attached MCP server definitions from the
 // Agent service (hydrated from Catalog).
 type AgentClient struct {
-	url string
-	hc  *http.Client
-	log logAdapter
+	url           string
+	internalToken string
+	hc            *http.Client
+	log           logAdapter
 }
 
 // Log is the minimal logger seam the client needs for its warn logs.
@@ -113,8 +127,8 @@ type logAdapter interface {
 }
 
 // NewAgentClient builds the Agent MCP client.
-func NewAgentClient(url string, log logAdapter) *AgentClient {
-	return &AgentClient{url: strings.TrimSuffix(url, "/"), hc: &http.Client{Timeout: 5 * time.Second}, log: log}
+func NewAgentClient(url, internalToken string, log logAdapter) *AgentClient {
+	return &AgentClient{url: strings.TrimSuffix(url, "/"), internalToken: internalToken, hc: &http.Client{Timeout: 5 * time.Second}, log: log}
 }
 
 // FetchMcpServers pulls the agent's attached MCP server definitions.
@@ -127,6 +141,7 @@ func (c *AgentClient) FetchMcpServers(ctx context.Context, agentID identity.ID) 
 	if err != nil {
 		return nil, err
 	}
+	setInternal(req, c.internalToken)
 	resp, err := c.hc.Do(req)
 	if err != nil {
 		if c.log != nil {

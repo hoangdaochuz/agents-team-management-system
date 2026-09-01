@@ -314,3 +314,46 @@ func TestCancelTaskCancelsInFlightRun(t *testing.T) {
 		t.Fatal("cancelled task must be unregistered")
 	}
 }
+
+// TestDeferredRunReDispatches pins the queued-command fix: a command arriving
+// mid-run is re-dispatched when the in-flight run finishes (not ACKed-lost).
+func TestDeferredRunReDispatches(t *testing.T) {
+	r, _, _ := newTestRunner(&fakeSettings{}, &fakeResources{})
+	started, release := make(chan struct{}), make(chan struct{})
+	r.startRun(context.Background(), "t1", func(context.Context) {
+		started <- struct{}{}
+		<-release
+	})
+	<-started
+	queued := make(chan struct{})
+	r.startRun(context.Background(), "t1", func(context.Context) { close(queued) })
+
+	close(release)
+	select {
+	case <-queued:
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued command must re-dispatch after the in-flight run finishes")
+	}
+}
+
+// TestCancelTaskDropsQueuedRun pins the stop semantics: cancelling a task also
+// drops its queued follow-up so a stopped task never springs back to life.
+func TestCancelTaskDropsQueuedRun(t *testing.T) {
+	r, _, _ := newTestRunner(&fakeSettings{}, &fakeResources{})
+	started, release := make(chan struct{}), make(chan struct{})
+	r.startRun(context.Background(), "t1", func(context.Context) {
+		started <- struct{}{}
+		<-release
+	})
+	<-started
+	queued := make(chan struct{})
+	r.startRun(context.Background(), "t1", func(context.Context) { close(queued) })
+
+	r.CancelTask("t1")
+	close(release)
+	select {
+	case <-queued:
+		t.Fatal("queued command must be dropped when the task is stopped")
+	case <-time.After(100 * time.Millisecond):
+	}
+}

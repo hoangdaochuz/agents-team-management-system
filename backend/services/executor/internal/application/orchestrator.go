@@ -22,6 +22,14 @@ func (r *Runner) StartImplementer(ctx context.Context, d events.RunRequestedData
 	if model == "" {
 		model = "default"
 	}
+	// Per-round dedup: command redelivery (or the saga's republish-on-recovery)
+	// must not create a second implementer run for the same round — LLM runs
+	// are expensive and the saga would see two run.completed facts.
+	if r.hasRun(ctx, d.TaskID, agentexec.RunRoleImplementer, d.RoundNo) {
+		r.log.Info("implementer run already exists for round; skipping duplicate command",
+			"task_id", d.TaskID, "round", d.RoundNo)
+		return
+	}
 	runID, err := r.runs.CreateRun(ctx, d.TaskID, agentexec.RunRoleImplementer, d.AgentID, model, d.RoundNo)
 	if err != nil {
 		r.log.Error("create implementer run failed", "error", err)
@@ -29,7 +37,7 @@ func (r *Runner) StartImplementer(ctx context.Context, d events.RunRequestedData
 	}
 
 	rc := r.runContext(ctx, d.TaskID, runID, d.AgentID, agentexec.RunRoleImplementer, d.RoundNo, model, d.Prompt, d.WorkspaceID)
-	tools, cleanup := r.setupToolsForRun(ctx, d.TaskID, d.Prompt, d.AgentID, d.WorkspaceID)
+	tools, cleanup := r.setupToolsForRun(ctx, d.TaskID, d.AgentID, d.WorkspaceID, d.Prompt)
 	if cleanup != nil {
 		defer cleanup()
 	}
@@ -49,6 +57,14 @@ func (r *Runner) StartReviewer(ctx context.Context, d events.ReviewRequestedData
 		r.log.Warn("review run skipped: implementer run not found", "run", d.RunID, "error", err)
 		return
 	}
+	// Per-round dedup: same rationale as the implementer path — a redelivered
+	// review request (or the saga's recovery republish) skips when the
+	// reviewer run for this round already exists.
+	if r.hasRun(ctx, d.TaskID, agentexec.RunRoleReviewer, d.RoundNo) {
+		r.log.Info("reviewer run already exists for round; skipping duplicate command",
+			"task_id", d.TaskID, "round", d.RoundNo)
+		return
+	}
 	runID, err := r.runs.CreateRun(ctx, d.TaskID, agentexec.RunRoleReviewer, d.AgentID, imp.Model, d.RoundNo)
 	if err != nil {
 		r.log.Error("create reviewer run failed", "error", err)
@@ -56,7 +72,7 @@ func (r *Runner) StartReviewer(ctx context.Context, d events.ReviewRequestedData
 	}
 
 	rc := r.runContext(ctx, d.TaskID, runID, d.AgentID, agentexec.RunRoleReviewer, d.RoundNo, imp.Model, d.Prompt, d.WorkspaceID)
-	tools, cleanup := r.setupToolsForRun(ctx, d.TaskID, d.Prompt, d.AgentID, d.WorkspaceID)
+	tools, cleanup := r.setupToolsForRun(ctx, d.TaskID, d.AgentID, d.WorkspaceID, d.Prompt)
 	if cleanup != nil {
 		defer cleanup()
 	}

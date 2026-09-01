@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/aaks/server/internal/platform/internaltoken"
 	"github.com/aaks/server/internal/platform/svcrun"
 	agentapp "github.com/aaks/server/services/agent/internal/application/agent"
 	settingsapp "github.com/aaks/server/services/agent/internal/application/settings"
@@ -56,10 +57,15 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	}, catalog, log)
 	settingsApp := settingsapp.New(&settingsapp.Repository{Keys: st.Keys}, cipher, log)
 
-	agenthttp.New(agentApp, log).Register(mux)
-	settingshttp.New(settingsApp, log, os.Getenv("AGENT_INTERNAL_TOKEN")).Register(mux)
+	inner := http.NewServeMux()
+	agenthttp.New(agentApp, log).Register(inner)
+	settingshttp.New(settingsApp, log, os.Getenv("AGENT_INTERNAL_TOKEN")).Register(inner)
+	// Gate the /internal/* surface (key decrypt, MCP hydration, counts)
+	// behind the shared service token (unset = open, for dev/tests; compose
+	// sets it). X-Agent-Token remains the key-decrypt-specific gate.
+	mux.Handle("/", internaltoken.Wrap(os.Getenv("INTERNAL_TOKEN"), inner))
 
-	log.Info("agent routes registered", "endpoints", 16, "mtls", os.Getenv("AGENT_MTLS") == "on")
+	log.Info("agent routes registered", "endpoints", 16)
 	return nil
 }
 

@@ -43,9 +43,10 @@ func (a *App) Delete(ctx context.Context, id identity.ID, ws []identity.ID) erro
 }
 
 // BindWorkspace bootstraps a default repo binding (project) for a newly created
-// workspace (workspace.created). Best-effort and idempotent: a duplicate on
-// redelivery or any other failure is logged, not fatal — the user can always
-// create projects manually.
+// workspace (workspace.created). Best-effort and idempotent: the upsert on
+// (workspace_id, name) makes redelivery — including the Identity reconciler's
+// periodic re-POST — a no-op; any other failure is logged, not fatal — the
+// user can always create projects manually.
 func (a *App) BindWorkspace(ctx context.Context, d events.WorkspaceCreatedData) error {
 	if d.RepoSource == "" {
 		return nil // no repo to bind; the user creates projects manually
@@ -54,11 +55,9 @@ func (a *App) BindWorkspace(ctx context.Context, d events.WorkspaceCreatedData) 
 	if name == "" {
 		name = "default"
 	}
-	if _, err := a.repo.Projects.Create(ctx, d.WorkspaceID, domain.CreateInput{
+	if _, err := a.repo.Projects.Ensure(ctx, d.WorkspaceID, domain.CreateInput{
 		Name: name, RepoSource: d.RepoSource, RepoType: identity.RepoType("git"), DefaultBranch: d.DefaultBranch,
 	}); err != nil {
-		// Duplicate project name per workspace is possible on redelivery; the
-		// binding is best-effort so a failure is logged, not fatal.
 		a.log.Warn("workspace repo binding failed", "workspace", d.WorkspaceID, "error", err)
 	}
 	return nil

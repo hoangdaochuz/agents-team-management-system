@@ -35,7 +35,7 @@ type RunContext struct {
 	Prompt   string
 	Model    string
 	Provider identity.Provider
-	APIKey   string   // fetched from Settings over mTLS at run start; in-memory only
+	APIKey   string   // fetched from the Agent service at run start; in-memory only
 	Rules    []string // enabled workspace rules (task 12.3 guardrails)
 	Caps     Caps
 	Log      *slog.Logger

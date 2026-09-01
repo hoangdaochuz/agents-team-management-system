@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/aaks/server/internal/contracts/events"
+	"github.com/aaks/server/internal/platform/internaltoken"
 	"github.com/aaks/server/internal/platform/svcrun"
 	adminapp "github.com/aaks/server/services/identity/internal/application/admin"
 	authapp "github.com/aaks/server/services/identity/internal/application/auth"
@@ -47,14 +48,14 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	// The routes map is filled after the apps are built (they need pub; pub's
 	// handlers need them) — the bus reads it per dispatch.
 	routes := map[string][]bus.HandlerFunc{}
-	pub := bus.NewPublisher("", log, bus.NewInProc(log, routes), nil)
+	pub := bus.NewPublisher(log, bus.NewInProc(log, routes))
 
 	// Application handlers for the three merged planes. Workspace creation
 	// provisions the Workspace service over a direct HTTP call (the former
 	// workspace.created event); the sweeper re-issues that call on an
 	// interval because the direct call is best-effort and the endpoint is
 	// idempotent — the retry leg the Kafka consumer used to provide.
-	provisioner := provision.New(os.Getenv("WORKSPACE_URL"))
+	provisioner := provision.New(os.Getenv("WORKSPACE_URL"), os.Getenv("INTERNAL_TOKEN"))
 	authApp := authapp.New(&authapp.Repository{
 		Users:          st.Users,
 		Sessions:       st.Sessions,
@@ -70,7 +71,7 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		OrgRequests:   st.OrgRequests,
 	}, repository.NewUnitOfWork(st), pub, log, provisioner)
 	if provisioner != nil {
-		go provision.NewSweeper(provisioner, st.Workspaces.List, log).Run(ctx)
+		go provision.NewSweeper(provisioner, st.Workspaces.ListUnprovisioned, st.Workspaces.MarkProvisioned, log).Run(ctx)
 	}
 	adminApp := adminapp.New(&adminapp.Repository{
 		Audit: st.Audit,
@@ -91,9 +92,13 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 		"google": os.Getenv("SSO_GOOGLE_REDIRECT_URL"),
 		"saml":   os.Getenv("SSO_SAML_REDIRECT_URL"),
 	}
-	authhttp.New(authApp, log, ssoCfg, orgsApp).Register(mux)
-	orgshttp.New(orgsApp, log).Register(mux)
-	adminhttp.New(adminApp, log).Register(mux)
+	inner := http.NewServeMux()
+	authhttp.New(authApp, log, ssoCfg, orgsApp).Register(inner)
+	orgshttp.New(orgsApp, log).Register(inner)
+	adminhttp.New(adminApp, log).Register(inner)
+	// Gate the /internal/* surface behind the shared service token (unset =
+	// open, for dev/tests; compose sets it).
+	mux.Handle("/", internaltoken.Wrap(os.Getenv("INTERNAL_TOKEN"), inner))
 
 	log.Info("identity routes registered", "endpoints", 34)
 	return nil

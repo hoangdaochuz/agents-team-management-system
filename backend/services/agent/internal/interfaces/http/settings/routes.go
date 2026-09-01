@@ -1,10 +1,12 @@
 // Package http exposes the Settings use cases as thin HTTP handlers: decode →
 // call application handler → encode. The internal decrypt endpoint is the ONLY
 // path that returns plaintext keys — gated by the shared service token (the
-// Runner holds it; mTLS, when enabled, is enforced by the listener).
+// Executor holds it). The channel is plaintext HTTP on the trusted internal
+// network; there is no mTLS listener.
 package http
 
 import (
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -39,7 +41,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /provider-keys/{provider}", s.updateKey)
 	mux.HandleFunc("DELETE /provider-keys/{provider}", s.deleteKey)
 
-	// Internal surface: the runner fetches plaintext per run over mTLS + token.
+	// Internal surface: the executor fetches plaintext per run over the token channel.
 	mux.HandleFunc("GET /internal/keys/{provider}", s.internalPlaintext)
 }
 
@@ -120,11 +122,11 @@ func (s *Server) deleteKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // internalPlaintext returns the plaintext key. Gate: X-Agent-Token must
-// match AGENT_INTERNAL_TOKEN (the runner holds it; dev compose shares it).
-// When mTLS is enabled (AGENT_MTLS=on) the TLS peer must also present a
-// client cert signed by the dev CA (handled by the listener in cmd).
+// constant-time match AGENT_INTERNAL_TOKEN (the executor holds it; dev
+// compose shares it). The channel is the trusted internal network.
 func (s *Server) internalPlaintext(w http.ResponseWriter, r *http.Request) {
-	if s.token == "" || r.Header.Get("X-Agent-Token") != s.token {
+	got := r.Header.Get("X-Agent-Token")
+	if s.token == "" || subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
 		httputil.Error(w, http.StatusForbidden, "forbidden")
 		return
 	}

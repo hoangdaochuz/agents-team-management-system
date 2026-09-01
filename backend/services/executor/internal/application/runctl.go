@@ -19,11 +19,19 @@ func (s *syncMap) Delete(key any) { s.m.Delete(key) }
 
 func (s *syncMap) Load(key any) (any, bool) { return s.m.Load(key) }
 
-// startRun launches a command run in a goroutine, keyed by task id. A second
-// command for a task already in flight is skipped (log + no-op).
+func (s *syncMap) LoadAndDelete(key any) (any, bool) { return s.m.LoadAndDelete(key) }
+
+// startRun launches a command run in a goroutine, keyed by task id. A command
+// arriving while a run for the task is in flight is queued (not ACKed-and-
+// dropped): it is re-dispatched when the in-flight run finishes, preserving
+// the saga's expectation that every command eventually executes. Only the
+// latest command is kept — the saga is round-based, so a newer command
+// supersedes an older queued one.
 func (r *Runner) startRun(ctx context.Context, taskID string, fn func(context.Context)) {
 	if _, inFlight := r.running.LoadOrStore(taskID, struct{}{}); inFlight {
-		r.log.Info("run skipped: already in flight for task", "task_id", taskID)
+		r.pending.Store(taskID, fn)
+		r.log.Info("run deferred: already in flight for task (will re-dispatch on completion)",
+			"task_id", taskID)
 		return
 	}
 	rctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
@@ -33,13 +41,22 @@ func (r *Runner) startRun(ctx context.Context, taskID string, fn func(context.Co
 			r.cancels.Delete(taskID)
 			r.running.Delete(taskID)
 			cancel()
+			// Re-dispatch the command that arrived while this run was in
+			// flight, if it was not cancelled away in the meantime.
+			if v, ok := r.pending.LoadAndDelete(taskID); ok {
+				if next, ok2 := v.(func(context.Context)); ok2 {
+					r.startRun(context.Background(), taskID, next)
+				}
+			}
 		}()
 		fn(rctx)
 	}()
 }
 
-// CancelTask cancels any in-flight run for the task (stop command).
+// CancelTask cancels any in-flight run for the task (stop command) and drops
+// any queued follow-up command — a stopped task must not spring back to life.
 func (r *Runner) CancelTask(taskID string) {
+	r.pending.Delete(taskID)
 	if v, ok := r.cancels.Load(taskID); ok {
 		if cancel, ok2 := v.(context.CancelFunc); ok2 {
 			cancel()

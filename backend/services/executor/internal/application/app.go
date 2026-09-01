@@ -67,9 +67,11 @@ type Runner struct {
 	prBaseURL string
 
 	// cancels cancels in-flight runs per task (stop command); running guards
-	// against concurrent runs for the same task.
+	// against concurrent runs for the same task; pending holds the latest
+	// command that arrived mid-run, re-dispatched when the run completes.
 	cancels syncMap
 	running syncMap
+	pending syncMap
 }
 
 // New builds the Runner application service with its injected dependencies.

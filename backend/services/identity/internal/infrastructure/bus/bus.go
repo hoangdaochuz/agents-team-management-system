@@ -10,13 +10,9 @@ package bus
 import (
 	"context"
 	"log/slog"
-	"strings"
-
-	"github.com/IBM/sarama"
 
 	"github.com/aaks/server/internal/contracts/events"
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/internal/platform/kafka"
 )
 
 // HandlerFunc reacts to one in-process event. Handlers receive the envelope
@@ -36,56 +32,28 @@ func NewInProc(log *slog.Logger, routes map[string][]HandlerFunc) *InProc {
 }
 
 // Publisher is the EventPublisher adapter shared by the auth, orgs, and admin
-// application packages. Intra-service topics dispatch synchronously via the
-// in-process bus; topics listed in external are published to Kafka.
+// application packages: purely in-process synchronous dispatch. (An earlier
+// revision kept a dormant Kafka side for topics marked external — it was never
+// wired and its envelope shape had drifted from what the consumers decode, so
+// it was removed rather than left to rot. If Identity ever needs to emit to
+// Kafka again, add it deliberately with the shared envelope.)
 type Publisher struct {
-	inproc   *InProc
-	prod     sarama.SyncProducer
-	external map[string]bool
-	log      *slog.Logger
+	inproc *InProc
+	log    *slog.Logger
 }
 
-// NewPublisher builds the adapter. An empty broker list yields a no-op Kafka
-// side (the in-process side always works).
-func NewPublisher(brokers string, log *slog.Logger, inproc *InProc, external map[string]bool) *Publisher {
-	p := &Publisher{inproc: inproc, external: external, log: log}
-	if brokers == "" {
-		return p
-	}
-	prod, err := kafka.NewProducer(kafka.Brokers(strings.Split(brokers, ",")), log)
-	if err != nil {
-		log.Warn("kafka producer unavailable; identity emits no external events", "error", err)
-		return p
-	}
-	p.prod = prod
-	return p
+// NewPublisher builds the in-process-only adapter.
+func NewPublisher(log *slog.Logger, inproc *InProc) *Publisher {
+	return &Publisher{inproc: inproc, log: log}
 }
 
-// Publish emits one event. In-process handlers run synchronously (errors are
-// logged, matching the previous at-least-once/best-effort semantics); external
-// topics go to Kafka.
+// Publish emits one event. Handlers run synchronously; errors are logged,
+// matching the previous at-least-once/best-effort semantics.
 func (p *Publisher) Publish(ctx context.Context, topic string, data any, key identity.ID) {
-	if p.external[topic] {
-		if p.prod == nil {
-			return
-		}
-		msg := events.EventEnvelope{TaskID: key, Data: data}
-		if err := kafka.Publish(ctx, p.prod, topic, msg, p.log); err != nil {
-			p.log.Error("publish event failed", "topic", topic, "error", err)
-		}
-		return
-	}
 	msg := events.EventEnvelope{TaskID: key, Data: data, EventType: topic}
 	for _, h := range p.inproc.handlers[topic] {
 		if err := h(ctx, msg); err != nil {
 			p.log.Error("in-process event handler failed", "topic", topic, "error", err)
 		}
-	}
-}
-
-// Close releases the Kafka producer.
-func (p *Publisher) Close() {
-	if p.prod != nil {
-		_ = p.prod.Close()
 	}
 }

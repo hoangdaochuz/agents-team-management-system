@@ -63,6 +63,10 @@ type Config struct {
 	Socket string
 	// CloneRoot is the managed git clone worktrees are created under.
 	CloneRoot string
+	// NetworkMode is the task container's Docker network mode: "none"
+	// (default — the container is a pure build/test sandbox with no egress)
+	// or "bridge" when tasks legitimately need network access.
+	NetworkMode string
 }
 
 // Manager builds per-task Env instances.

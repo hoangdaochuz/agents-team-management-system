@@ -219,13 +219,13 @@ func buildServer(t *testing.T, identity, workspace, agent, executor *httptest.Se
 	}
 	app := application.New(
 		application.NewACL(
-			acl.NewIdentityClient(identity.URL, SessionCookie, log),
-			acl.NewTaskClient(workspace.URL, log),
+			acl.NewIdentityClient(identity.URL, SessionCookie, "", log),
+			acl.NewTaskClient(workspace.URL, "", log),
 			log,
 		),
-		application.NewStream(acl.NewStepsClient(executor.URL, log), nil, log),
+		application.NewStream(acl.NewStepsClient(executor.URL, "", log), nil, log),
 		application.NewRouteTable(),
-		acl.NewStatsClient(agent.URL, workspace.URL, identity.URL, identity.URL, log),
+		acl.NewStatsClient(agent.URL, workspace.URL, identity.URL, "", log),
 	)
 	return New(app, proxies, bases, "", log)
 }
@@ -323,8 +323,10 @@ func TestOwnerSplit(t *testing.T) {
 		{"sysadmin flags to admin", "/api/sysadmin/flags", "tok", "identity:", 200},
 		{"sysadmin audit to admin", "/api/sysadmin/audit", "tok", "identity:", 200},
 		{"sysadmin maintenance to admin", "/api/sysadmin/maintenance", "tok", "identity:", 200},
-		{"sysadmin kpis composed", "/api/sysadmin/kpis", "tok", "", 200},
-		{"sysadmin health composed", "/api/sysadmin/health", "tok", "", 200},
+		{"sysadmin kpis composed", "/api/sysadmin/kpis", "sadm", "", 200},
+		{"sysadmin health composed", "/api/sysadmin/health", "sadm", "", 200},
+		{"sysadmin kpis requires superadmin", "/api/sysadmin/kpis", "tok", "", 403},
+		{"sysadmin health requires superadmin", "/api/sysadmin/health", "tok", "", 403},
 		{"workspace rules to workspace", "/api/workspaces/w1/rules", "tok", "workspace:", 200},
 		{"workspace knowledge to workspace", "/api/workspaces/w1/knowledge", "tok", "workspace:", 200},
 		{"workspace plugins to workspace", "/api/workspaces/w1/plugins", "tok", "workspace:", 200},
@@ -540,7 +542,7 @@ func TestStreamRequiresSession(t *testing.T) {
 
 func TestKpisComposition(t *testing.T) {
 	s := newTestServer(t)
-	rec := get(t, s, "/api/sysadmin/kpis", "tok")
+	rec := get(t, s, "/api/sysadmin/kpis", "sadm")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}
@@ -557,7 +559,7 @@ func TestKpisComposition(t *testing.T) {
 
 func TestHealthProbes(t *testing.T) {
 	s := newTestServer(t)
-	rec := get(t, s, "/api/sysadmin/health", "tok")
+	rec := get(t, s, "/api/sysadmin/health", "sadm")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200 (body %s)", rec.Code, rec.Body.String())
 	}

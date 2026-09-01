@@ -88,7 +88,8 @@ func (r *Repo) Get(ctx context.Context, id identity.ID, ws []identity.ID) (tasks
 	return p, err
 }
 
-// Create inserts a project in the given workspace and returns it.
+// Create inserts a project in the given workspace and returns it. A duplicate
+// name within the workspace (projects_ws_name_unique) maps to ErrDuplicateName.
 func (r *Repo) Create(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Project, error) {
 	if in.DefaultBranch == "" {
 		in.DefaultBranch = "main"
@@ -98,7 +99,44 @@ func (r *Repo) Create(ctx context.Context, workspaceID identity.ID, in domain.Cr
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING `+projectCols,
 		workspaceID, in.Name, in.RepoSource, in.RepoType, in.DefaultBranch)
-	return scanProject(row)
+	p, err := scanProject(row)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return tasks.Project{}, fmt.Errorf("%w: %s", domain.ErrDuplicateName, in.Name)
+	}
+	return p, err
+}
+
+// Ensure inserts the project unless one with the same name already exists in
+// the workspace, returning the existing row in that case — the idempotent
+// form the provisioning binding relies on (the reconciler re-issues the call).
+func (r *Repo) Ensure(ctx context.Context, workspaceID identity.ID, in domain.CreateInput) (tasks.Project, error) {
+	if in.DefaultBranch == "" {
+		in.DefaultBranch = "main"
+	}
+	row := r.q.QueryRow(ctx, `
+		INSERT INTO projects (workspace_id, name, repo_source, repo_type, default_branch)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (workspace_id, name) DO NOTHING
+		RETURNING `+projectCols,
+		workspaceID, in.Name, in.RepoSource, in.RepoType, in.DefaultBranch)
+	p, err := scanProject(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Conflict hit: the row already exists — return it.
+		return r.GetByName(ctx, workspaceID, in.Name)
+	}
+	return p, err
+}
+
+// GetByName returns the workspace's project by name.
+func (r *Repo) GetByName(ctx context.Context, workspaceID identity.ID, name string) (tasks.Project, error) {
+	row := r.q.QueryRow(ctx, `SELECT `+projectCols+` FROM projects WHERE workspace_id = $1 AND name = $2`,
+		workspaceID, name)
+	p, err := scanProject(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return tasks.Project{}, domain.ErrNotFound
+	}
+	return p, err
 }
 
 // Update partially updates a project, scoped to the workspace set.

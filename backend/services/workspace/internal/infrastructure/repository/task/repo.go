@@ -225,21 +225,30 @@ func (r *Repo) Update(ctx context.Context, id identity.ID, ws []identity.ID, fie
 }
 
 // SetStatus updates a task's status and returns the updated task.
+// SetStatus transitions the status; an already-at-target task matches zero
+// rows (atomic no-op) and the current row is returned for the caller's
+// idempotent-response path.
 func (r *Repo) SetStatus(ctx context.Context, id identity.ID, status tasks.TaskStatus) (tasks.Task, error) {
 	row := r.q.QueryRow(ctx, `
-		UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1
+		UPDATE tasks SET status = $2, updated_at = now() WHERE id = $1 AND status <> $2
 		RETURNING `+taskCols, id, status)
+	t, err := scanTask(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return r.GetUnscoped(ctx, id)
+	}
+	return t, err
+}
+
+// SetStatusAndRound transitions status and round in one statement.
+func (r *Repo) SetStatusAndRound(ctx context.Context, id identity.ID, status tasks.TaskStatus, roundNo int) (tasks.Task, error) {
+	row := r.q.QueryRow(ctx, `
+		UPDATE tasks SET status = $2, round_no = $3, updated_at = now() WHERE id = $1
+		RETURNING `+taskCols, id, status, roundNo)
 	t, err := scanTask(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return tasks.Task{}, domain.ErrNotFound
 	}
 	return t, err
-}
-
-// SetRoundNo advances the review round counter (saga phase 6).
-func (r *Repo) SetRoundNo(ctx context.Context, id identity.ID, roundNo int) error {
-	_, err := r.q.Exec(ctx, `UPDATE tasks SET round_no = $2, updated_at = now() WHERE id = $1`, id, roundNo)
-	return err
 }
 
 // CountOpenByWorkspace counts tasks in open states (doing/review) per workspace

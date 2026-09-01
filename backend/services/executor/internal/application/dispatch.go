@@ -43,6 +43,25 @@ func (r *Runner) Dispatch(ctx context.Context, msg events.EventEnvelope) error {
 }
 
 // ListRuns returns a task's runs, newest first.
+// hasRun reports whether a run of the given role already exists for the
+// task's round — the idempotency leg that makes command redelivery and the
+// saga's recovery republish safe (a duplicate command becomes a no-op instead
+// of a second, expensive LLM run). Bounded: rounds are capped (≤5 review
+// rounds), so the list stays small.
+func (r *Runner) hasRun(ctx context.Context, taskID identity.ID, role agentexec.RunRole, roundNo int) bool {
+	runs, err := r.runs.ListRunsByTask(ctx, taskID)
+	if err != nil {
+		r.log.Warn("run dedup check failed; proceeding", "task_id", taskID, "error", err)
+		return false
+	}
+	for _, run := range runs {
+		if run.Role == role && run.RoundNo == roundNo {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Runner) ListRuns(ctx context.Context, taskID identity.ID) ([]agentexec.Run, error) {
 	runs, err := r.runs.ListRunsByTask(ctx, taskID)
 	if err != nil {

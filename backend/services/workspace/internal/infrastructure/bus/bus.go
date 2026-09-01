@@ -11,6 +11,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/IBM/sarama"
 
@@ -40,41 +41,58 @@ func NewInProc(log *slog.Logger, routes map[string][]HandlerFunc) *InProc {
 // in-process bus; topics listed in external are published to Kafka.
 type Publisher struct {
 	inproc   *InProc
-	prod     sarama.SyncProducer
 	external map[string]bool
 	log      *slog.Logger
+
+	mu   sync.Mutex
+	prod sarama.SyncProducer // attached once Kafka is reachable; nil until then
 }
 
 // NewPublisher builds the adapter. An empty broker list yields a no-op Kafka
-// side (the in-process side always works).
-func NewPublisher(brokers string, log *slog.Logger, inproc *InProc, external map[string]bool) *Publisher {
+// side (the in-process side always works). Otherwise the producer is attached
+// asynchronously with retry: the service may boot before Kafka is ready, and a
+// permanently-nil producer would silently swallow every saga command — facts
+// would stop flowing with nothing but a single startup warning.
+func NewPublisher(ctx context.Context, brokers string, log *slog.Logger, inproc *InProc, external map[string]bool) *Publisher {
 	p := &Publisher{inproc: inproc, external: external, log: log}
 	if brokers == "" {
 		return p
 	}
-	prod, err := kafka.NewProducer(kafka.Brokers(strings.Split(brokers, ",")), log)
-	if err != nil {
-		log.Warn("kafka producer unavailable; workspace emits no external events", "error", err)
-		return p
-	}
-	p.prod = prod
+	go func() {
+		prod, err := kafka.NewProducerUntilReady(ctx, kafka.Brokers(strings.Split(brokers, ",")), log)
+		if err != nil {
+			log.Warn("kafka producer stopped before Kafka was reachable; workspace emits no external events", "error", err)
+			return
+		}
+		p.mu.Lock()
+		p.prod = prod
+		p.mu.Unlock()
+	}()
 	return p
 }
 
 // Enabled reports whether a real producer is behind the adapter (for startup
 // logging).
-func (p *Publisher) Enabled() bool { return p.prod != nil }
+func (p *Publisher) Enabled() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.prod != nil
+}
 
 // Publish emits one event. In-process handlers run synchronously (errors are
 // logged, matching the previous best-effort semantics); external topics go to
-// Kafka.
+// Kafka once its producer is attached.
 func (p *Publisher) Publish(ctx context.Context, topic string, data any, key identity.ID) {
 	if p.external[topic] {
-		if p.prod == nil {
+		p.mu.Lock()
+		prod := p.prod
+		p.mu.Unlock()
+		if prod == nil {
+			p.log.Warn("kafka producer not ready; event dropped", "topic", topic, "task_id", key)
 			return
 		}
 		msg := events.EventEnvelope{TaskID: key, Data: data}
-		if err := kafka.Publish(ctx, p.prod, topic, msg, p.log); err != nil {
+		if err := kafka.Publish(ctx, prod, topic, msg, p.log); err != nil {
 			p.log.Error("publish event failed", "topic", topic, "error", err)
 		}
 		return
@@ -89,6 +107,8 @@ func (p *Publisher) Publish(ctx context.Context, topic string, data any, key ide
 
 // Close releases the Kafka producer.
 func (p *Publisher) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.prod != nil {
 		_ = p.prod.Close()
 	}
