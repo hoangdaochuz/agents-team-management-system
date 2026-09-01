@@ -1,6 +1,7 @@
-// Package events holds the Kafka event catalog: topic names, the
-// EventEnvelope, and every event payload shape. Wire JSON is the system's
-// event contract and must stay byte-for-byte stable.
+// Package events holds the event catalog: the 9 Kafka topics that form the
+// execution-boundary backbone, plus the in-process event types used inside the
+// consolidated services for flows that no longer cross a service boundary.
+// Wire JSON is the system's event contract and must stay byte-for-byte stable.
 package events
 
 import (
@@ -10,68 +11,47 @@ import (
 
 	"github.com/aaks/server/internal/contracts/agentexec"
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/internal/contracts/tasks"
 )
 
-// Event topic catalog — the Kafka topics that form the event-driven backbone.
+// Event topic catalog — only execution-boundary events travel over Kafka.
 //
-// Partitioning: every lifecycle/step topic is partitioned by TaskID so that all
-// events for a given task are delivered to one consumer in publish order.
+// Partitioning: every topic is partitioned by TaskID so that all events for a
+// given task are delivered to one consumer in publish order.
 //
-// Commands (Task svc -> Agent-Runner): the runner is the sole consumer.
-// Facts (Agent-Runner -> consumers): Task svc, Gateway, and any projector consume.
-// Status (Task svc -> any): published on every authoritative status change.
+// Commands (Workspace svc -> Executor): the executor is the sole consumer.
+// Facts (Executor -> consumers): the Workspace saga and the Gateway (SSE) consume.
 const (
-	// ── Commands (Task svc -> Agent-Runner) ───────────────────────────────
+	// ── Commands (Workspace svc -> Executor) ──────────────────────────────
 	TopicTaskRunRequested    = "task.run-requested"
 	TopicTaskReviewRequested = "task.review-requested"
 	TopicTaskStopRequested   = "task.stop-requested"
 	TopicPrOpenRequested     = "task.pr-open-requested"
 
-	// ── Facts (Agent-Runner -> consumers) ─────────────────────────────────
+	// ── Facts (Executor -> consumers) ─────────────────────────────────────
 	TopicStep         = "step" // one topic; messages carry task_id + run_id
 	TopicRunCompleted = "run.completed"
 	TopicFinding      = "finding"
 	TopicVerdict      = "verdict"
 	TopicPrOpened     = "pr.opened"
 
-	// ── Task state (Task svc -> any consumer) ─────────────────────────────
-	TopicTaskStatusChanged = "task.status-changed"
+	// ── In-process event types (never on Kafka) ───────────────────────────
+	// These flows live inside one consolidated service; the strings are only
+	// dispatch keys for the in-process event bus.
 
-	// ── Multi-tenant plane ────────────────────────────────────────────────
-	// Signup flow: Auth emits signup.requested; Orgs + Admin project the
-	// request; the approver (Orgs for join mode, Admin for create mode) emits
-	// signup.approved / signup.declined; Auth activates the user, Orgs creates
-	// the org/workspace/membership for create mode.
+	// Identity service: signup flow (auth ↔ orgs planes) and audit recording.
 	TopicSignupRequested = "signup.requested"
 	TopicSignupApproved  = "signup.approved"
 	TopicSignupDeclined  = "signup.declined"
+	TopicInviteCreated   = "invite.created"
+	TopicAuditRecorded   = "audit.recorded"
 
-	// Invite flow: Orgs emits invite.created so Auth can resolve join-mode
-	// invite codes locally.
-	TopicInviteCreated = "invite.created"
-
-	// Workspace creation: Orgs emits workspace.created so the Project service
-	// establishes the workspace↔repo binding and Resources seeds defaults.
-	TopicWorkspaceCreated = "workspace.created"
-
-	// Catalog → Resources: MCP definition changes project into connection rows.
+	// Workspace service: catalog → resources MCP projections.
 	TopicMcpCreated = "mcp.created"
 	TopicMcpDeleted = "mcp.deleted"
-
-	// Catalog → Agent: skill/MCP definitions are projected so attachments can be
-	// validated against the agent's workspace (no service-to-service sync calls).
-	TopicSkillCreated = "skill.created"
-	TopicSkillDeleted = "skill.deleted"
-
-	// Runner → Agent: run lifecycle facts derive agent runtime status.
-	TopicRunStarted = "run.started"
-
-	// Orgs → Admin: workspace-level admin actions are recorded as audit facts.
-	TopicAuditRecorded = "audit.recorded"
 )
 
-// AllTopics returns every topic the system uses, for auto-creation / validation.
+// AllTopics returns every Kafka topic the system uses, for auto-creation /
+// validation. In-process event types are deliberately absent.
 func AllTopics() []string {
 	return []string{
 		TopicTaskRunRequested,
@@ -83,24 +63,11 @@ func AllTopics() []string {
 		TopicFinding,
 		TopicVerdict,
 		TopicPrOpened,
-		TopicTaskStatusChanged,
-		TopicSignupRequested,
-		TopicSignupApproved,
-		TopicSignupDeclined,
-		TopicInviteCreated,
-		TopicWorkspaceCreated,
-		TopicMcpCreated,
-		TopicMcpDeleted,
-		TopicSkillCreated,
-		TopicSkillDeleted,
-		TopicRunStarted,
-		TopicAuditRecorded,
 	}
 }
 
 // taskPartitionedTopics are the topics keyed by TaskID for per-task ordered
-// delivery. Every other topic (signup, invite, workspace, catalog projections,
-// audit) keys on its own correlation id and must not require a TaskID.
+// delivery.
 var taskPartitionedTopics = map[string]bool{
 	TopicTaskRunRequested:    true,
 	TopicTaskReviewRequested: true,
@@ -111,8 +78,6 @@ var taskPartitionedTopics = map[string]bool{
 	TopicFinding:             true,
 	TopicVerdict:             true,
 	TopicPrOpened:            true,
-	TopicTaskStatusChanged:   true,
-	TopicRunStarted:          true,
 }
 
 // IsTaskPartitioned reports whether a topic is partitioned by TaskID (and thus
@@ -234,15 +199,7 @@ type PrOpenedData struct {
 	URL    string      `json:"url"`
 }
 
-// TaskStatusChangedData is published on every authoritative task status change.
-type TaskStatusChangedData struct {
-	TaskID  identity.ID      `json:"task_id"`
-	From    tasks.TaskStatus `json:"from"`
-	To      tasks.TaskStatus `json:"to"`
-	RoundNo int              `json:"round_no"`
-}
-
-// ── Multi-tenant payloads ──────────────────────────────────────────────────
+// ── In-process payloads (never on Kafka) ───────────────────────────────────
 
 // SignupRequestedData is published by Auth when a signup request is recorded.
 type SignupRequestedData struct {
@@ -288,8 +245,9 @@ type InviteCreatedData struct {
 	WorkspaceName string        `json:"workspace_name"`
 }
 
-// WorkspaceCreatedData is published by Orgs when a workspace is created so the
-// Project service establishes the repo binding and Resources seeds defaults.
+// WorkspaceCreatedData is the body of the Identity→Workspace provisioning
+// call made when a workspace is created, so the Workspace service establishes
+// the repo binding and seeds default rules.
 type WorkspaceCreatedData struct {
 	WorkspaceID   identity.ID `json:"workspace_id"`
 	Name          string      `json:"name"`
@@ -297,7 +255,7 @@ type WorkspaceCreatedData struct {
 	DefaultBranch string      `json:"default_branch,omitempty"`
 }
 
-// McpCreatedData is published by Catalog when an MCP definition is created so
+// McpCreatedData is dispatched in-process when an MCP definition is created so
 // Resources projects it into a connection row.
 type McpCreatedData struct {
 	McpServerID identity.ID       `json:"mcp_server_id"`
@@ -308,34 +266,14 @@ type McpCreatedData struct {
 	Env         map[string]string `json:"env"`
 }
 
-// McpDeletedData is published by Catalog when an MCP definition is deleted.
+// McpDeletedData is dispatched in-process when an MCP definition is deleted.
 type McpDeletedData struct {
 	McpServerID identity.ID `json:"mcp_server_id"`
 	WorkspaceID identity.ID `json:"workspace_id"`
 }
 
-// SkillCreatedData is published by Catalog when a skill is created so the Agent
-// service can validate attachments by workspace.
-type SkillCreatedData struct {
-	SkillID     identity.ID `json:"skill_id"`
-	WorkspaceID identity.ID `json:"workspace_id"`
-}
-
-// SkillDeletedData is published by Catalog when a skill is deleted.
-type SkillDeletedData struct {
-	SkillID identity.ID `json:"skill_id"`
-}
-
-// RunStartedData is published by the Runner when a run begins so the Agent
-// service can derive the agent's runtime status.
-type RunStartedData struct {
-	TaskID  identity.ID `json:"task_id"`
-	RunID   identity.ID `json:"run_id"`
-	AgentID identity.ID `json:"agent_id"`
-}
-
-// AuditRecordedData carries a workspace-level admin action to the Admin service
-// for persistence in the audit log.
+// AuditRecordedData carries a workspace-level admin action to the audit log
+// (in-process inside the Identity service).
 type AuditRecordedData struct {
 	WorkspaceID identity.ID `json:"workspace_id"`
 	ActorName   string      `json:"actor_name"`

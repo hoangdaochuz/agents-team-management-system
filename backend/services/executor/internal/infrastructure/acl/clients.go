@@ -1,0 +1,161 @@
+// Package acl implements the Runner's inter-service HTTP clients behind the
+// application's focused ports (Anti-Corruption Layer, ISP: one client per
+// upstream).
+package acl
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/aaks/server/internal/contracts/identity"
+	"github.com/aaks/server/internal/contracts/resources"
+	"github.com/aaks/server/internal/platform/internaltoken"
+	"github.com/aaks/server/services/executor/internal/application"
+)
+
+// setInternal authenticates a service-to-service request with the shared
+// internal token (no-op when unconfigured — the target's guard is off too).
+func setInternal(req *http.Request, token string) {
+	if token != "" {
+		req.Header.Set(internaltoken.Header, token)
+	}
+}
+
+// KeyClient fetches provider keys from the Agent service (shared token; the
+// plaintext key never leaves the process).
+type KeyClient struct {
+	url           string
+	token         string
+	internalToken string
+	hc            *http.Client
+}
+
+// NewKeyClient builds the Agent-service key client. An empty url makes it a
+// no-op returning application.ErrNotConfigured.
+func NewKeyClient(url, token, internalToken string) *KeyClient {
+	return &KeyClient{url: strings.TrimSuffix(url, "/"), token: token, internalToken: internalToken, hc: &http.Client{Timeout: 5 * time.Second}}
+}
+
+// FetchKey pulls a provider key from the Agent service.
+func (c *KeyClient) FetchKey(ctx context.Context, provider string) (string, error) {
+	if c.url == "" {
+		return "", application.ErrNotConfigured
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url+"/internal/keys/"+provider, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-Agent-Token", c.token)
+	setInternal(req, c.internalToken)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("agent service returned %s", resp.Status)
+	}
+	var out struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.APIKey, nil
+}
+
+// ResourcesClient fetches the workspace's enabled rules from Resources.
+type ResourcesClient struct {
+	url           string
+	internalToken string
+	hc            *http.Client
+}
+
+// NewResourcesClient builds the Resources rules client.
+func NewResourcesClient(url, internalToken string) *ResourcesClient {
+	return &ResourcesClient{url: strings.TrimSuffix(url, "/"), internalToken: internalToken, hc: &http.Client{Timeout: 5 * time.Second}}
+}
+
+// FetchEnabledRules pulls the workspace's enabled rules (internal endpoint).
+func (c *ResourcesClient) FetchEnabledRules(ctx context.Context, workspaceID identity.ID) ([]string, error) {
+	if c.url == "" {
+		return nil, application.ErrNotConfigured
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.url+"/internal/workspaces/"+string(workspaceID)+"/enabled-rules", nil)
+	if err != nil {
+		return nil, err
+	}
+	setInternal(req, c.internalToken)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("resources returned %s", resp.Status)
+	}
+	var out []resources.Rule
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	rules := make([]string, 0, len(out))
+	for _, r := range out {
+		if r.Enabled {
+			rules = append(rules, r.Name)
+		}
+	}
+	return rules, nil
+}
+
+// AgentClient fetches the agent's attached MCP server definitions from the
+// Agent service (hydrated from Catalog).
+type AgentClient struct {
+	url           string
+	internalToken string
+	hc            *http.Client
+	log           logAdapter
+}
+
+// Log is the minimal logger seam the client needs for its warn logs.
+type logAdapter interface {
+	Warn(msg string, args ...any)
+}
+
+// NewAgentClient builds the Agent MCP client.
+func NewAgentClient(url, internalToken string, log logAdapter) *AgentClient {
+	return &AgentClient{url: strings.TrimSuffix(url, "/"), internalToken: internalToken, hc: &http.Client{Timeout: 5 * time.Second}, log: log}
+}
+
+// FetchMcpServers pulls the agent's attached MCP server definitions.
+func (c *AgentClient) FetchMcpServers(ctx context.Context, agentID identity.ID) ([]resources.McpServer, error) {
+	if c.url == "" || agentID == "" {
+		return nil, application.ErrNotConfigured
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.url+"/internal/agents/"+string(agentID)+"/mcp-servers", nil)
+	if err != nil {
+		return nil, err
+	}
+	setInternal(req, c.internalToken)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		if c.log != nil {
+			c.log.Warn("mcp servers fetch failed", "agent", agentID, "error", err)
+		}
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("agent returned %s", resp.Status)
+	}
+	var out []resources.McpServer
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}

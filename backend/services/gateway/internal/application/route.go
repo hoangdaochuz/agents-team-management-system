@@ -14,18 +14,12 @@ import (
 // Upstream identifies a backend service the gateway proxies to.
 type Upstream string
 
-// The ten backend services behind the gateway.
+// The four backend services behind the gateway.
 const (
-	UpstreamProject   Upstream = "project"
-	UpstreamTask      Upstream = "task"
+	UpstreamIdentity  Upstream = "identity"
+	UpstreamWorkspace Upstream = "workspace"
 	UpstreamAgent     Upstream = "agent"
-	UpstreamCatalog   Upstream = "catalog"
-	UpstreamSettings  Upstream = "settings"
-	UpstreamRunner    Upstream = "runner"
-	UpstreamAuth      Upstream = "auth"
-	UpstreamOrgs      Upstream = "orgs"
-	UpstreamResources Upstream = "resources"
-	UpstreamAdmin     Upstream = "admin"
+	UpstreamExecutor  Upstream = "executor"
 )
 
 // RouteKind discriminates how a resolved request is handled.
@@ -59,7 +53,6 @@ type Route struct {
 	Kind            RouteKind
 	Domain          string
 	Upstream        Upstream    // proxy target (Proxy/WorkspaceRemap/TaskRuns/SysadminAdmin)
-	TaskCheck       Upstream    // upstream resolving task ownership (TaskRuns/Stream)
 	RequireIdentity bool        // session required (401 when absent)
 	WorkspaceID     string      // workspace membership check target (WorkspaceRemap)
 	TaskID          identity.ID // task ownership check target (TaskRuns/Stream)
@@ -90,19 +83,19 @@ type RouteTable struct {
 func NewRouteTable() *RouteTable {
 	return &RouteTable{
 		domains: map[string]Upstream{
-			"projects":      UpstreamProject,
-			"tasks":         UpstreamTask,
+			"projects":      UpstreamWorkspace,
+			"tasks":         UpstreamWorkspace,
 			"agents":        UpstreamAgent,
-			"skills":        UpstreamCatalog,
-			"mcp-servers":   UpstreamCatalog,
-			"provider-keys": UpstreamSettings,
-			"runs":          UpstreamRunner,
-			"auth":          UpstreamAuth,
-			"sysadmin":      UpstreamOrgs,
-			"workspaces":    UpstreamOrgs,
-			"orgs":          UpstreamOrgs,
-			"resources":     UpstreamResources,
-			"admin":         UpstreamAdmin,
+			"skills":        UpstreamWorkspace,
+			"mcp-servers":   UpstreamWorkspace,
+			"provider-keys": UpstreamAgent,
+			"runs":          UpstreamExecutor,
+			"auth":          UpstreamIdentity,
+			"sysadmin":      UpstreamIdentity,
+			"workspaces":    UpstreamIdentity,
+			"orgs":          UpstreamIdentity,
+			"resources":     UpstreamWorkspace,
+			"admin":         UpstreamIdentity,
 		},
 		tenant: map[string]bool{
 			"workspaces": true, "sysadmin": true, "tasks": true, "agents": true,
@@ -125,7 +118,7 @@ func (t *RouteTable) Resolve(segs []string, method string) (Route, error) {
 	// Realtime: /tasks/{id}/stream — replay then tail (SSE).
 	if domain == "tasks" && len(segs) >= 3 && segs[2] == "stream" {
 		return Route{
-			Kind: RouteStream, Domain: domain, TaskCheck: UpstreamTask,
+			Kind: RouteStream, Domain: domain,
 			TaskID: identity.ID(segs[1]), RequireIdentity: true,
 		}, nil
 	}
@@ -138,35 +131,27 @@ func (t *RouteTable) Resolve(segs []string, method string) (Route, error) {
 	// Workspace sub-routes owned by other services.
 	if domain == "workspaces" && len(segs) >= 3 {
 		switch segs[2] {
-		case "skills":
+		case "skills", "knowledge", "plugins", "rules", "mcp":
+			// Workspace-owned sub-routes (skills moved with the catalog merge).
 			return Route{
-				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamCatalog,
-				WorkspaceID: segs[1], RequireIdentity: true,
-			}, nil
-		case "knowledge", "plugins", "rules", "mcp":
-			return Route{
-				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamResources,
-				WorkspaceID: segs[1], RequireIdentity: true,
-			}, nil
-		case "audit":
-			return Route{
-				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamAdmin,
+				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamWorkspace,
 				WorkspaceID: segs[1], RequireIdentity: true,
 			}, nil
 		default:
-			// Workspace sub-routes owned by orgs (members, invites, requests).
+			// Every other /workspaces/{wid}/... sub-route (audit, members,
+			// invites, requests, ...) is owned by identity.
 			return Route{
-				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamOrgs,
+				Kind: RouteWorkspaceRemap, Domain: domain, Upstream: UpstreamIdentity,
 				WorkspaceID: segs[1], RequireIdentity: true,
 			}, nil
 		}
 	}
 
-	// Task sub-routes owned by the runner: /tasks/{id}/runs|artifacts.
+	// Task sub-routes owned by the executor: /tasks/{id}/runs|artifacts.
 	if domain == "tasks" && len(segs) >= 3 && (segs[2] == "runs" || segs[2] == "artifacts") {
 		return Route{
-			Kind: RouteTaskRuns, Domain: domain, Upstream: UpstreamRunner,
-			TaskCheck: UpstreamTask, TaskID: identity.ID(segs[1]), RequireIdentity: true,
+			Kind: RouteTaskRuns, Domain: domain, Upstream: UpstreamExecutor,
+			TaskID: identity.ID(segs[1]), RequireIdentity: true,
 		}, nil
 	}
 
@@ -190,7 +175,7 @@ func (t *RouteTable) Resolve(segs []string, method string) (Route, error) {
 		case "flags", "audit", "maintenance":
 			// Admin-owned sysadmin surface (flags/audit/maintenance).
 			return Route{
-				Kind: RouteSysadminAdmin, Domain: domain, Upstream: UpstreamAdmin,
+				Kind: RouteSysadminAdmin, Domain: domain, Upstream: UpstreamIdentity,
 				RequireIdentity: true,
 			}, nil
 		}

@@ -97,9 +97,10 @@ func Publish(ctx context.Context, p sarama.SyncProducer, topic string, msg event
 	if msg.TaskID == "" && events.IsTaskPartitioned(topic) {
 		// Task-partitioned topics preserve per-task ordering; an empty key would
 		// silently collapse every such event onto a single partition, degrading
-		// the invariant — fail fast instead. Non-task topics (signup, invite,
-		// workspace, catalog projections, audit) key on their own correlation id
-		// and are unaffected.
+		// the invariant — fail fast instead. Post-consolidation every Kafka
+		// topic is task-partitioned; the former non-task topics (signup,
+		// invite, audit, catalog projections) now dispatch in-process inside
+		// the consolidated services and never reach this publisher.
 		return fmt.Errorf("kafka: publish to %s: TaskID is required for task-partitioned topics", topic)
 	}
 	buf, err := json.Marshal(msg)
@@ -144,6 +145,52 @@ func NewConsumerGroup(brokers Brokers, groupID string, log *slog.Logger) (*Consu
 	return NewConsumerGroupFrom(brokers, groupID, false, log)
 }
 
+// NewConsumerGroupUntilReady retries consumer-group construction with capped
+// backoff until it succeeds or ctx is done. Services routinely race Kafka's
+// readiness at boot (docker compose healthchecks); a one-shot miss would
+// silence the consumer for the whole process lifetime, so keep trying.
+func NewConsumerGroupUntilReady(ctx context.Context, brokers Brokers, groupID string, log *slog.Logger) (*ConsumerGroup, error) {
+	backoff := time.Second
+	for {
+		cg, err := NewConsumerGroup(brokers, groupID, log)
+		if err == nil {
+			return cg, nil
+		}
+		log.Warn("kafka: consumer group unavailable; retrying",
+			"group", groupID, "err", err, "backoff", backoff)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 15*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
+// NewProducerUntilReady retries producer construction with capped backoff
+// until it succeeds or ctx is done (same boot-race rationale as
+// NewConsumerGroupUntilReady).
+func NewProducerUntilReady(ctx context.Context, brokers Brokers, log *slog.Logger) (sarama.SyncProducer, error) {
+	backoff := time.Second
+	for {
+		p, err := NewProducer(brokers, log)
+		if err == nil {
+			return p, nil
+		}
+		log.Warn("kafka: producer unavailable; retrying", "err", err, "backoff", backoff)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+		}
+		if backoff < 15*time.Second {
+			backoff *= 2
+		}
+	}
+}
+
 // NewConsumerGroupFrom builds a consumer group that reads from the oldest
 // offset, or the newest when fromNewest is set.
 func NewConsumerGroupFrom(brokers Brokers, groupID string, fromNewest bool, log *slog.Logger) (*ConsumerGroup, error) {
@@ -158,7 +205,7 @@ func NewConsumerGroupFrom(brokers Brokers, groupID string, fromNewest bool, log 
 	}
 	// Best-effort DLQ producer: poison messages are recoverable when it is up,
 	// log-and-marked when it is not.
-	dlq, dlqErr := sarama.NewSyncProducer(brokers, dlqConfig())
+	dlq, dlqErr := sarama.NewSyncProducer(brokers, NewConfig())
 	if dlqErr != nil {
 		log.Warn("kafka: DLQ producer unavailable; poison messages will be logged-and-marked only",
 			"group", groupID, "err", dlqErr)
@@ -166,13 +213,6 @@ func NewConsumerGroupFrom(brokers Brokers, groupID string, fromNewest bool, log 
 	}
 	log.Info("kafka consumer group ready", "group", groupID, "brokers", brokers, "from_newest", fromNewest, "dlq", dlq != nil)
 	return &ConsumerGroup{groupID: groupID, cg: cg, log: log, fromNewest: fromNewest, dlq: dlq}, nil
-}
-
-// dlqConfig returns a producer config for the DLQ. It reuses the idempotent
-// producer settings but does not require Return.Errors to be observed.
-func dlqConfig() *sarama.Config {
-	c := NewConfig()
-	return c
 }
 
 // DLQTopicSuffix appends to a source topic to form its dead-letter topic.

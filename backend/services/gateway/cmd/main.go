@@ -44,24 +44,29 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 	}
 
 	brokers := os.Getenv("KAFKA_BROKERS")
+	identityURL := ups[application.UpstreamIdentity]
+	internalToken := os.Getenv("INTERNAL_TOKEN")
+	a := application.NewACL(
+		acl.NewIdentityClient(identityURL, interfacehttp.SessionCookie, internalToken, log),
+		acl.NewTaskClient(ups[application.UpstreamWorkspace], internalToken, log),
+		log,
+	)
+	// Evict stale session-cache entries periodically — re-read eviction alone
+	// cannot bound the map against rotating distinct cookies.
+	go a.StartJanitor(ctx)
 	app := application.New(
-		application.NewACL(
-			acl.NewAuthClient(ups[application.UpstreamAuth], interfacehttp.SessionCookie, log),
-			acl.NewOrgsClient(ups[application.UpstreamOrgs], log),
-			acl.NewTaskClient(ups[application.UpstreamTask], log),
-			log,
-		),
+		a,
 		application.NewStream(
-			acl.NewStepsClient(ups[application.UpstreamRunner], log),
+			acl.NewStepsClient(ups[application.UpstreamExecutor], internalToken, log),
 			kafkaTailerFactory(brokers, log),
 			log,
 		),
 		application.NewRouteTable(),
 		acl.NewStatsClient(
 			ups[application.UpstreamAgent],
-			ups[application.UpstreamTask],
-			ups[application.UpstreamOrgs],
-			ups[application.UpstreamAuth],
+			ups[application.UpstreamWorkspace],
+			identityURL,
+			internalToken,
 			log,
 		),
 	)
@@ -74,16 +79,10 @@ func register(ctx context.Context, mux *http.ServeMux, log *slog.Logger) error {
 // http://project:8081), failing fast when any is unset.
 func readUpstreams() (map[application.Upstream]string, error) {
 	ups := map[application.Upstream]string{
-		application.UpstreamProject:   os.Getenv("UPSTREAM_PROJECT"),
-		application.UpstreamTask:      os.Getenv("UPSTREAM_TASK"),
+		application.UpstreamIdentity:  os.Getenv("UPSTREAM_IDENTITY"),
+		application.UpstreamWorkspace: os.Getenv("UPSTREAM_WORKSPACE"),
 		application.UpstreamAgent:     os.Getenv("UPSTREAM_AGENT"),
-		application.UpstreamCatalog:   os.Getenv("UPSTREAM_CATALOG"),
-		application.UpstreamSettings:  os.Getenv("UPSTREAM_SETTINGS"),
-		application.UpstreamRunner:    os.Getenv("UPSTREAM_RUNNER"),
-		application.UpstreamAuth:      os.Getenv("UPSTREAM_AUTH"),
-		application.UpstreamOrgs:      os.Getenv("UPSTREAM_ORGS"),
-		application.UpstreamResources: os.Getenv("UPSTREAM_RESOURCES"),
-		application.UpstreamAdmin:     os.Getenv("UPSTREAM_ADMIN"),
+		application.UpstreamExecutor:  os.Getenv("UPSTREAM_EXECUTOR"),
 	}
 	for name, url := range ups {
 		if url == "" {

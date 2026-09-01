@@ -53,9 +53,6 @@ func TestPublishEmptyTaskIDGating(t *testing.T) {
 	if events.IsTaskPartitioned(events.TopicSignupRequested) {
 		t.Fatalf("%s should NOT be task-partitioned", events.TopicSignupRequested)
 	}
-	if events.IsTaskPartitioned(events.TopicSkillDeleted) {
-		t.Fatalf("%s should NOT be task-partitioned", events.TopicSkillDeleted)
-	}
 
 	// A mock producer lets us assert both branches without a broker: the
 	// empty-key guard for task-partitioned topics fails before any send, and

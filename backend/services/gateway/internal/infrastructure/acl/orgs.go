@@ -2,58 +2,55 @@ package acl
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/internal/contracts/workspaces"
+	"github.com/aaks/server/internal/platform/internaltoken"
+	"github.com/aaks/server/services/gateway/internal/application"
 )
 
-// OrgsClient lists a user's workspace memberships from the Orgs service.
-type OrgsClient struct {
-	url string
-	hc  *http.Client
-	log *slog.Logger
-}
-
-// NewOrgsClient builds the Orgs membership client.
-func NewOrgsClient(url string, log *slog.Logger) *OrgsClient {
-	return &OrgsClient{
-		url: strings.TrimSuffix(url, "/"),
-		hc:  &http.Client{Timeout: 5 * time.Second}, log: log,
-	}
-}
-
-// List implements application.MembershipClient.
-func (c *OrgsClient) List(ctx context.Context, userID string) ([]workspaces.Workspace, error) {
-	var wss []workspaces.Workspace
-	err := doGet(c.hc, c.log, ctx, c.url+"/internal/users/"+userID+"/workspaces", nil, &wss)
-	return wss, err
-}
-
-// TaskClient resolves the workspace that owns a task from the Task service.
+// TaskClient resolves the workspace that owns a task from the Workspace
+// service.
 type TaskClient struct {
-	url string
-	hc  *http.Client
-	log *slog.Logger
+	url           string
+	internalToken string
+	hc            *http.Client
+	log           *slog.Logger
 }
 
-// NewTaskClient builds the Task ownership client.
-func NewTaskClient(url string, log *slog.Logger) *TaskClient {
+// NewTaskClient builds the task ownership client.
+func NewTaskClient(url, internalToken string, log *slog.Logger) *TaskClient {
 	return &TaskClient{
-		url: strings.TrimSuffix(url, "/"),
-		hc:  &http.Client{Timeout: 5 * time.Second}, log: log,
+		url: strings.TrimSuffix(url, "/"), internalToken: internalToken,
+		hc: &http.Client{Timeout: 5 * time.Second}, log: log,
 	}
 }
 
-// Workspace implements application.TaskWorkspaceClient.
+// internalHeaders carries the shared service token on /internal/* calls.
+func internalHeaders(token string) http.Header {
+	if token == "" {
+		return nil
+	}
+	return http.Header{internaltoken.Header: []string{token}}
+}
+
+// Workspace implements application.TaskWorkspaceClient. A definitive 404 maps
+// to application.ErrTaskNotFound; anything else (transport, 5xx) propagates so
+// the caller can distinguish "no such task" from "task service unavailable".
 func (c *TaskClient) Workspace(ctx context.Context, taskID identity.ID) (identity.ID, error) {
 	var res struct {
 		WorkspaceID string `json:"workspace_id"`
 	}
-	if err := doGet(c.hc, c.log, ctx, c.url+"/internal/tasks/"+string(taskID)+"/workspace", nil, &res); err != nil {
+	if err := doGet(c.hc, c.log, ctx, c.url+"/internal/tasks/"+string(taskID)+"/workspace", internalHeaders(c.internalToken), &res); err != nil {
+		var se *StatusError
+		if errors.As(err, &se) && se.Code == http.StatusNotFound {
+			return "", fmt.Errorf("%w: %s", application.ErrTaskNotFound, se.Error())
+		}
 		return "", err
 	}
 	if res.WorkspaceID == "" {

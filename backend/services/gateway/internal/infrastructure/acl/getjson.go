@@ -11,12 +11,27 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 )
 
+// StatusError marks a non-200 response from an internal endpoint. Callers use
+// the code to distinguish definitive answers (404: the thing does not exist;
+// 401/403: the token was rejected) from transient upstream trouble (5xx,
+// timeouts), which must not be cached or reported as a client error.
+type StatusError struct {
+	Code int
+	Body string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("internal call returned %d %s", e.Code, e.Body)
+}
+
 // doGet performs a GET against url and decodes the JSON response into out.
-// headers are added verbatim (the Auth client carries the session cookie).
-// Non-200 responses and transport failures return an error (the caller
-// degrades: 401 for identity, empty results for composition reads).
+// headers are added verbatim (the Auth client carries the session cookie and
+// every client carries the shared internal token).
+// Non-200 responses return a *StatusError; transport failures return the
+// transport error (the caller degrades per error kind).
 func doGet(hc *http.Client, log *slog.Logger, ctx context.Context, url string, headers http.Header, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -34,7 +49,8 @@ func doGet(hc *http.Client, log *slog.Logger, ctx context.Context, url string, h
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("internal call %s returned %s", url, resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return &StatusError{Code: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 	return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(out)
 }

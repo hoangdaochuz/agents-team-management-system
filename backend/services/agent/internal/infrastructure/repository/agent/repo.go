@@ -16,7 +16,7 @@ import (
 
 	"github.com/aaks/server/internal/contracts/agentexec"
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/services/agent/internal/domain"
+	"github.com/aaks/server/services/agent/internal/domain/agent"
 )
 
 // querier is satisfied by both *pgxpool.Pool and pgx.Tx, letting one adapter
