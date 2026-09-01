@@ -114,32 +114,22 @@ func registersRoutes(src string) bool {
 	return strings.Contains(src, "HandleFunc(") || strings.Contains(src, "mux.Handle(")
 }
 
-// kafkaPayloads enumerates every event payload type by zero value; the
+// kafkaPayloads enumerates every Kafka event payload type by zero value; the
 // marshaled shape (field names + omitempty behavior) is the contract.
+// In-process event payloads (signup, invite, audit, MCP projections) are
+// deliberately absent — they no longer ride the bus.
 func kafkaPayloads() map[string]any {
 	return map[string]any{
-		"EventEnvelope":         events.EventEnvelope{},
-		"RunRequestedData":      events.RunRequestedData{},
-		"ReviewRequestedData":   events.ReviewRequestedData{},
-		"StopRequestedData":     events.StopRequestedData{},
-		"PrOpenRequestedData":   events.PrOpenRequestedData{},
-		"StepData":              events.StepData{},
-		"RunCompletedData":      events.RunCompletedData{},
-		"FindingData":           events.FindingData{},
-		"VerdictData":           events.VerdictData{},
-		"PrOpenedData":          events.PrOpenedData{},
-		"TaskStatusChangedData": events.TaskStatusChangedData{},
-		"SignupRequestedData":   events.SignupRequestedData{},
-		"SignupApprovedData":    events.SignupApprovedData{},
-		"SignupDeclinedData":    events.SignupDeclinedData{},
-		"InviteCreatedData":     events.InviteCreatedData{},
-		"WorkspaceCreatedData":  events.WorkspaceCreatedData{},
-		"McpCreatedData":        events.McpCreatedData{},
-		"McpDeletedData":        events.McpDeletedData{},
-		"SkillCreatedData":      events.SkillCreatedData{},
-		"SkillDeletedData":      events.SkillDeletedData{},
-		"RunStartedData":        events.RunStartedData{},
-		"AuditRecordedData":     events.AuditRecordedData{},
+		"EventEnvelope":       events.EventEnvelope{},
+		"RunRequestedData":    events.RunRequestedData{},
+		"ReviewRequestedData": events.ReviewRequestedData{},
+		"StopRequestedData":   events.StopRequestedData{},
+		"PrOpenRequestedData": events.PrOpenRequestedData{},
+		"StepData":            events.StepData{},
+		"RunCompletedData":    events.RunCompletedData{},
+		"FindingData":         events.FindingData{},
+		"VerdictData":         events.VerdictData{},
+		"PrOpenedData":        events.PrOpenedData{},
 	}
 }
 

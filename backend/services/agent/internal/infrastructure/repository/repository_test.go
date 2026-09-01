@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/aaks/server/internal/contracts/identity"
-	"github.com/aaks/server/services/agent/internal/domain"
+	"github.com/aaks/server/services/agent/internal/domain/agent"
 )
 
 func testLogger(t *testing.T) *slog.Logger {

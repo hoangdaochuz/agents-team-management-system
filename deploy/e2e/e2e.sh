@@ -9,7 +9,7 @@
 #        PR created on demand (never auto-merged)
 #   14.2 401/403 enforcement, cross-workspace isolation on unscoped lists
 #
-# The Runner runs with RUNNER_DRIVER=simulated, whose reviewer returns
+# The Executor runs with EXECUTOR_DRIVER=simulated, whose reviewer returns
 # REQUEST_CHANGES on round 1 and APPROVE on round >= 2 — so a task lands on
 # `done` after exactly two run cycles. Deterministic by design.
 set -u
@@ -76,9 +76,9 @@ check "gateway /healthz up" "200" "$code"
 
 # Idempotency: wipe the test users from previous runs so re-runs work.
 EM="'alice@aaks.dev','bob@aaks.dev','carol@aaks.dev'"
-UIDs=$($DCOMPOSE exec -T postgres psql -U aaks -d auth_db -tAc "SELECT string_agg(id::text, ',') FROM users WHERE email IN ($EM)")
+UIDs=$($DCOMPOSE exec -T postgres psql -U aaks -d identity_db -tAc "SELECT string_agg(id::text, ',') FROM users WHERE email IN ($EM)")
 if [ -n "$UIDs" ]; then
-  $DCOMPOSE exec -T postgres psql -U aaks -d orgs_db -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL || true
+  $DCOMPOSE exec -T postgres psql -U aaks -d identity_db -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL || true
 DELETE FROM join_requests WHERE email IN ($EM);
 DELETE FROM org_requests WHERE email IN ($EM);
 DELETE FROM invites WHERE email IN ($EM);
@@ -88,7 +88,7 @@ DELETE FROM memberships WHERE user_email IN ($EM) OR user_id IN ($UIDs);
 DELETE FROM organizations WHERE owner_id IN ($UIDs);
 SQL
 fi
-$DCOMPOSE exec -T postgres psql -U aaks -d auth_db -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL || true
+$DCOMPOSE exec -T postgres psql -U aaks -d identity_db -v ON_ERROR_STOP=1 >/dev/null 2>&1 <<SQL || true
 DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email IN ($EM));
 DELETE FROM signup_requests WHERE email IN ($EM);
 DELETE FROM invite_codes WHERE email IN ($EM);
@@ -207,7 +207,7 @@ CODE=$(http_code "$J1" POST "/workspaces/$WS1/invites" '{"emails":["carol@aaks.d
 check "alice invites carol" "201" "$CODE"
 # The invite code is delivered by email in production; read it from the DB.
 INVITE=$($DCOMPOSE exec -T postgres \
-  psql -U aaks -d orgs_db -tAc "SELECT invite_code FROM invites WHERE email='carol@aaks.dev' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
+  psql -U aaks -d identity_db -tAc "SELECT invite_code FROM invites WHERE email='carol@aaks.dev' ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
 check "invite code persisted" "1" "$([ -n "$INVITE" ] && echo 1 || echo 0)"
 JC="$TMP/carol.jar"
 code=$(http_code "$JC" POST /auth/signup \

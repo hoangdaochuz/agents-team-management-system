@@ -1,11 +1,13 @@
-// ACL logic: the session cookie → identity (Auth) → workspace union (Orgs)
-// chain, cached for 60s, plus the scoping-header injection and the workspace /
-// task ownership checks that gate cross-service routes.
+// ACL logic: the session cookie → full identity (user + workspace union,
+// resolved in a single Identity-service call), cached for 60s, plus the
+// scoping-header injection and the workspace / task ownership checks that
+// gate cross-service routes.
 package application
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -16,22 +18,10 @@ import (
 	"github.com/aaks/server/internal/platform/tenancy"
 )
 
-// Session is the identity the Auth service resolves for a session token.
-type Session struct {
-	UserID     string
-	Name       string
-	Email      string
-	Superadmin bool
-}
-
-// SessionClient resolves a session token to a user identity (Auth service).
-type SessionClient interface {
-	Resolve(ctx context.Context, token string) (Session, error)
-}
-
-// MembershipClient lists a user's workspace memberships (Orgs service).
-type MembershipClient interface {
-	List(ctx context.Context, userID string) ([]workspaces.Workspace, error)
+// IdentityClient resolves a session token to the full identity view — user
+// plus workspace union — in a single call to the Identity service.
+type IdentityClient interface {
+	Resolve(ctx context.Context, token string) (Identity, error)
 }
 
 // TaskWorkspaceClient resolves the workspace that owns a task (Task service).
@@ -41,6 +31,17 @@ type TaskWorkspaceClient interface {
 
 // ErrTaskNotFound signals that the task service could not resolve the task.
 var ErrTaskNotFound = errors.New("task not found")
+
+// ErrSessionRejected marks a definitive rejection: the Identity service saw
+// the token and answered "no session". Only these are negative-cached — a
+// transport failure or a 5xx during an Identity deploy is transient and must
+// not pin 401s for the whole TTL.
+var ErrSessionRejected = errors.New("session rejected")
+
+// ErrUpstream marks an upstream failure that is not a definitive answer (the
+// task workspace lookup timed out or 5xx'd). The HTTP layer reports these as
+// 502 rather than masquerading as 404.
+var ErrUpstream = errors.New("upstream unavailable")
 
 // Identity is the Gateway's resolved session view: the Auth user plus the
 // Orgs workspace union.
@@ -54,29 +55,33 @@ type Identity struct {
 }
 
 // ACL resolves sessions into identities and injects the tenancy scoping
-// headers. Identity + workspace union are cached per token for 60s; failed
-// resolutions are cached too so a bad token cannot hammer Auth/Orgs.
+// headers. The identity (user + workspace union) is cached per token for 60s;
+// failed resolutions are cached too so a bad token cannot hammer Identity.
 type ACL struct {
-	sessions    SessionClient
-	memberships MembershipClient
-	tasks       TaskWorkspaceClient
-	log         *slog.Logger
-	ttl         time.Duration
-	now         func() time.Time
-	cache       sync.Map // token -> Identity
+	identities IdentityClient
+	tasks      TaskWorkspaceClient
+	log        *slog.Logger
+	ttl        time.Duration
+	now        func() time.Time
+	cache      sync.Map // token -> Identity
 }
 
 // NewACL builds the ACL service with the injected inter-service clients.
-func NewACL(sessions SessionClient, memberships MembershipClient, tasks TaskWorkspaceClient, log *slog.Logger) *ACL {
+func NewACL(identities IdentityClient, tasks TaskWorkspaceClient, log *slog.Logger) *ACL {
 	return &ACL{
-		sessions: sessions, memberships: memberships, tasks: tasks,
+		identities: identities, tasks: tasks,
 		log: log, ttl: 60 * time.Second, now: time.Now,
 	}
 }
 
-// Resolve returns the cached identity for token, or fetches it from Auth +
-// Orgs and caches it for the TTL. The second result reports whether the token
-// resolved to a real user (a cached failed resolution returns false).
+// Resolve returns the cached identity for token, or fetches it from the
+// Identity service (one call: user + workspace union) and caches it for the
+// TTL. The second result reports whether the token resolved to a real user.
+// A definitive rejection (ErrSessionRejected) is negative-cached so a bad
+// token cannot hammer Identity; a transient failure (transport error, 5xx
+// during an Identity deploy) returns false WITHOUT caching, so users recover
+// on their next request once Identity is healthy instead of waiting out the
+// TTL with 401s.
 func (a *ACL) Resolve(ctx context.Context, token string) (Identity, bool) {
 	if v, ok := a.cache.Load(token); ok {
 		id := v.(Identity)
@@ -87,20 +92,40 @@ func (a *ACL) Resolve(ctx context.Context, token string) (Identity, bool) {
 		// (each distinct token is only ever held for one TTL window).
 		a.cache.Delete(token)
 	}
-	id := Identity{resolvedAt: a.now()}
-	u, err := a.sessions.Resolve(ctx, token)
+	id, err := a.identities.Resolve(ctx, token)
 	if err != nil {
-		a.cache.Store(token, Identity{resolvedAt: a.now()})
+		if errors.Is(err, ErrSessionRejected) {
+			a.cache.Store(token, Identity{resolvedAt: a.now()})
+		} else {
+			a.log.Warn("session resolution failed (not cached; transient)", "error", err)
+		}
 		return Identity{}, false
 	}
-	id.UserID, id.Name, id.Email, id.Superadmin = u.UserID, u.Name, u.Email, u.Superadmin
-	// Membership failure is non-fatal: the identity stays valid with an empty
-	// workspace union (the pre-DDD gateway behaved the same way).
-	if wss, err := a.memberships.List(ctx, u.UserID); err == nil {
-		id.Workspaces = wss
-	}
+	id.resolvedAt = a.now()
 	a.cache.Store(token, id)
 	return id, true
+}
+
+// StartJanitor evicts stale cache entries periodically until ctx is done.
+// Re-read eviction alone cannot bound the map against a client that rotates
+// distinct cookie values (those entries are never re-read); the janitor is
+// the backstop. Wire it to the service lifecycle ctx in the composition root.
+func (a *ACL) StartJanitor(ctx context.Context) {
+	t := time.NewTicker(a.ttl)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			a.cache.Range(func(key, val any) bool {
+				if id, ok := val.(Identity); !ok || a.now().Sub(id.resolvedAt) >= a.ttl {
+					a.cache.Delete(key)
+				}
+				return true
+			})
+		}
+	}
 }
 
 // Headers returns the identity/scoping header values for id. The HTTP adapter
@@ -167,12 +192,20 @@ func (a *ACL) IsWorkspaceMember(workspaceIDs []string, wid string) bool {
 }
 
 // TaskAccessible reports whether taskID belongs to a workspace in the
-// caller's union. ErrTaskNotFound is returned when the task service cannot
-// resolve the task (404); a false result with nil error means the task exists
-// but is outside the caller's workspaces (403).
+// caller's union. ErrTaskNotFound is returned when the task service gave a
+// definitive "no such task" answer; an upstream failure (timeout, 5xx) wraps
+// ErrUpstream so the HTTP layer can answer 502 instead of a misleading 404;
+// a false result with nil error means the task exists but is outside the
+// caller's workspaces (403).
 func (a *ACL) TaskAccessible(ctx context.Context, workspaceIDs []string, taskID identity.ID) (bool, error) {
 	ws, err := a.tasks.Workspace(ctx, taskID)
-	if err != nil || ws == "" {
+	if err != nil {
+		if errors.Is(err, ErrTaskNotFound) {
+			return false, ErrTaskNotFound
+		}
+		return false, fmt.Errorf("%w: task workspace lookup: %w", ErrUpstream, err)
+	}
+	if ws == "" {
 		return false, ErrTaskNotFound
 	}
 	for _, id := range workspaceIDs {
