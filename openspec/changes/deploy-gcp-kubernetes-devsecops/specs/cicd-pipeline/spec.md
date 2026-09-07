@@ -35,7 +35,8 @@ jobs SHALL only run after these pass on the default branch.
 
 ### Requirement: Build once, promote the immutable artifact
 For every commit to the default branch, the pipeline SHALL build each container image exactly once
-— the 11 service images via the shared service Dockerfile, the SPA image, and the sandbox base
+— the 5 service images (4 via the shared service Dockerfile, the executor via the git-carrying
+variant), the SPA image, and the sandbox base
 image — tagged with the Git commit SHA, and publish them to Artifact Registry authenticated via
 GitHub OIDC (no static GCP keys). Environments SHALL receive the same digest; promotion changes
 the manifest reference, never rebuilds.

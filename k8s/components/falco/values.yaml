@@ -1,0 +1,41 @@
+# Falco Helm values (chart falco 9.1.0, consumed by
+# k8s/components/argocd/apps/platform-falco.yaml via valueFiles).
+#
+# Tuning (design D7): the DinD sidecar + sandbox containers legitimately spawn
+# processes, pull images, and mount volumes all day — the stock rules would
+# drown the alert stream. The exceptions below silence the two noisiest
+# default rules for the sandbox plane only (pods named `executor-*`, which is
+# exactly the executor Deployment + the clone-bootstrap jobs... note: the
+# CronJob pods are named `clone-bootstrap-*`; they run plain `git`, which does
+# not trip these two rules, so scoping to `executor-*` is sufficient).
+# Everything else — including the custom shell-spawn alert for the 5 service
+# containers — keeps firing.
+customRules:
+  aaks-rules.yaml: |-
+    - rule: Terminal shell in container
+      append: true
+      exceptions:
+        - name: aaks_sandbox_pods
+          fields: [k8s.pod.name]
+          comps: [startswith]
+          values:
+            - ["executor-"]
+    - rule: Container Drift Detected (open+create)
+      append: true
+      exceptions:
+        - name: aaks_sandbox_pods
+          fields: [k8s.pod.name]
+          comps: [startswith]
+          values:
+            - ["executor-"]
+    - rule: Shell Spawn in Service Container
+      desc: Detect shell spawn in non-sandbox service containers
+      condition: >
+        spawned_process and container and shell_procs
+        and not (k8s.pod.name startswith executor-)
+        and user.name != "root"
+      output: >
+        Shell spawned in service container (user=%user.name command=%proc.cmdline
+        container=%container.name image=%container.image.id)
+      priority: WARNING
+      tags: [shell, container]

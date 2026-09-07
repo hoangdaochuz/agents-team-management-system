@@ -21,15 +21,20 @@ variable "cluster_id" {
   type        = string
 }
 
+variable "subnet_id" {
+  description = "VPC subnet self-link the managed brokers attach to for private access"
+  type        = string
+}
+
 variable "kafka_capacity" {
   description = "Kafka capacity configuration"
   type = object({
-    vcpu_count    = number
-    memory_bytes  = number
+    vcpu_count   = number
+    memory_bytes = number
   })
   default = {
-    vcpu_count   = 3  # Minimum per API
-    memory_bytes = 12595200000  # ~12GB minimum per API
+    vcpu_count   = 3           # Minimum per API
+    memory_bytes = 12595200000 # ~12GB minimum per API
   }
 }
 
@@ -60,7 +65,7 @@ variable "topic_replication_factor" {
 }
 
 variable "topic_names" {
-  description = "List of topic names to create"
+  description = "List of topic names to create (the 9 surviving execution-boundary topics — see backend/internal/contracts/events AllTopics(); intra-service events became in-process calls in consolidate-microservices)"
   type        = list(string)
   default = [
     "task.run-requested",
@@ -71,18 +76,6 @@ variable "topic_names" {
     "run.completed",
     "finding",
     "verdict",
-    "pr.opened",
-    "task.status-changed",
-    "signup.requested",
-    "signup.approved",
-    "signup.declined",
-    "invite.created",
-    "workspace.created",
-    "mcp.created",
-    "mcp.deleted",
-    "skill.created",
-    "skill.deleted",
-    "run.started",
-    "audit.recorded"
+    "pr.opened"
   ]
 }

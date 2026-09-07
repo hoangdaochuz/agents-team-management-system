@@ -1,4 +1,4 @@
-# Cloud SQL Module - PostgreSQL instance with 10 logical databases
+# Cloud SQL Module - PostgreSQL instance with 4 logical databases
 
 locals {
   db_instance_name = "${var.db_name_prefix}-${var.environment}"
@@ -10,15 +10,15 @@ resource "random_password" "db_password" {
   length  = 32
   special = true
   upper   = true
-  numeric  = true
+  numeric = true
 }
 
 # Store the password in Secret Manager immediately
 resource "google_secret_manager_secret" "db_password" {
-  project      = var.project_id
-  secret_id    = "${local.db_instance_name}-db-password"
-  replication_policy {
-    automatic = true
+  project   = var.project_id
+  secret_id = "${local.db_instance_name}-db-password"
+  replication {
+    auto {}
   }
 }
 
@@ -29,11 +29,11 @@ resource "google_secret_manager_secret_version" "db_password" {
 
 # Cloud SQL PostgreSQL instance
 resource "google_sql_database_instance" "instance" {
-  name                 = local.db_instance_name
-  project              = var.project_id
-  region               = var.region
-  database_version     = "POSTGRES_16"
-  deletion_protection  = var.deletion_protection
+  name                = local.db_instance_name
+  project             = var.project_id
+  region              = var.region
+  database_version    = "POSTGRES_16"
+  deletion_protection = var.deletion_protection
 
   settings {
     tier              = var.db_tier
@@ -59,7 +59,7 @@ resource "google_sql_database_instance" "instance" {
 
     # Maintenance window
     maintenance_window {
-      day          = 7  # Sunday
+      day          = 7 # Sunday
       hour         = 3
       update_track = "stable"
     }
@@ -82,11 +82,13 @@ resource "google_sql_database_instance" "instance" {
       value = "all"
     }
 
-    # IP configuration - private only
+    # IP configuration - private only, encrypted only (provider v6 renamed
+    # the old `require_ssl` flag to `ssl_mode`; ENCRYPTED_ONLY matches the
+    # `?sslmode=require` DSNs the services are bootstrapped with).
     ip_configuration {
       ipv4_enabled    = false
       private_network = var.network_id
-      require_ssl     = true
+      ssl_mode        = "ENCRYPTED_ONLY"
 
       # Authorized networks (empty for private-only, can add trusted ranges for dev)
       dynamic "authorized_networks" {
@@ -114,25 +116,25 @@ resource "google_sql_database_instance" "instance" {
   depends_on = [google_secret_manager_secret_version.db_password]
 }
 
-# Create the 10 logical databases using for_each
+# Create the logical databases using for_each
 resource "google_sql_database" "databases" {
   for_each = toset(var.database_names)
 
-  project     = var.project_id
-  instance    = google_sql_database_instance.instance.name
-  name        = each.value
-  charset     = "UTF8"
-  collation   = "en_US.UTF8"
+  project   = var.project_id
+  instance  = google_sql_database_instance.instance.name
+  name      = each.value
+  charset   = "UTF8"
+  collation = "en_US.UTF8"
 
   depends_on = [google_secret_manager_secret_version.db_password]
 }
 
 # Create database user (aaks) with the generated password
 resource "google_sql_user" "aaks_user" {
-  project     = var.project_id
-  instance    = google_sql_database_instance.instance.name
-  name        = "aaks"
-  password    = random_password.db_password.result
+  project  = var.project_id
+  instance = google_sql_database_instance.instance.name
+  name     = "aaks"
+  password = random_password.db_password.result
 
   depends_on = [google_secret_manager_secret_version.db_password]
 }

@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-resources:
-  # Falco installation
-  # Pinned to v0.38.1 - update via bump in comments
-  - github.com/falcosecurity/deployments/charts/falco crds
-  - github.com/falcosecurity/deployments/charts/falco falco
-  - custom-rules.yaml

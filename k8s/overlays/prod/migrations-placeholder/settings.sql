@@ -1,2 +1,0 @@
--- Placeholder for settings migrations
--- CI will replace this with actual migration files from backend/services/settings/internal/infrastructure/repository/migrations

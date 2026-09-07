@@ -1,0 +1,44 @@
+# Trivy Operator (Helm, version-pinned): continuous CVE + exposed-secret
+# scanning of running workloads, surfaced as VulnerabilityReports per
+# namespace. Scoped to the two workload namespaces; scan tuning lives here
+# (keys verified against the chart's values.yaml) so no separate ConfigMap
+# fights the Helm release over the operator's config.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-platform-trivy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: aaks
+  source:
+    repoURL: https://aquasecurity.github.io/helm-charts/
+    chart: trivy-operator
+    targetRevision: 0.36.0
+    helm:
+      valuesObject:
+        # Blank selects ALL namespaces; scope to ours (excludes argocd,
+        # kyverno, operators — their images are covered by pipeline scans).
+        targetNamespaces: aaks,aaks-sandbox
+        operator:
+          # Give up on a stuck scan job after 5m (was chart default 5m —
+          # restated so the tuning is explicit and reviewable).
+          scanJobTimeout: 5m
+          # At most 3 scan jobs at once (small dev clusters).
+          scanJobsConcurrentLimit: 3
+        trivy:
+          # Report everything at LOW and above (HIGH/CRITICAL gate the
+          # pipeline; in-cluster visibility stays broad).
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          serverInsecure: false
+  destination:
+    namespace: trivy-system
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

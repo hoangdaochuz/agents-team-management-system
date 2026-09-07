@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: aaks
+  namespace: argocd
+spec:
+  description: AI Agent Kanban System
+  sourceRepos:
+    - '*'
+  destinations:
+    - namespace: aaks
+      server: https://kubernetes.default.svc
+    - namespace: aaks-sandbox
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'

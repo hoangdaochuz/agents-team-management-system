@@ -1,75 +1,21 @@
-apiVersion: batch/v1
-kind: Job
+# Argo CD PreSync migration jobs — one per database (4 after
+# consolidate-microservices): identity, workspace, agent, executor.
+# Each job runs golang-migrate against the migrations ConfigMap generated
+# from that service's repository migrations at CI time (see overlays'
+# configMapGenerator). Jobs run BEFORE the new service pods roll out.
+apiVersion: v1
+kind: ServiceAccount
 metadata:
-  name: project-migrate
-  labels:
-    app: migrations
-    service: project
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: project
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          # TODO: Pin to specific digest
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${PROJECT_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: PROJECT_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: project-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: project-migrations
+  name: migrations
+automountServiceAccountToken: false
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: task-migrate
+  name: identity-migrate
   labels:
     app: migrations
-    service: task
+    service: identity
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -78,7 +24,7 @@ spec:
     metadata:
       labels:
         app: migrations
-        service: task
+        service: identity
     spec:
       restartPolicy: OnFailure
       serviceAccountName: migrations
@@ -90,20 +36,24 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: migrate/migrate:v4.17.1
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
           command:
             - sh
             - -c
             - |
               /migrate -path /migrations \
-                -database "${TASK_DB_DSN}" \
+                -database "${IDENTITY_DB_DSN}" \
                 -lock-timeout 5m \
                 up
           env:
-            - name: TASK_DB_DSN
+            - name: IDENTITY_DB_DSN
               valueFrom:
                 secretKeyRef:
-                  name: task-dsn
+                  name: identity-dsn
                   key: dsn
           volumeMounts:
             - name: migrations
@@ -118,6 +68,7 @@ spec:
               memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -125,7 +76,76 @@ spec:
       volumes:
         - name: migrations
           configMap:
-            name: task-migrations
+            name: identity-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: workspace-migrate
+  labels:
+    app: migrations
+    service: workspace
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    metadata:
+      labels:
+        app: migrations
+        service: workspace
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: migrations
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
+          command:
+            - sh
+            - -c
+            - |
+              /migrate -path /migrations \
+                -database "${WORKSPACE_DB_DSN}" \
+                -lock-timeout 5m \
+                up
+          env:
+            - name: WORKSPACE_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: workspace-dsn
+                  key: dsn
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: migrations
+          configMap:
+            name: workspace-migrations
 ---
 apiVersion: batch/v1
 kind: Job
@@ -154,7 +174,11 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: migrate/migrate:v4.17.1
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
           command:
             - sh
             - -c
@@ -182,6 +206,7 @@ spec:
               memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -194,10 +219,10 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: catalog-migrate
+  name: executor-migrate
   labels:
     app: migrations
-    service: catalog
+    service: executor
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
@@ -206,7 +231,7 @@ spec:
     metadata:
       labels:
         app: migrations
-        service: catalog
+        service: executor
     spec:
       restartPolicy: OnFailure
       serviceAccountName: migrations
@@ -218,20 +243,25 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: migrate/migrate:v4.17.1
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
           command:
             - sh
             - -c
             - |
               /migrate -path /migrations \
-                -database "${CATALOG_DB_DSN}" \
+                -database "${EXECUTOR_DB_DSN}" \
                 -lock-timeout 5m \
                 up
           env:
-            - name: CATALOG_DB_DSN
+            # DB name stays runner_db (the service was renamed, the DB was not).
+            - name: EXECUTOR_DB_DSN
               valueFrom:
                 secretKeyRef:
-                  name: catalog-dsn
+                  name: executor-dsn
                   key: dsn
           volumeMounts:
             - name: migrations
@@ -246,6 +276,7 @@ spec:
               memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:
@@ -253,388 +284,4 @@ spec:
       volumes:
         - name: migrations
           configMap:
-            name: catalog-migrations
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: settings-migrate
-  labels:
-    app: migrations
-    service: settings
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: settings
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${SETTINGS_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: SETTINGS_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: settings-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: settings-migrations
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: runner-migrate
-  labels:
-    app: migrations
-    service: runner
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: runner
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${RUNNER_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: RUNNER_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: runner-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: runner-migrations
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: auth-migrate
-  labels:
-    app: migrations
-    service: auth
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: auth
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${AUTH_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: AUTH_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: auth-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: auth-migrations
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: orgs-migrate
-  labels:
-    app: migrations
-    service: orgs
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: orgs
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${ORGS_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: ORGS_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: orgs-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: orgs-migrations
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: resources-migrate
-  labels:
-    app: migrations
-    service: resources
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: resources
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${RESOURCES_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: RESOURCES_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: resources-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: resources-migrations
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: admin-migrate
-  labels:
-    app: migrations
-    service: admin
-  annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-spec:
-  template:
-    metadata:
-      labels:
-        app: migrations
-        service: admin
-    spec:
-      restartPolicy: OnFailure
-      serviceAccountName: migrations
-      automountServiceAccountToken: false
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: migrate
-          image: migrate/migrate:v4.17.1
-          command:
-            - sh
-            - -c
-            - |
-              /migrate -path /migrations \
-                -database "${ADMIN_DB_DSN}" \
-                -lock-timeout 5m \
-                up
-          env:
-            - name: ADMIN_DB_DSN
-              valueFrom:
-                secretKeyRef:
-                  name: admin-dsn
-                  key: dsn
-          volumeMounts:
-            - name: migrations
-              mountPath: /migrations
-              readOnly: true
-          resources:
-            requests:
-              cpu: 100m
-              memory: 64Mi
-            limits:
-              cpu: 500m
-              memory: 256Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
-      volumes:
-        - name: migrations
-          configMap:
-            name: admin-migrations
+            name: executor-migrations

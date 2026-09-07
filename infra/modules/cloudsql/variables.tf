@@ -72,19 +72,13 @@ variable "deletion_protection" {
 }
 
 variable "database_names" {
-  description = "List of logical database names to create"
+  description = "List of logical database names to create (4 after consolidate-microservices; mirrors deploy/postgres/01-create-databases.sql)"
   type        = list(string)
   default     = [
-    "project_db",
-    "task_db",
+    "identity_db",
+    "workspace_db",
     "agent_db",
-    "catalog_db",
-    "settings_db",
-    "runner_db",
-    "auth_db",
-    "orgs_db",
-    "resources_db",
-    "admin_db"
+    "runner_db"
   ]
 }
 

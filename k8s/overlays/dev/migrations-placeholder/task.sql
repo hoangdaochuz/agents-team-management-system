@@ -1,2 +1,0 @@
--- Placeholder for task migrations
--- CI will replace this with actual migration files from backend/services/task/internal/infrastructure/repository/migrations

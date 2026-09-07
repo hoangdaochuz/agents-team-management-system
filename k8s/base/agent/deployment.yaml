@@ -70,13 +70,26 @@ spec:
                 secretKeyRef:
                   name: agent-dsn
                   key: dsn
-            - name: SETTINGS_INTERNAL_TOKEN
+            # Agent service = agent + settings (consolidate-microservices):
+            # it encrypts provider keys itself and answers the executor's
+            # internal key/MCP endpoints.
+            - name: INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: settings-internal-token
+                  name: internal-token
                   key: token
-            - name: CATALOG_URL
-              value: http://catalog:8084
+            - name: AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-internal-token
+                  key: token
+            - name: AGENT_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-master-key
+                  key: key
+            - name: WORKSPACE_URL
+              value: http://workspace.aaks.svc.cluster.local:8081
           livenessProbe:
             httpGet:
               path: /healthz
@@ -102,6 +115,7 @@ spec:
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:

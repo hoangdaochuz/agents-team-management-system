@@ -53,7 +53,7 @@ container spawning a shell in unexpected namespaces, writing to binary paths, cr
 access — with alerts routed to a visible destination (at minimum, queryable logs).
 
 #### Scenario: Suspicious exec in a service pod
-- **WHEN** a shell is spawned inside one of the 11 service containers
+- **WHEN** a shell is spawned inside one of the 5 service containers
 - **THEN** Falco raises a runtime alert identifying the pod and container
 
 ### Requirement: Secrets delivered from Secret Manager at runtime

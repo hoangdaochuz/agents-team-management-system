@@ -1,14 +1,18 @@
 ---
-# Allow gateway to upstream services
+# Allow backend services to reach each other on the internal service ports:
+# gateway → its 4 upstreams, executor → agent/workspace (provider keys,
+# task data), identity → workspace and agent → workspace (provisioning).
+# EGRESS half: same-namespace peers. (The executor moved to aaks-sandbox —
+# gateway → executor:8086 is covered by allow-gateway-to-sandbox below.)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-gateway-to-upstreams
+  name: allow-backend-to-backend
   namespace: aaks
 spec:
   podSelector:
     matchLabels:
-      app: gateway
+      tier: backend
   policyTypes:
     - Egress
   egress:
@@ -18,25 +22,100 @@ spec:
               tier: backend
       ports:
         - protocol: TCP
-          port: 8081  # project
+          port: 8080  # gateway
         - protocol: TCP
-          port: 8082  # task
+          port: 8081  # workspace
         - protocol: TCP
           port: 8083  # agent
         - protocol: TCP
-          port: 8084  # catalog
+          port: 8085  # identity
+---
+# INGRESS half of backend-to-backend (default-deny-ingress blocks ALL pod
+# ingress otherwise — without this, no service can reach any other service).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-ingress
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
         - protocol: TCP
-          port: 8085  # settings
+          port: 8080 # gateway
         - protocol: TCP
-          port: 8086  # runner
+          port: 8081 # workspace
         - protocol: TCP
-          port: 8087  # auth
+          port: 8083 # agent
         - protocol: TCP
-          port: 8088  # orgs
+          port: 8085 # identity
+    - from:
+        - podSelector:
+            matchLabels:
+              app: web
+      ports:
         - protocol: TCP
-          port: 8089  # resources
+          port: 8080 # SPA → gateway
+---
+# GCE Ingress (global LB + health checks) → gateway and SPA. GCE LBs talk to
+# pods directly (container-native NEGs); health-check and LB ranges below are
+# Google's published ranges — without this, the public URL is unreachable.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-lb
+  namespace: aaks
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [gateway, web]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 130.211.0.0/22 # GCP LB + health checks
+        - ipBlock:
+            cidr: 35.191.0.0/16 # GCP LB + health checks
+      ports:
         - protocol: TCP
-          port: 8090  # admin
+          port: 8080
+---
+# Gateway → executor across namespaces (task run/review/stop commands).
+# Peers select the aaks-sandbox namespace via the automatic
+# kubernetes.io/metadata.name label.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-sandbox
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aaks-sandbox
+          podSelector:
+            matchLabels:
+              app: executor
+      ports:
+        - protocol: TCP
+          port: 8086
 ---
 # Allow web to gateway
 apiVersion: networking.k8s.io/v1
@@ -99,29 +178,27 @@ spec:
         - protocol: TCP
           port: 9092
 ---
-# Allow ESO to GCP control plane
+# Migration PreSync Jobs → Cloud SQL. The jobs are labeled app:migrations
+# (NOT tier:backend), so the backend rule above does not select them — without
+# this, no migration Job can reach its database and every rollout stalls.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-eso-to-controlplane
+  name: allow-migrations-to-cloudsql
   namespace: aaks
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: external-secrets
+      app: migrations
   policyTypes:
     - Egress
   egress:
     - to:
         - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 192.168.0.0/16
-              - 172.16.0.0/12
+            cidr: 10.0.0.0/24  # Placeholder - same Cloud SQL range as above
       ports:
         - protocol: TCP
-          port: 443
+          port: 5432
 ---
 # Allow trivy-operator and kyverno to scan workloads
 apiVersion: networking.k8s.io/v1
@@ -149,23 +226,11 @@ spec:
         - protocol: TCP
           port: 8081
         - protocol: TCP
-          port: 8082
-        - protocol: TCP
           port: 8083
-        - protocol: TCP
-          port: 8084
         - protocol: TCP
           port: 8085
         - protocol: TCP
           port: 8086
-        - protocol: TCP
-          port: 8087
-        - protocol: TCP
-          port: 8088
-        - protocol: TCP
-          port: 8089
-        - protocol: TCP
-          port: 8090
 ---
 # Allow DNS
 apiVersion: networking.k8s.io/v1

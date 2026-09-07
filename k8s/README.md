@@ -6,60 +6,92 @@ This directory contains declarative Kubernetes/Kustomize manifests for deploying
 
 ```
 k8s/
-  base/                    # Base manifests shared across environments
+  base/                    # Workloads in `aaks` (PSS restricted)
     gateway/              # Gateway BFF deployment + service + PDB
-    project/              # Project service
-    task/                 # Task service
-    agent/                # Agent service
-    catalog/              # Catalog service
-    settings/             # Settings service
-    runner/               # Runner service with DinD sidecar (design D3)
-    auth/                 # Auth service
-    orgs/                 # Orgs service
-    resources/            # Resources service
-    admin/                # Admin service
+    identity/             # Identity service (auth + orgs + admin merged)
+    workspace/            # Workspace service (project + task + catalog + resources merged)
+    agent/                # Agent service (agent + settings merged)
     web/                  # Frontend SPA nginx deployment
-    migrations/           # Argo CD PreSync migration jobs
-    kustomization.yaml   # Base composition
+    migrations/           # Argo CD PreSync migration jobs (one per database)
+    kustomization.yaml   # Base composition (no executor — see sandbox/)
 
-  components/             # Cluster-wide components (namespaced)
-    argocd/               # Argo CD install + app-of-apps
+  sandbox/                 # Privileged plane in `aaks-sandbox` (PSS privileged,
+                           # Kyverno-guarded — PSS cannot exempt a single pod)
+    base/
+      executor/           # Executor + DinD sidecar + Filestore /clone PVC (design D3)
+      clone-bootstrap/    # CronJob seeding the managed repos into /clone (design D3)
+      externalsecrets.yaml # Sandbox secrets (same ClusterSecretStore)
+      networkpolicies.yaml # Default-deny + allows for aaks-sandbox
+      namespace.yaml      # aaks-sandbox + PSS labels
+    overlays/
+      dev/                # executor/clone digests, sandbox env-values, small PVC
+      prod/               # larger DinD/executor sizing, 1Ti PVC
+
+  components/             # Cluster-wide services + policy (per-cluster)
+    argocd/apps/          # AppProject + root-dev/root-prod + platform/operator,
+                          # config, and workload/sandbox Applications
     kyverno/              # Admission policies (verify-images, restrict-privileged, etc.)
-    network-policies/     # Default-deny + allow rules
-    external-secrets/     # ESO install + SecretStore + ExternalSecrets
-    trivy-operator/       # Vulnerability scanning
-    falco/                # Runtime threat detection
-    pss/                  # Pod Security Standards namespace labels
+    network-policies/     # Default-deny + allow rules for `aaks`
+    external-secrets/     # ClusterSecretStore + ExternalSecrets for `aaks`
+    trivy-operator/       # values.yaml (consumed by the Argo Helm app)
+    falco/                # values.yaml with tuned customRules (Argo Helm app)
+    pss/                  # Pod Security Standards labels (system namespaces;
+                          # workload namespaces are owned by their overlays)
 
   overlays/
-    dev/                  # Dev environment overlay
+    dev/                  # Dev workloads overlay
       namespace.yaml
       filestore-storage-class.yaml
       ingress.yaml        # GCE Ingress + managed certificate
       env-configmap.yaml  # Kafka brokers, runner config
       kustomization.yaml  # Image digest placeholders (sha-PLACEHOLDER)
-    prod/                 # Prod environment overlay
-      # Same structure as dev, with larger sizing
+    prod/                 # Prod workloads overlay (same shape, larger sizing)
 ```
 
 ## Design Decisions Implemented
 
-### Runner Sandbox (Design D3)
+### Executor Sandbox (Design D3)
 
-The runner workload runs with a Docker-in-Docker sidecar:
+The executor workload (the runner, renamed in `consolidate-microservices`) runs in the
+**dedicated `aaks-sandbox` namespace** (`k8s/sandbox/`, overlaid per env) — NOT next to the
+services. Reason: Pod Security Standards admit no per-pod exceptions, and the privileged
+DinD sidecar is inadmissible under the `restricted` profile the `aaks` namespace enforces.
+The sandbox namespace runs PSS `privileged` (warn/audit `baseline`) and is guarded instead by
+the label-scoped Kyverno policies (`aaks/sandbox=true`), its own default-deny NetworkPolicies,
+and the tainted sandbox node pool (`aaks/sandbox=true:NoSchedule` taint; nodes carry the
+slash-free `aaks-sandbox=true` label for the executor's nodeSelector — GCE labels forbid `/`).
 
 - **DinD sidecar**: `docker:dind` image (pinned digest), privileged mode, storage on dedicated `emptyDir`
-- **Shared socket**: `/dind/docker.sock` mounted in both DinD and runner containers
-- **Filestore PVC**: Mounted at `/clone` in both DinD and runner for worktree access
+- **Shared socket**: `/dind/docker.sock` mounted in both DinD and executor containers
+- **Filestore PVC**: Mounted at `/clone` in both DinD and executor for worktree access
 - **InitContainer**: Pre-pulls the sandbox image at startup
 - **Toleration**: `aaks/sandbox=true:NoSchedule` taint for dedicated sandbox node pool
-- **Environment**: `RUNNER_SANDBOX=docker`, `RUNNER_DOCKER_SOCKET=/dind/docker.sock`, `RUNNER_CLONE_ROOT=/clone`
+- **Environment**: `EXECUTOR_SANDBOX=docker`, `EXECUTOR_DOCKER_SOCKET=/dind/docker.sock`, `EXECUTOR_CLONE_ROOT=/clone`
+- **Cross-namespace upstreams**: the executor reaches agent/workspace (and the gateway reaches
+  the executor) via cluster FQDNs (`*.aaks.svc.cluster.local` / `*.aaks-sandbox.svc.cluster.local`),
+  allowed by the cross-namespace NetworkPolicy rules on both sides.
 
-This preserves the credential-less-sandbox invariant—the runner holds all secrets and git credentials; sandbox containers see only the worktree.
+This preserves the credential-less-sandbox invariant—the executor holds all secrets and git credentials; sandbox containers see only the worktree.
+
+### Clone bootstrap (Design D3, task 5.4)
+
+The backend never `git clone`s — it only creates worktrees inside a pre-existing clone.
+`sandbox/base/clone-bootstrap/` is an hourly CronJob (CI-built `clone` image: git on pinned
+alpine) that clones every repo in the sandbox `env-values` `clone-repos` key on first run and
+`git fetch`es afterwards. Bootstrap a fresh environment immediately with:
+
+```bash
+kubectl -n aaks-sandbox create job --from=cronjob/clone-bootstrap clone-bootstrap-manual
+```
+
+Private repos need a `git-credentials` Secret (key `token`) in `aaks-sandbox` — the CronJob's
+reference is optional and injects the token into https remotes at runtime (never baked in).
 
 ### Migrations (Design D8)
 
-Each service has an Argo CD PreSync hook Job running `golang-migrate/migrate`:
+Each service has an Argo CD PreSync hook Job running the CI-built `migrate` image
+(`deploy/migrate.Dockerfile`: upstream golang-migrate, digest-pinned, repushed to our
+Artifact Registry so Kyverno verify-images admits the Jobs):
 
 - **Hook annotation**: `argocd.argoproj.io/hook: PreSync`
 - **Delete policy**: `BeforeHookCreation`
@@ -78,26 +110,31 @@ Jobs run before the service Deployment's new pods become ready.
 - **restrict-hostpath**: Blocks hostPath mounts except for runner volumes
 
 **Network policies** enforce:
-- Default-deny ingress/egress in namespace `aaks`
-- Allow gateway → upstream services
-- Allow web → gateway
-- Allow all services → Cloud SQL (private IP, patched per env)
-- Allow all services → Kafka
-- Allow ESO → GCP control plane
-- Allow DNS
+- Default-deny ingress/egress in `aaks` AND `aaks-sandbox`
+- Same-namespace backend ingress (services → each other; web → gateway) plus GCE
+  LB/health-check ranges → gateway/web:8080
+- Gateway (aaks) → executor:8086 and executor → agent:8081/workspace:8083 across namespaces
+- Migration Jobs → Cloud SQL (they carry their own `app:migrations` selector)
+- Services → Cloud SQL / Kafka private IPs (CIDRs patched per env)
+- Sandbox plane → 443/22 outside RFC1918 (AR image pulls, git remotes) + DNS
+- Allow DNS (kube-dns) everywhere
 
-**Falco** rules:
-- Suppress expected DinD/sandbox churn for pods labeled `aaks/sandbox`
-- Alert on shell spawns in the 11 service containers
+**Falco** rules (`components/falco/values.yaml`, shipped via the Argo Helm app):
+- Except `executor-*` pods from the two noisiest default rules (Terminal shell,
+  Container Drift) — expected DinD/sandbox churn
+- Custom alert on shell spawns in the 5 service containers
 
 ### Secrets (Design D5)
 
-External Secrets Operator syncs secrets from GCP Secret Manager:
+A single cluster-scoped `ClusterSecretStore` (`aaks-secretstore`, Workload Identity) serves
+both namespaces; `ExternalSecret`s live next to their consumers (`components/external-secrets`
+for `aaks`, `sandbox/base/externalsecrets.yaml` for `aaks-sandbox`):
 
-- **Per-service DSNs**: `gateway-db-dsn`, `project-db-dsn`, etc.
-- **Settings secrets**: `settings-master-key`, `settings-internal-token`
-- **Auth seeds**: `auth-seed-superadmin-email`, `auth-seed-superadmin-password`
-- **SecretStore per env**: Workload Identity authentication
+- **Per-service DSNs**: `identity-db-dsn`, `workspace-db-dsn`, `agent-db-dsn`, `executor-db-dsn` (the gateway has no DB)
+- **Internal tokens**: `internal-token` (shared by all services), `agent-internal-token` (agent service internal endpoints, consumed by the executor)
+- **Agent secrets**: `agent-master-key` (provider-key encryption)
+- **Auth seeds**: `auth-seed-superadmin-email`, `auth-seed-superadmin-password` (consumed by identity)
+- **ClusterSecretStore**: one per cluster, Workload Identity authentication (no keys)
 
 No secret values appear in Git.
 
@@ -106,33 +143,34 @@ No secret values appear in Git.
 ### 1. CI Builds and Pushes Images
 
 On merge to `master`, CI:
-1. Builds 13 images (11 services + SPA + sandbox base)
+
+1. Builds 9 images (5 services + SPA + sandbox base + clone + migrate)
 2. Tags with `sha-<commit>`
 3. Runs Trivy scan (exits on CRITICAL)
 4. Generates SBOMs
 5. Signs with Cosign keyless (GitHub OIDC → GCP)
 6. Pushes to Artifact Registry
 
-### 2. CI Updates Dev Overlay
+### 2. CI Updates Dev Overlays
 
-CI updates `overlays/dev/kustomization.yaml`:
+CI resolves each `sha-<commit>` tag to its digest and updates both dev overlays:
 
 ```bash
-kustomize edit set image gateway=us-docker.pkg.dev/PROJECT/aaks/gateway:sha-<ACTUAL_DIGEST>
-# ... for all 12 workloads
+kustomize edit set image gateway=us-docker.pkg.dev/PROJECT/aaks/gateway@sha256:<DIGEST>
+# ... in k8s/overlays/dev for gateway/identity/workspace/agent/web/migrate,
+# ... in k8s/sandbox/overlays/dev for executor/clone,
+# plus the sandbox base image digest into the sandbox env-values ConfigMap
+# (executor-sandbox-image is config, not a workload image).
 ```
 
-CI commits and pushes to `master`. Argo CD auto-syncs dev.
+CI commits and pushes to `master`. Argo CD auto-syncs dev (workloads + sandbox apps).
 
 ### 3. Prod Promotion (Manual PR)
 
-To promote to prod:
-
-1. Create a branch from the dev digest commit
-2. Update `overlays/prod/kustomization.yaml` with the same digests
-3. Open a PR referencing the CI run and the soak time in dev
-4. After review and approval, merge
-5. Argo CD syncs prod (auto-sync enabled, selfHeal disabled)
+To promote to prod: copy the dev digests (workloads + sandbox overlays AND the sandbox
+env-values digest) into `k8s/overlays/prod` + `k8s/sandbox/overlays/prod` in one PR
+referencing the CI run and the soak time in dev. After review and approval, merge;
+Argo CD syncs prod (auto-sync enabled, selfHeal disabled — a human owns prod).
 
 ### Rollback
 
@@ -157,52 +195,65 @@ Or use Argo CD's built-in rollback via CLI/UI.
 ### One-Time Bootstrap
 
 ```bash
-# 1. Apply the Argo CD installation and app-of-apps
-kustomize build k8s/components/argocd | kubectl apply -f -
+# 1. Install Argo CD itself from the pinned upstream manifest (v2.12.4):
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.4/manifests/install.yaml
 
-# 2. Wait for Argo CD to be ready
+# 2. Register the app-of-apps root for THIS cluster's env (dev cluster gets
+# root-dev, prod cluster gets root-prod — each root excludes the other env):
+kubectl apply -f k8s/components/argocd/apps/appproject.yaml
+kubectl apply -f k8s/components/argocd/apps/root-dev.yaml   # or root-prod.yaml
+
+# 3. Wait for Argo CD to be ready
 kubectl wait --for=condition=available --timeout=300s \
   deployment/argocd-server -n argocd
 
-# 3. Port-forward to Argo CD UI
+# 4. Port-forward to Argo CD UI
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 
-# 4. Login with admin credentials
+# 5. Login with admin credentials
 argocd login localhost:8080 \
   --username admin \
   --password $(kubectl get secret argocd-initial-admin-secret \
     -n argocd -o jsonpath='{.data.password}' | base64 -d)
 
-# 5. Sync the dev app (auto-sync will handle future updates)
-argocd app sync aaks-dev
+# 6. Sync the dev plane (auto-sync handles future updates)
+argocd app sync aaks-root-dev
 ```
 
-The app-of-apps will:
-1. Create the `aaks` namespace
-2. Apply all base manifests with dev overlay
-3. Apply all components (Kyverno, ESO, Trivy, Falco)
+The app-of-apps will (ordered by sync-wave: operators → configs → workloads):
+1. Install the pinned operators (Kyverno, External Secrets, Trivy Operator, Falco) from Helm
+2. Sync ClusterSecretStore/ExternalSecrets, Kyverno policies, NetworkPolicies, PSS labels
+3. Create the `aaks` + `aaks-sandbox` namespaces
 4. Run migration jobs (PreSync hooks)
-5. Start all service pods
+5. Start all service + sandbox pods
 
 ### Environment-Specific Values
 
-Update the following per environment in `overlays/<env>/env-configmap.yaml`:
+Update the following per environment in `overlays/<env>/env-configmap.yaml` and
+`sandbox/overlays/<env>/env-configmap.yaml`:
 
-- `kafka-brokers`: Kafka bootstrap servers
-- Cloud SQL private IP ranges in network policies
-- ExternalSecret `SecretStore` references
+- `kafka-brokers`: Kafka bootstrap servers (both env-values ConfigMaps)
+- Cloud SQL / Kafka private IP ranges in the NetworkPolicies
+- `aaks-ENV-*` remote key names in the ExternalSecrets (`ENV` = dev/prod)
+- `clone-repos`: managed repo URLs for the clone-bootstrap CronJob
 - Ingress domain names
 
 ## Validation
 
-Validate manifests before applying:
+Validate manifests before applying (all four overlays plus the components —
+this is what CI's iac-validate job runs):
 
 ```bash
-# Validate dev overlay
-kustomize build k8s/overlays/dev | kubectl apply --dry-run=server -f -
+# Validate all overlays
+for o in overlays/dev overlays/prod sandbox/overlays/dev sandbox/overlays/prod; do
+  kustomize build k8s/$o | kubectl apply --dry-run=server -f -
+done
 
-# Validate prod overlay
-kustomize build k8s/overlays/prod | kubectl apply --dry-run=server -f -
+# Validate components
+for c in argocd argocd/apps kyverno network-policies external-secrets pss; do
+  kustomize build k8s/components/$c > /dev/null && echo "$c OK"
+done
 ```
 
 ## Image Registry Placeholder
@@ -220,21 +271,24 @@ kustomize build k8s/overlays/dev | \
 Migration ConfigMaps are populated by CI at deploy time. The placeholder files exist so `kustomize build` succeeds. CI runs:
 
 ```bash
-# For each service
-kubectl create configmap project-migrations \
-  --from-file=../../migrations-artifacts/project/ \
+# For each service with a database
+kubectl create configmap identity-migrations \
+  --from-file=../../migrations-artifacts/identity/ \
   --dry-run=client -o yaml
 ```
 
 ## Troubleshooting
 
-**Migration job fails**: Check job logs for connection errors to Cloud SQL. Verify ExternalSecret `SecretStore` is correctly configured.
+**Migration job fails**: Check job logs for connection errors to Cloud SQL. Verify the
+ClusterSecretStore + ExternalSecrets synced (ESO logs) and the migration ConfigMap is populated.
 
 **Pod stuck in ImagePullBackOff**: Kyverno policy rejected the image. Check `kubectl describe pod` for policy violation details. Verify image is signed and from Artifact Registry.
 
-**Falco alerts on shell spawns in sandbox**: Expected. Use label `aaks/sandbox: "true"` to suppress these.
+**Falco alerts on shell spawns in the sandbox plane**: Expected for DinD churn — the
+`tuned customRules` in `components/falco/values.yaml` except pods named `executor-*` from the
+two noisiest default rules. Alerts naming other pods are real findings.
 
-**Runner cannot create sandbox containers**: Verify DinD sidecar is healthy, socket is shared at `/dind/docker.sock`, and Filestore PVC is mounted.
+**Executor cannot create sandbox containers**: Verify DinD sidecar is healthy, socket is shared at `/dind/docker.sock`, Filestore PVC is mounted at `/clone` in both containers, and the clone-bootstrap CronJob has seeded the repo (`kubectl -n aaks-sandbox logs job/<clone-job>`).
 
 ## References
 

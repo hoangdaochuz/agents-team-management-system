@@ -1,0 +1,11 @@
+# Trivy Operator Helm values (chart trivy-operator 0.36.0). Consumed inline by
+# k8s/components/argocd/apps/platform-trivy.yaml (valuesObject) — this file is
+# the human-readable record of the tuning; the Application is authoritative.
+#
+# Replaces the old trivy-operator/config.yaml ConfigMap: the Helm release owns
+# the operator's config, so a separately-managed ConfigMap would fight it.
+# targetNamespaces: aaks,aaks-sandbox
+# operator.scanJobTimeout: 5m
+# operator.scanJobsConcurrentLimit: 3
+# trivy.severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+# trivy.serverInsecure: false

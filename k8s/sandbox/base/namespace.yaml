@@ -1,0 +1,19 @@
+# Dedicated namespace for the privileged agent-execution plane (executor +
+# DinD sidecar + clone bootstrap). PSS `enforce: privileged` is deliberate:
+# the DinD sidecar MUST run privileged, and no PSS level below `privileged`
+# admits privileged pods — not even `baseline`. The guard here is Kyverno
+# (privileged/hostPath allowed ONLY for pods labeled aaks/sandbox=true,
+# non-root + limits + signed images still enforced) plus the sandbox
+# NetworkPolicies. The `aaks` namespace stays PSS-`restricted`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aaks-sandbox
+  labels:
+    name: aaks-sandbox
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: baseline
+    pod-security.kubernetes.io/warn-version: latest

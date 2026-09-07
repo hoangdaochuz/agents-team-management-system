@@ -2,25 +2,28 @@
 
 ## Context
 
-Today the system runs only via `deploy/docker-compose.yml` (Postgres 16 + KRaft Kafka + the 11
-services built from the shared `deploy/service.Dockerfile`, a distroless nonroot multi-stage
-build parameterized by `SERVICE`/`PORT`). Relevant constraints discovered in exploration:
+Today the system runs only via `deploy/docker-compose.yml` (Postgres 16 + KRaft Kafka + the 5
+consolidated services built from the shared `deploy/service.Dockerfile`, a distroless nonroot
+multi-stage build parameterized by `SERVICE`/`PORT`). Relevant constraints discovered in
+exploration:
 
 - **Config is env-only**, read directly via `os.Getenv` in each composition root
   (`backend/internal/platform/config/config.go` is stale and unused). Full env surface:
-  `HTTP_ADDR`, `KAFKA_BROKERS`, `<SVC>_DB_DSN` per service, gateway `UPSTREAM_*`, runner
-  `RUNNER_DRIVER|SANDBOX|SANDBOX_IMAGE|DOCKER_SOCKET|CLONE_ROOT|PR_BASE_URL|MAX_*`,
-  `SETTINGS_MASTER_KEY|INTERNAL_TOKEN`, `AUTH_SEED_SUPERADMIN_*`.
-- **The runner's Docker driver speaks raw HTTP over a unix socket** (`sandbox/docker.go`,
+  `HTTP_ADDR`, `KAFKA_BROKERS`, `<SVC>_DB_DSN` per service (identity/workspace/agent/executor),
+  the shared `INTERNAL_TOKEN` (plus executor's `AGENT_INTERNAL_TOKEN`), gateway
+  `UPSTREAM_{IDENTITY,WORKSPACE,AGENT,EXECUTOR}`, executor
+  `EXECUTOR_DRIVER|SANDBOX|SANDBOX_IMAGE|DOCKER_SOCKET|CLONE_ROOT|PR_BASE_URL|MAX_*`,
+  `AGENT_MASTER_KEY`, `AUTH_SEED_SUPERADMIN_*`.
+- **The executor's Docker driver speaks raw HTTP over a unix socket** (`sandbox/docker.go`,
   `net.Dial("unix", ...)`, Docker Engine API v1.44, no TCP/TLS support). It creates sandbox
   containers with `Binds: [worktreePath:/workspace:rw]` and expects the sandbox image to exist
   locally on that daemon.
 - **Worktrees are created host-side** via `exec.Command("git", ...)` against a pre-existing clone
-  at `RUNNER_CLONE_ROOT` (no `git clone` in the backend; PR creation is a stub emitting
-  `pr.opened`). File tools read/write the worktree path directly from the runner process — the
-  runner and the Docker daemon **must share one filesystem**.
-- **LLM provider keys are not env vars** — they live encrypted in the Settings service
-  (`SETTINGS_MASTER_KEY`) and are fetched over an internal mTLS+token path. Only a small set of
+  at `EXECUTOR_CLONE_ROOT` (no `git clone` in the backend; PR creation is a stub emitting
+  `pr.opened`). File tools read/write the worktree path directly from the executor process — the
+  executor and the Docker daemon **must share one filesystem**.
+- **LLM provider keys are not env vars** — they live encrypted in the Agent service
+  (`AGENT_MASTER_KEY`) and are fetched over an internal token path. Only a small set of
   infra secrets must be provisioned.
 - **Frontend**: `frontend/Dockerfile` references a missing `nginx.conf` (build is broken today);
   the gateway is API-only (no `go:embed`, no static serving).
@@ -57,8 +60,9 @@ DevSecOps pipeline flow Semgrep → Gitleaks → Dependabot → test/build → D
 Stages in one workflow (`.github/workflows/ci.yml` extended, plus a `deploy.yml`): PR stage runs
 Semgrep (docker://semgrep/semgrep with `p/default` + Go rulesets), Gitleaks, go vet/build/`test
 -race`/golangci-lint, frontend typecheck/build, `terraform fmt/validate`, `kustomize build` for
-all overlays, Trivy config/IaC scan. Main-branch stage builds 13 images (11 services via
-`deploy/service.Dockerfile` matrix, SPA, sandbox base from `backend/runner/Dockerfile`), tags
+all overlays, Trivy config/IaC scan. Main-branch stage builds 7 images (the 5 consolidated
+services — gateway/identity/workspace/agent via `deploy/service.Dockerfile`, executor via
+`deploy/runner.Dockerfile` (git-carrying variant), SPA, sandbox base from `backend/runner/Dockerfile`), tags
 `sha-<commit>`, runs Trivy image scan (exit on CRITICAL), generates Syft SBOMs, Cosign keyless
 signs image+SBOM (GitHub OIDC), pushes to Artifact Registry via **GitHub OIDC → GCP** (WIF, no
 keys), then updates the dev overlay's digests in Git (or a separate manifests repo — see D6).
@@ -78,38 +82,40 @@ Shared modules, per-env state buckets. Key resources: GKE Autopilot is **rejecte
 needs privileged DinD, so we use a **Standard Zonal (dev) / Regional (prod) cluster** with: a
 default pool (Spot allowed in dev), and a `sandbox` pool with taint `aaks/sandbox=true:NoSchedule`
 on a machine type sized for Docker builds (e.g. `e2-standard-4`). Cloud SQL private-IP Postgres
-16, 10 logical DBs via the `postgresql` provider (mirroring `deploy/postgres/01-create-databases.sql`).
+16, 4 logical DBs via the `postgresql` provider (mirroring
+`deploy/postgres/01-create-databases.sql`: identity_db, workspace_db, agent_db, runner_db).
 Managed Service for Apache Kafka with the per-domain topics from the contracts. Filestore
 Basic HDD/SSD for the clone root. Secret Manager entries for infra secrets. WIF bindings for CI
 OIDC + per-workload KSA→GSA mappings. *Alternative rejected:* Cloud SQL via `google_sql_database`
 only for the instance DB + init SQL — fragile with migrations; per-DB resources are explicit.
 
-### D3 — Runner sandbox topology (the hard part)
-Single-replica runner Deployment, `replicas: 1` (worktree/file access assumes one node's view;
+### D3 — Executor sandbox topology (the hard part)
+Single-replica executor Deployment, `replicas: 1` (worktree/file access assumes one node's view;
 scaling is an open question OQ1). Pod spec:
 - **DinD sidecar**: `docker:dind` image (pinned digest), `privileged: true`, `DOCKERD_ROOTLESS`
   off, storage on a dedicated `emptyDir` (or PD), socket at `/dind/docker.sock` shared via
   `emptyDir` volume; DinD pre-pulls the sandbox image at startup (initContainer `docker pull` of
-  the pinned `aaks-runner` digest through that socket).
-- **Runner container**: `RUNNER_SANDBOX=docker`, `RUNNER_DOCKER_SOCKET=/dind/docker.sock` (already
-  configurable — no code change), `RUNNER_SANDBOX_IMAGE=<registry>/sandbox@sha256:...`,
-  `RUNNER_CLONE_ROOT=/clone` where `/clone` is the Filestore PVC (ReadWriteMany).
+  the pinned sandbox image digest through that socket).
+- **Executor container**: `EXECUTOR_SANDBOX=docker`,
+  `EXECUTOR_DOCKER_SOCKET=/dind/docker.sock` (already configurable — no code change),
+  `EXECUTOR_SANDBOX_IMAGE=<registry>/sandbox@sha256:...`,
+  `EXECUTOR_CLONE_ROOT=/clone` where `/clone` is the Filestore PVC (ReadWriteMany).
 - **Clone bootstrap**: a CronJob or one-shot Job that `git clone`s the managed repos into the
-  Filestore clone root (the backend never clones). `git` must exist in the runner image —
-  **distroless has no git**, and the runner execs `git worktree` host-side. Decision: switch the
-  runner's image build (compose file only, service.Dockerfile gains a `GIT_INSTALLED` variant or
-  the runner uses a second Dockerfile based on `alpine` + git + ca-certs, still nonroot). This is
+  Filestore clone root (the backend never clones). `git` must exist in the executor image —
+  **distroless has no git**, and the executor execs `git worktree` host-side. Decision: switch the
+  executor's image build (compose file only, service.Dockerfile gains a `GIT_INSTALLED` variant or
+  the executor uses a second Dockerfile based on `alpine` + git + ca-certs, still nonroot). This is
   the one build-pipeline change required; it is packaging, not backend logic.
-- Bind-mount path: sandbox.go binds `wt.Path` (host path as seen by the *runner*) into the
+- Bind-mount path: sandbox.go binds `wt.Path` (host path as seen by the *executor*) into the
   container at `/workspace`. With DinD, the Docker daemon is a sibling container; the bind source
   path must be valid **inside the DinD container's mount namespace**. Therefore the Filestore PVC
-  is mounted at the **same absolute path (`/clone`) in both the runner container and the DinD
-  sidecar**, so `RUNNER_CLONE_ROOT=/clone` is identical in both namespaces. Verified against
-  sandbox.go behavior: worktree paths derive from `RUNNER_CLONE_ROOT`, so this alignment makes
+  is mounted at the **same absolute path (`/clone`) in both the executor container and the DinD
+  sidecar**, so `EXECUTOR_CLONE_ROOT=/clone` is identical in both namespaces. Verified against
+  sandbox.go behavior: worktree paths derive from `EXECUTOR_CLONE_ROOT`, so this alignment makes
   the bind resolvable by the daemon.
 - *Alternative rejected:* mounting the node's docker.sock — weaker isolation, node-level blast
   radius, and GKE nodes' containerd socket isn't a Docker socket at all. *Alternative rejected:*
-  runner-on-VM — splits the delivery story and needs TCP/TLS Docker support the code lacks.
+  executor-on-VM — splits the delivery story and needs TCP/TLS Docker support the code lacks.
 
 ### D4 — SPA serving: fix `frontend/nginx.conf`
 Create `frontend/nginx.conf`: listen `8080` as non-root (`nginx` uid), `gzip` on, SPA
@@ -122,7 +128,7 @@ requires backend change and couples releases; bucket+CDN — CORS complexity for
 ### D5 — Secrets: External Secrets Operator + Secret Manager
 ESO installed via Argo CD; `SecretStore` per namespace authenticated via Workload Identity.
 ExternalSecrets for: per-service Cloud SQL DSNs (composed from Secret Manager DB password +
-Terraform-known host/db), `SETTINGS_MASTER_KEY`, `SETTINGS_INTERNAL_TOKEN`,
+Terraform-known host/db), `AGENT_MASTER_KEY`, `INTERNAL_TOKEN`, `AGENT_INTERNAL_TOKEN`,
 `AUTH_SEED_SUPERADMIN_*`. Seeded once via `gcloud secrets create` (documented manual bootstrap of
 values; Terraform creates the secret containers with rotation metadata). Nothing secret in the
 GitOps repo.
@@ -132,7 +138,8 @@ Manifests live in-tree at `k8s/` (same repo as code — this project's OpenSpec 
 repo; a split manifests repo is a later refactor):
 ```
 k8s/
-  base/<svc>/            # Deployment+Service+PDB+ConfigMap per workload, 12 workloads
+  base/<svc>/            # Deployment+Service+PDB+ConfigMap per workload, 6 workloads
+                         # (gateway, identity, workspace, agent, executor, web)
   base/migrations-job/
   components/            # argocd app-of-apps, kyverno policies, eso, trivy-operator, falco
   overlays/dev/          # namespace, image digests (kustomize edit set image), env config
@@ -146,10 +153,10 @@ that, everything flows through Git.
 ### D7 — Kyverno over OPA/Gatekeeper; Falco with rules tuned for the sandbox
 Kyverno policies: verify-images (Artifact Registry origin + Cosign keyless attestation via the
  Fulcio/Rekor chain), restrict `latest`, require non-root + resource limits, block privileged
- outside the `runner-sandbox` namespace, block hostPath/host-socket except the declared runner
+ outside the `runner-sandbox` namespace, block hostPath/host-socket except the declared executor
  volumes. Falco runs on nodes (DaemonSet); default ruleset minus noisy container-egg-spawn rules
  triggered by legitimate DinD behavior in the sandbox namespace, plus a custom rule alerting on
- shell spawns in the 11 service containers. Trivy Operator scans workloads; findings ≥ HIGH
+ shell spawns in the 5 service containers. Trivy Operator scans workloads; findings ≥ HIGH
  surface as Kubernetes vulnerability reports (alerting wiring deferred — Non-Goal observability).
 
 ### D8 — Migrations
@@ -170,8 +177,8 @@ ConfigMap generated from the repo at CI time.
 - [NFS (Filestore) latency for git operations and builds] → acceptable for agent workloads; if
   builds are IO-bound, move to a per-node PD with the runner pinned via nodeSelector (documented
   escape hatch).
-- [Runner single replica = availability gap] → acceptable now (agent runs are queueable); scaling
-  needs per-runner clone partitions — OQ1.
+- [Executor single replica = availability gap] → acceptable now (agent runs are queueable);
+  scaling needs per-executor clone partitions — OQ1.
 - [Kyverno verify-images with keyless cosign adds startup latency and a Fulcio/Rekor dependency]
   → cache policy results; if it proves flaky, fall back to a fixed cosign key stored in Secret
   Manager (policy swap is contained).
@@ -188,7 +195,8 @@ ConfigMap generated from the repo at CI time.
 ## Migration Plan
 
 1. Merge infra Terraform → `terraform apply` dev → prod (no workload impact; nothing exists yet).
-2. Add nginx.conf, runner Dockerfile variant, Kafka SASL support; CI publishes first images.
+2. Add nginx.conf, executor (git-carrying) Dockerfile variant, Kafka SASL support; CI publishes
+   first images.
 3. Bootstrap Argo CD + app-of-apps in dev → dev runs end-to-end including a real agent task.
 4. Verify DevSecOps controls in dev (policy rejections behave, Falco/Trivy report).
 5. Prod apply + promotion PR. Rollback = revert overlay commit (Git) or `argocd app rollback`.

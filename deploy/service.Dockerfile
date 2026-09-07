@@ -1,6 +1,6 @@
 # Multi-stage build for an individual service binary. Arg SERVICE selects the
-# target (gateway, project, task, agent, catalog, settings, runner, auth,
-# orgs, resources, admin); ARG PORT exposes the service port.
+# target (gateway, identity, workspace, agent); ARG PORT exposes the service
+# port. (executor uses deploy/runner.Dockerfile — it needs git at runtime.)
 # syntax=docker/dockerfile:1
 
 # ---- build ----

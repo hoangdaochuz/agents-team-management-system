@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aaks-sandbox
+
+resources:
+  - ../../base
+  - env-configmap.yaml
+
+# Image digests — set ONLY by promotion PRs carrying digests that have soaked
+# in dev (with links to the CI run that built, scanned, and signed them).
+images:
+  - name: executor
+    newName: us-central1-docker.pkg.dev/your-project-id/aaks/executor
+    newTag: sha-PLACEHOLDER
+  - name: clone
+    newName: us-central1-docker.pkg.dev/your-project-id/aaks/clone
+    newTag: sha-PLACEHOLDER
+
+patches:
+  # Executor stays single-replica (one node's view of the clone root — OQ1)
+  # with larger headroom than dev; DinD is containers[0], executor is [1].
+  - target:
+      kind: Deployment
+      name: executor
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/1/resources/requests/cpu
+        value: 250m
+      - op: replace
+        path: /spec/template/spec/containers/1/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/1/resources/limits/cpu
+        value: 1500m
+      - op: replace
+        path: /spec/template/spec/containers/1/resources/limits/memory
+        value: 2Gi
+  - target:
+      kind: Deployment
+      name: executor
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 1Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 3000m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 6Gi
+  - target:
+      kind: PersistentVolumeClaim
+      name: executor-clone-pvc
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 1Ti

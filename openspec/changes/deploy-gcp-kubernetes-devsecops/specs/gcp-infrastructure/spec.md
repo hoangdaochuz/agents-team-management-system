@@ -37,7 +37,7 @@ and no shared state.
 - **THEN** Cloud SQL runs HA and the GKE cluster spans at least three zones
 
 ### Requirement: GKE cluster with a dedicated sandbox node pool
-The GKE cluster SHALL have a default node pool for the 11 services and the SPA, and a separate
+The GKE cluster SHALL have a default node pool for the 5 services and the SPA, and a separate
 tainted, privileged node pool for the agent-execution sandbox (Docker-in-Docker), so that sandbox
 workloads are the only workloads eligible to run privileged.
 
@@ -45,13 +45,14 @@ workloads are the only workloads eligible to run privileged.
 - **WHEN** a standard service pod is created
 - **THEN** it schedules only onto the default pool, because the sandbox pool's taint repels it
 
-#### Scenario: Runner pod schedules onto the sandbox pool
-- **WHEN** the runner pod (with the matching toleration) is created
+#### Scenario: Executor pod schedules onto the sandbox pool
+- **WHEN** the executor pod (with the matching toleration) is created
 - **THEN** it schedules onto the sandbox node pool
 
 ### Requirement: Managed data plane — Cloud SQL and Managed Kafka
-PostgreSQL SHALL be provided by Cloud SQL with private IP in the VPC, hosting the 10 logical
-service databases. Kafka SHALL be provided by Managed Service for Apache Kafka in the VPC, with
+PostgreSQL SHALL be provided by Cloud SQL with private IP in the VPC, hosting the 4 logical
+service databases (`identity_db`, `workspace_db`, `agent_db`, `runner_db`). Kafka SHALL be
+provided by Managed Service for Apache Kafka in the VPC, with
 the topics the services consume (including `__consumer_offsets` and the per-domain event topics)
 provisioned. No database or Kafka broker SHALL run as a Kubernetes workload.
 
@@ -74,8 +75,8 @@ per-environment image naming), and every image deployed to the cluster SHALL com
 - **THEN** admission policy rejects it (enforced by the `devsecops-controls` capability)
 
 ### Requirement: Secrets live in Secret Manager
-All runtime secrets (Cloud SQL credentials per service, `SETTINGS_MASTER_KEY`,
-`SETTINGS_INTERNAL_TOKEN`, seed superadmin credentials) SHALL be stored in GCP Secret Manager and
+All runtime secrets (Cloud SQL credentials per service, `AGENT_MASTER_KEY`, `INTERNAL_TOKEN`,
+`AGENT_INTERNAL_TOKEN`, seed superadmin credentials) SHALL be stored in GCP Secret Manager and
 never in Git, Terraform variable files committed to the repo, or container images. Terraform SHALL
 create secret *containers* (empty or randomly-generated values where safe) without hardcoding
 secret values in source.
@@ -95,10 +96,10 @@ key JSON SHALL be stored as a Kubernetes secret or committed to the repo.
 
 ### Requirement: Shared clone volume for agent execution
 A Filestore (NFS) volume SHALL be provisioned per environment to hold the managed git clone and
-per-task worktrees, mounted read-write by the runner pod and bind-mountable into the sandbox
-containers started by the runner's Docker daemon.
+per-task worktrees, mounted read-write by the executor pod and bind-mountable into the sandbox
+containers started by the executor's Docker daemon.
 
-#### Scenario: Runner and sandbox share the same filesystem view
-- **WHEN** the runner writes a file into a task worktree path and a sandbox container reads it at
+#### Scenario: Executor and sandbox share the same filesystem view
+- **WHEN** the executor writes a file into a task worktree path and a sandbox container reads it at
   `/workspace`
 - **THEN** both see the same file content

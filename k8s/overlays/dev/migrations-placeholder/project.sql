@@ -1,2 +1,0 @@
--- Placeholder for project migrations
--- CI will replace this with actual migration files from backend/services/project/internal/infrastructure/repository/migrations

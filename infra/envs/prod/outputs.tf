@@ -74,8 +74,10 @@ output "kafka_password_secret_name" {
 output "secret_names" {
   description = "All secret names"
   value = {
-    settings_master_key       = module.secrets.settings_master_key_secret_name
-    settings_internal_token   = module.secrets.settings_internal_token_secret_name
+    agent_master_key          = module.secrets.agent_master_key_secret_name
+    internal_token            = module.secrets.internal_token_secret_name
+    agent_internal_token      = module.secrets.agent_internal_token_secret_name
+    db_dsns                   = module.secrets.db_dsn_secret_names
     auth_seed_superadmin_email = module.secrets.auth_seed_superadmin_email_secret_name
     auth_seed_superadmin_password = module.secrets.auth_seed_superadmin_password_secret_name
     db_password               = module.cloudsql.db_user_secret_name

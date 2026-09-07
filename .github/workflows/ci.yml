@@ -108,6 +108,18 @@ jobs:
       - name: Build Kustomize prod
         run: kustomize build k8s/overlays/prod
 
+      - name: Build Kustomize sandbox dev
+        run: kustomize build k8s/sandbox/overlays/dev
+
+      - name: Build Kustomize sandbox prod
+        run: kustomize build k8s/sandbox/overlays/prod
+
+      - name: Build Kustomize components
+        run: |
+          for c in argocd argocd/apps kyverno network-policies external-secrets pss; do
+            kustomize build k8s/components/$c > /dev/null
+          done
+
       - name: Trivy IaC scan
         uses: aquasecurity/trivy-action@0.28.0
         with:

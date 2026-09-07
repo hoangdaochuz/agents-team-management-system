@@ -11,6 +11,6 @@ data:
   kafka-tls: "true"
   kafka-sasl-mechanism: "PLAIN"
 
-  # Runner configuration
-  runner-sandbox-image: "us-central1-docker.pkg.dev/your-project-id/aaks/sandbox:sha-PLACEHOLDER"
-  runner-pr-base-url: "https://github.com/your-org/your-repo"
+  # Executor configuration
+  executor-sandbox-image: "us-central1-docker.pkg.dev/your-project-id/aaks/sandbox:sha-PLACEHOLDER"
+  executor-pr-base-url: "https://github.com/your-org/your-repo"

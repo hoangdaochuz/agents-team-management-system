@@ -28,15 +28,19 @@ spec:
                   matchLabels:
                     aaks/sandbox: "true"
       validate:
+        # NOTE the `=(privileged)` conditional anchor: containers that simply
+        # OMIT the field (Kubernetes defaults it to false) must pass — a bare
+        # `privileged: false` pattern would reject every pod that doesn't
+        # spell the default out, including our own services.
         message: "Privileged containers are only allowed in sandbox workloads."
         foreach:
           - list: request.object.spec.containers
             context: []
             pattern:
               securityContext:
-                privileged: false
+                =(privileged): false
           - list: request.object.spec.initContainers
             context: []
             pattern:
               securityContext:
-                privileged: false
+                =(privileged): false

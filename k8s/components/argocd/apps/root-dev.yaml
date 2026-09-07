@@ -1,0 +1,28 @@
+# Root app-of-apps for the DEV cluster (aaks-dev GKE cluster has its own Argo
+# CD; prod has twin root-prod.yaml). Syncs every child Application in this
+# directory EXCEPT the prod-env ones — dev and prod are separate clusters, so
+# each root owns its env's workloads plus the shared platform/config apps.
+# Bootstrap once (see k8s/README.md):
+#   kubectl apply -f k8s/components/argocd/apps/appproject.yaml
+#   kubectl apply -f k8s/components/argocd/apps/root-dev.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-root-dev
+  namespace: argocd
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/components/argocd/apps
+    directory:
+      exclude: '*-prod.yaml'
+  destination:
+    namespace: argocd
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false

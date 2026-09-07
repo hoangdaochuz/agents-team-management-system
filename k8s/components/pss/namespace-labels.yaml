@@ -1,20 +1,11 @@
 ---
-# Pod Security Standards labels for aaks namespace
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: aaks
-  labels:
-    pod-security.kubernetes.io/enforce: restricted
-    pod-security.kubernetes.io/enforce-version: latest
-    pod-security.kubernetes.io/audit: restricted
-    pod-security.kubernetes.io/audit-version: latest
-    pod-security.kubernetes.io/warn: restricted
-    pod-security.kubernetes.io/warn-version: latest
----
-# Exception labels for sandbox (baseline, not restricted)
-# This is applied via the pod label aaks/sandbox: "true" instead
-# The Kyverno restrict-privileged policy enforces this exception
+# Pod Security Standards labels for cluster namespaces.
+#
+# NOTE: the workload namespaces are NOT managed here — each overlay owns its
+# Namespace object (k8s/overlays/*/namespace.yaml for `aaks` at `restricted`,
+# k8s/sandbox/base/namespace.yaml for `aaks-sandbox` at `privileged`); two
+# Argo Applications managing the same Namespace object would fight forever.
+# This file covers the shared/system namespaces only.
 ---
 # System namespace labels for baseline
 apiVersion: v1
@@ -57,6 +48,15 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: falco
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: external-secrets
   labels:
     pod-security.kubernetes.io/enforce: baseline
     pod-security.kubernetes.io/audit: baseline

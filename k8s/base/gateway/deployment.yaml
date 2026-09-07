@@ -65,33 +65,25 @@ spec:
                 secretKeyRef:
                   name: kafka-credentials
                   key: password
-            # The gateway is a pure reverse proxy: no DB of its own (the other
-            # ten services each carry their <SVC>_DB_DSN).
-            - name: SETTINGS_INTERNAL_TOKEN
+            # The gateway is a pure reverse proxy: no DB of its own (the
+            # other services each carry their <SVC>_DB_DSN).
+            - name: INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: settings-internal-token
+                  name: internal-token
                   key: token
-            - name: UPSTREAM_PROJECT
-              value: http://project:8081
-            - name: UPSTREAM_TASK
-              value: http://task:8082
+            # Four consolidated upstreams (matches deploy/docker-compose.yml).
+            # Cluster FQDNs (not short names): the executor lives in the
+            # aaks-sandbox namespace, and FQDNs resolve correctly from
+            # anywhere — including a future namespace move of the gateway.
+            - name: UPSTREAM_IDENTITY
+              value: http://identity.aaks.svc.cluster.local:8085
+            - name: UPSTREAM_WORKSPACE
+              value: http://workspace.aaks.svc.cluster.local:8081
             - name: UPSTREAM_AGENT
-              value: http://agent:8083
-            - name: UPSTREAM_CATALOG
-              value: http://catalog:8084
-            - name: UPSTREAM_SETTINGS
-              value: http://settings:8085
-            - name: UPSTREAM_RUNNER
-              value: http://runner:8086
-            - name: UPSTREAM_AUTH
-              value: http://auth:8087
-            - name: UPSTREAM_ORGS
-              value: http://orgs:8088
-            - name: UPSTREAM_RESOURCES
-              value: http://resources:8089
-            - name: UPSTREAM_ADMIN
-              value: http://admin:8090
+              value: http://agent.aaks.svc.cluster.local:8083
+            - name: UPSTREAM_EXECUTOR
+              value: http://executor.aaks-sandbox.svc.cluster.local:8086
           livenessProbe:
             httpGet:
               path: /healthz
@@ -117,6 +109,7 @@ spec:
               memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
+            runAsNonRoot: true
             readOnlyRootFilesystem: true
             capabilities:
               drop:

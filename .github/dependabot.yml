@@ -1,7 +1,8 @@
 version: 2
 updates:
-  # Go modules in backend/
-  - directory: "/"
+  # Go modules live in backend/ (go.mod is NOT at the repo root — a "/"
+  # directory here would silently watch nothing).
+  - directory: "/backend"
     package-ecosystem: "gomod"
     schedule:
       interval: "weekly"

@@ -31,9 +31,12 @@ deploy/     docker-compose.yml, .env.example, service.Dockerfile (shared, distro
             runner.Dockerfile (runner variant with git), pin-digests.sh
 infra/      Terraform IaC — modules/ + envs/{dev,prod}  (GKE, Cloud SQL, Managed Kafka,
             Filestore, Artifact Registry, Secret Manager, WIF). Runbook: infra/README.md
-k8s/        Kustomize — base/ (12 workloads + PreSync migration jobs), overlays/{dev,prod},
-            components/ (Argo CD, Kyverno, External Secrets, Trivy Operator, Falco,
-            NetworkPolicies, PSS). Layout + promotion: k8s/README.md
+k8s/        Kustomize — base/ (gateway/identity/workspace/agent/web + PreSync
+            migration jobs), sandbox/base/ (executor + DinD + clone-bootstrap in
+            the dedicated aaks-sandbox namespace), overlays/{dev,prod} +
+            sandbox/overlays/{dev,prod}, components/ (Argo CD app-of-apps +
+            pinned Helm operators, Kyverno, External Secrets, tuned
+            Falco/Trivy values, NetworkPolicies, PSS). Layout + promotion: k8s/README.md
 docs/       spec.md, design.md, tasks.md
 prototype/  static HTML prototype — the visual source of truth for the SPA (do not delete)
 ```
@@ -68,9 +71,10 @@ Run a **single package's tests**: `cd backend && go test ./internal/httpapi`
 CI (`.github/workflows/ci.yml`) runs the Go job in `working-directory: backend` and a separate
 `frontend` job (`npm ci && typecheck && build`), plus DevSecOps PR gates (Semgrep, Gitleaks,
 terraform/kustomize/Trivy-config validation). Both must pass. `deploy.yml` (triggered after ci on
-master) builds all 13 images once, gates on Trivy, signs with Cosign, and promotes digests to the
-dev overlay; prod is a manual promotion PR. When touching `k8s/`, keep
-`kubectl kustomize k8s/overlays/dev` and `overlays/prod` clean; when touching `infra/`, keep
+master) builds all 9 images once (5 services + SPA + sandbox + clone + migrate), gates on Trivy,
+signs with Cosign, and promotes digests to the dev overlays (workloads + sandbox);
+prod is a manual promotion PR. When touching `k8s/`, keep `kustomize build` clean for
+`k8s/overlays/{dev,prod}` AND `k8s/sandbox/overlays/{dev,prod}`; when touching `infra/`, keep
 `terraform fmt` clean. See the deployment section in `AGENTS.md` for the full picture.
 
 ## Architecture (the load-bearing parts)

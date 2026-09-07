@@ -1,0 +1,24 @@
+# Default-deny + allow-list NetworkPolicies for `aaks` (wave 2, no operator
+# dependency — Calico ships with GKE). The sandbox namespace policies ship
+# with the sandbox plane itself (k8s/sandbox/base/networkpolicies.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-config-networkpolicies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/components/network-policies
+  destination:
+    namespace: aaks
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false

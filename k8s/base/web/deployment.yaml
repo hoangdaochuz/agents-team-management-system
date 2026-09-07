@@ -28,6 +28,15 @@ spec:
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
+      volumes:
+        # nginx-unprivileged stays writable where it must while the root
+        # filesystem is read-only (PSS `restricted` requires it).
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
       containers:
         - name: web
           image: web
@@ -67,10 +76,18 @@ spec:
               memory: 128Mi
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+            - name: tmp
+              mountPath: /tmp
       terminationGracePeriodSeconds: 30
 ---
 apiVersion: v1

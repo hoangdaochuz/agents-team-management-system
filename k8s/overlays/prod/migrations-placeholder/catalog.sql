@@ -1,2 +1,0 @@
--- Placeholder for catalog migrations
--- CI will replace this with actual migration files from backend/services/catalog/internal/infrastructure/repository/migrations

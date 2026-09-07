@@ -11,14 +11,14 @@ the how.
 - [x] 1.2 Create `infra/modules/gke`: Standard cluster (private nodes, Workload Identity,
   Security Posture on) with default pool + tainted `sandbox` node pool
   (`aaks/sandbox=true:NoSchedule`)
-- [x] 1.3 Create `infra/modules/cloudsql`: private-IP Postgres 16 instance + 10 logical databases
+- [x] 1.3 Create `infra/modules/cloudsql`: private-IP Postgres 16 instance + 4 logical databases
   (mirror `deploy/postgres/01-create-databases.sql`) + secret in Secret Manager for the DB
   password
 - [x] 1.4 Create `infra/modules/managed-kafka`: Managed Service for Apache Kafka cluster +
   per-domain topics (from `backend/internal/contracts/events`) with SASL/PLAIN credentials in
   Secret Manager
 - [x] 1.5 Create `infra/modules/filestore` (clone-root NFS volume) and `infra/modules/secrets`
-  (SETTINGS_MASTER_KEY, SETTINGS_INTERNAL_TOKEN, AUTH_SEED_SUPERADMIN_* secret containers)
+  (AGENT_MASTER_KEY, INTERNAL_TOKEN, AGENT_INTERNAL_TOKEN, AUTH_SEED_SUPERADMIN_* secret containers)
 - [x] 1.6 Create `infra/modules/wif`: GitHub OIDC provider/pool for CI, per-workload
   KSA→GSA Workload Identity bindings (Argo CD, ESO, trivy-operator)
 - [x] 1.7 Create `infra/envs/dev` and `infra/envs/prod` (main.tf, tfvars sized per design,
@@ -30,8 +30,8 @@ the how.
 - [x] 2.1 Create `frontend/nginx.conf` (port 8080 non-root, SPA fallback, `/api` proxy to
   gateway with `proxy_buffering off` + HTTP/1.1 for SSE); fix `frontend/Dockerfile` port/user;
   verify `docker build` succeeds and the image serves
-- [x] 2.2 Add runner image variant with `git` present (alpine-based, nonroot, ca-certs) used for
-  the runner Deployment; keep `deploy/service.Dockerfile` for the other 10 services unchanged
+- [x] 2.2 Add executor image variant with `git` present (alpine-based, nonroot, ca-certs) used for
+  the executor Deployment; keep `deploy/service.Dockerfile` for the other 4 services unchanged
 - [x] 2.3 Add SASL/PLAIN support to `backend/internal/platform/kafka` driven by env
   (`KAFKA_SASL_MECHANISM/USER/PASSWORD_*`), plaintext path untouched when unset; unit test with
   unset vars proving current behavior is unchanged
@@ -50,7 +50,7 @@ the how.
 
 ## 4. CI/CD pipeline — build, scan, sign, publish (design D1)
 
-- [x] 4.1 Create `.github/workflows/deploy.yml`: on push to master after ci gates — build 11
+- [x] 4.1 Create `.github/workflows/deploy.yml`: on push to master after ci gates — build the 5
   service images (matrix over SERVICE/PORT via `deploy/service.Dockerfile`), SPA image, sandbox
   image; tag `sha-<commit>`
 - [x] 4.2 Authenticate to GCP via GitHub OIDC → WIF (no stored keys); push to Artifact Registry
@@ -65,13 +65,13 @@ the how.
 
 - [x] 5.1 Scaffold `k8s/base` + `k8s/overlays/{dev,prod}` Kustomize layout with namespace/
   commonLabels/namePrefix conventions
-- [x] 5.2 Create Deployment+Service+PDB+ConfigMap for the 11 backend services: digest image,
-  `/healthz` probes, requests/limits, ≥2 replicas (runner 1), rolling update, graceful shutdown
+- [x] 5.2 Create Deployment+Service+PDB+ConfigMap for the 5 backend services: digest image,
+  `/healthz` probes, requests/limits, ≥2 replicas (executor 1), rolling update, graceful shutdown
   (terminationGracePeriodSeconds), SA with `automountServiceAccountToken: false`
-- [x] 5.3 Create the runner Deployment: sandbox-pool toleration/nodeSelector, DinD sidecar
+- [x] 5.3 Create the executor Deployment: sandbox-pool toleration/nodeSelector, DinD sidecar
   (privileged, digest-pinned, socket via shared emptyDir, pre-pull initContainer), Filestore PVC
-  mounted at `/clone` in BOTH runner and DinD containers, env per design D3
-  (`RUNNER_SANDBOX=docker`, `RUNNER_DOCKER_SOCKET=/dind/docker.sock`, `RUNNER_CLONE_ROOT=/clone`)
+  mounted at `/clone` in BOTH executor and DinD containers, env per design D3
+  (`EXECUTOR_SANDBOX=docker`, `EXECUTOR_DOCKER_SOCKET=/dind/docker.sock`, `EXECUTOR_CLONE_ROOT=/clone`)
 - [x] 5.4 Create clone-bootstrap CronJob/Job that seeds the managed repos into the Filestore
   clone root
 - [x] 5.5 Create SPA Deployment+Service (nginx image) and HTTPS ingress routing `/api`→gateway,
@@ -92,19 +92,20 @@ the how.
 
 - [x] 7.1 Install Kyverno via Argo CD; add policies: verify-images (Artifact Registry origin +
   Cosign signature), deny `latest`, require non-root + requests/limits, block privileged/hostPath
-  outside the runner-sandbox path — with narrowly-scoped exceptions for DinD
+  outside the executor-sandbox path — with narrowly-scoped exceptions for DinD
 - [x] 7.2 Define default-deny + allow-list NetworkPolicies per design (service→SQL/Kafka,
   gateway→upstreams, SPA→gateway, control-plane tools)
 - [x] 7.3 Install Trivy Operator via Argo CD; verify vulnerability reports appear per namespace
 - [x] 7.4 Install Falco via Argo CD with tuned rules (suppress expected DinD churn in the sandbox
-  namespace; custom alert on shell spawns in the 11 service containers); verify alert pipeline is
+  namespace; custom alert on shell spawns in the 5 service containers); verify alert pipeline is
   queryable
 - [x] 7.5 Apply Pod Security Standards labels (restricted where possible, baseline explicitly for
   system + sandbox namespaces)
 
 ## 8. Environments up + end-to-end verification
 
-- [ ] 8.1 `terraform apply` dev; bootstrap Argo CD; confirm all 12 workloads healthy on GKE dev
+- [ ] 8.1 `terraform apply` dev; bootstrap Argo CD; confirm all workloads healthy on GKE dev
+  (5 services + SPA in `aaks`, executor + clone-bootstrap in `aaks-sandbox`)
 - [ ] 8.2 Verify dev data plane: services connect to Cloud SQL privately, Kafka consumers attach
   to managed topics, ExternalSecrets sync, no secret material in Git (run gitleaks over k8s/)
 - [ ] 8.3 Verify real agent execution in dev: bootstrap clone, move a task to Doing, confirm

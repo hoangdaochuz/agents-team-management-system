@@ -1,10 +1,10 @@
-# Runner service image — the ONLY service image that needs a runtime with
-# `git` (the runner creates/removes per-task worktrees host-side via
+# Executor service image — the ONLY service image that needs a runtime with
+# `git` (the executor creates/removes per-task worktrees host-side via
 # `git worktree`, and the clone root is shared with its DinD daemon).
 # Everyone else keeps the distroless service.Dockerfile.
 #
-# SECURITY: the runner talks to Settings over the internal token path for
-# provider keys; nothing sensitive is baked into this image.
+# SECURITY: the executor talks to the Agent service over the internal token
+# path for provider keys; nothing sensitive is baked into this image.
 # syntax=docker/dockerfile:1
 
 # ---- build (same as service.Dockerfile) ----
@@ -13,14 +13,14 @@ WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/service ./services/runner/cmd
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/service ./services/executor/cmd
 
 # ---- runtime: alpine + git + ca-certificates, non-root ----
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 RUN apk add --no-cache git ca-certificates tzdata \
-    && addgroup -g 1000 runner \
-    && adduser -D -u 1000 -G runner runner
+    && addgroup -g 1000 executor \
+    && adduser -D -u 1000 -G executor executor
 COPY --from=build /out/service /service
-USER runner:runner
+USER executor:executor
 EXPOSE 8086
 ENTRYPOINT ["/service"]

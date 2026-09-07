@@ -1,0 +1,26 @@
+# Kyverno admission controller (Helm, version-pinned). Owns the
+# verify-images / non-root / limits / privileged / hostPath ClusterPolicies in
+# k8s/components/kyverno/policies (synced by config-kyverno-policies, wave 2).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-platform-kyverno
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: aaks
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno
+    targetRevision: 3.9.0
+  destination:
+    namespace: kyverno
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

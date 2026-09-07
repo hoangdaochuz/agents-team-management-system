@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  # Argo CD installation from upstream manifest
-  # Pinned to v2.12.4 - update via bump in comments
-  - github.com/argoproj/argo-cd manifests/base install.yaml
+  # Argo CD itself is installed once per cluster from the pinned upstream
+  # manifest (see k8s/README.md bootstrap); everything below is our
+  # GitOps delivery graph (app-of-apps + operators + configs + workloads).
   - apps/

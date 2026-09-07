@@ -1,2 +1,0 @@
--- Placeholder for auth migrations
--- CI will replace this with actual migration files from backend/services/auth/internal/infrastructure/repository/migrations

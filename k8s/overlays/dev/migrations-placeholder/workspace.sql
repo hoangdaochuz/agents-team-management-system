@@ -1,0 +1,2 @@
+-- Placeholder for workspace migrations
+-- CI will replace this with actual migration files from backend/services/workspace/internal/infrastructure/repository/migrations

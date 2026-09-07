@@ -1,33 +1,33 @@
 ## Purpose
 
-Defines how the 11 backend services, the SPA frontend, and the agent-execution sandbox run on GKE
-with production-grade reliability: declarative manifests, health probes, sizing, ingress, and the
-Docker sandbox topology for real agent execution.
+Defines how the 5 consolidated backend services (gateway, identity, workspace, agent, executor),
+the SPA frontend, and the agent-execution sandbox run on GKE with production-grade reliability:
+declarative manifests, health probes, sizing, ingress, and the Docker sandbox topology for real
+agent execution.
 
 ## ADDED Requirements
 
 ### Requirement: All services deploy declaratively to GKE
-The 11 backend services (gateway, project, task, agent, catalog, settings, runner, auth, orgs,
-resources, admin) and the SPA SHALL each have a Kubernetes Deployment and Service defined in
-Kustomize manifests, with a base overlay shared by dev and prod and per-environment overlays
-supplying images, config, and sizing.
+The 5 backend services (gateway, identity, workspace, agent, executor) and the SPA SHALL each
+have a Kubernetes Deployment and Service defined in Kustomize manifests, with a base overlay
+shared by dev and prod and per-environment overlays supplying images, config, and sizing.
 
 #### Scenario: Base manifests render for both environments
 - **WHEN** `kustomize build` runs against the dev and prod overlays
-- **THEN** both render a complete, valid set of manifests for all 12 workloads with no manual
+- **THEN** both render a complete, valid set of manifests for all 6 workloads with no manual
   patching required
 
 #### Scenario: Service topology matches the compose contract
 - **WHEN** the manifests are applied
 - **THEN** each service receives its documented env surface (per-service DSN, `KAFKA_BROKERS`,
-  gateway upstream URLs, runner sandbox settings) with values resolved per environment, and the
+  gateway upstream URLs, executor sandbox settings) with values resolved per environment, and the
   gateway proxies `/api/<domain>/...` to the same upstream services it proxies in
   docker-compose
 
 ### Requirement: Every workload is production-grade
 Every Deployment SHALL declare: image referenced by digest (immutable), liveness and readiness
 probes on `/healthz`, CPU/memory requests and limits, ≥2 replicas for all services except the
-runner, and a PodDisruptionBudget for multi-replica services. Deployments SHALL use rolling
+executor, and a PodDisruptionBudget for multi-replica services. Deployments SHALL use rolling
 updates and respect graceful shutdown.
 
 #### Scenario: Pod failure is not an outage
@@ -54,16 +54,16 @@ route `/api` and `/stream` to the gateway path and all other paths to the SPA.
 - **THEN** steps arrive incrementally through nginx and the ingress without buffering-induced delay
 
 ### Requirement: Agent-execution sandbox runs in-cluster
-The runner SHALL run as a single-replica Deployment on the dedicated sandbox node pool with:
-`RUNNER_SANDBOX=docker`, a Docker-in-Docker sidecar exposing its unix socket via a shared
-`emptyDir` volume mounted at the path `RUNNER_DOCKER_SOCKET` expects, the sandbox base image
-pre-pulled/available to that daemon, and `RUNNER_CLONE_ROOT` pointing at the Filestore PVC. The
-sandbox containers the runner creates SHALL hold no API keys and no git credentials (the
+The executor SHALL run as a single-replica Deployment on the dedicated sandbox node pool with:
+`EXECUTOR_SANDBOX=docker`, a Docker-in-Docker sidecar exposing its unix socket via a shared
+`emptyDir` volume mounted at the path `EXECUTOR_DOCKER_SOCKET` expects, the sandbox base image
+pre-pulled/available to that daemon, and `EXECUTOR_CLONE_ROOT` pointing at the Filestore PVC.
+The sandbox containers the executor creates SHALL hold no API keys and no git credentials (the
 credential-less invariant from `design.md` §3.4 is preserved).
 
 #### Scenario: A Doing task gets a real sandbox
-- **WHEN** a task moves to Doing and the runner starts an agent run
-- **THEN** the runner creates a sandbox container from the sandbox image with the task worktree
+- **WHEN** a task moves to Doing and the executor starts an agent run
+- **THEN** the executor creates a sandbox container from the sandbox image with the task worktree
   bind-mounted at `/workspace`, and executes build/test/edit commands inside it
 
 #### Scenario: Sandbox containers are credential-less
@@ -71,13 +71,13 @@ credential-less invariant from `design.md` §3.4 is preserved).
 - **THEN** no provider API key, DB credential, or git credential is discoverable inside a sandbox
   container
 
-#### Scenario: Runner pod is the only privileged workload
-- **WHEN** any pod other than the runner (and its DinD sidecar) requests privileged security
+#### Scenario: Executor pod is the only privileged workload
+- **WHEN** any pod other than the executor (and its DinD sidecar) requests privileged security
   context or a host socket mount
 - **THEN** admission policy rejects it (enforced by `devsecops-controls`)
 
 ### Requirement: Database migrations run as deploy steps
-Schema migrations for the 10 service databases SHALL run as an ordered pre-deploy step (Kubernetes
+Schema migrations for the 4 service databases SHALL run as an ordered pre-deploy step (Kubernetes
 Job or init sequence) before the new service version receives traffic, using the same image digest
 as the service it migrates for.
 

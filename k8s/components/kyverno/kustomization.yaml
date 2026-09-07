@@ -2,7 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-  # Kyverno installation from upstream
-  # Pinned to v1.12.4 - update via bump in comments
-  - github.com/kyverno/kyverno manifests/release/install.yaml
+  # Admission + hardening policy set. The Kyverno OPERATOR itself is installed
+  # by Argo CD from the pinned Helm chart (see
+  # components/argocd/apps/platform-kyverno.yaml) — remote kustomize refs to
+  # upstream repos are intentionally not used (most upstreams don't ship
+  # kustomizations, and unpinned remotes would float).
   - policies/
