@@ -62,11 +62,15 @@ and the tainted sandbox node pool (`aaks/sandbox=true:NoSchedule` taint; nodes c
 slash-free `aaks-sandbox=true` label for the executor's nodeSelector — GCE labels forbid `/`).
 
 - **DinD sidecar**: `docker:dind` image (pinned digest), privileged mode, storage on dedicated `emptyDir`
-- **Shared socket**: `/dind/docker.sock` mounted in both DinD and executor containers
+- **Native sidecar ordering**: DinD runs as a restartable initContainer (`restartPolicy: Always`,
+  K8s 1.29+) so it starts BEFORE the pre-pull initContainer — a regular sidecar would start
+  only after init completes and the pre-pull would wait on a socket that never appears
+- **Shared socket**: `/var/run/docker.sock` (the daemon default) mounted in DinD, pre-pull,
+  and executor via one `emptyDir`
 - **Filestore PVC**: Mounted at `/clone` in both DinD and executor for worktree access
 - **InitContainer**: Pre-pulls the sandbox image at startup
 - **Toleration**: `aaks/sandbox=true:NoSchedule` taint for dedicated sandbox node pool
-- **Environment**: `EXECUTOR_SANDBOX=docker`, `EXECUTOR_DOCKER_SOCKET=/dind/docker.sock`, `EXECUTOR_CLONE_ROOT=/clone`
+- **Environment**: `EXECUTOR_SANDBOX=docker`, `EXECUTOR_DOCKER_SOCKET=/var/run/docker.sock`, `EXECUTOR_CLONE_ROOT=/clone`
 - **Cross-namespace upstreams**: the executor reaches agent/workspace (and the gateway reaches
   the executor) via cluster FQDNs (`*.aaks.svc.cluster.local` / `*.aaks-sandbox.svc.cluster.local`),
   allowed by the cross-namespace NetworkPolicy rules on both sides.
@@ -288,7 +292,7 @@ ClusterSecretStore + ExternalSecrets synced (ESO logs) and the migration ConfigM
 `tuned customRules` in `components/falco/values.yaml` except pods named `executor-*` from the
 two noisiest default rules. Alerts naming other pods are real findings.
 
-**Executor cannot create sandbox containers**: Verify DinD sidecar is healthy, socket is shared at `/dind/docker.sock`, Filestore PVC is mounted at `/clone` in both containers, and the clone-bootstrap CronJob has seeded the repo (`kubectl -n aaks-sandbox logs job/<clone-job>`).
+**Executor cannot create sandbox containers**: Verify DinD sidecar is healthy, socket is shared at `/var/run/docker.sock`, Filestore PVC is mounted at `/clone` in both containers, and the clone-bootstrap CronJob has seeded the repo (`kubectl -n aaks-sandbox logs job/<clone-job>`).
 
 ## References
 

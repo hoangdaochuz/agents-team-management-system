@@ -60,9 +60,11 @@ spec:
             - count: 1
               entries:
                 - keyless:
-                    # Keyless certificate identity for the deploy workflow:
-                    # replace your-org with the GitHub org when bootstrapping.
-                    subject: "https://github.com/your-org/agents-team-management-system/*"
+                    # Keyless certificate identity for the deploy workflow.
+                    # Pinned to this repo: a fork's CI signatures must NOT
+                    # admit images here (merge precondition if the repo moves:
+                    # update this subject alongside the Argo repoURLs).
+                    subject: "https://github.com/hoangdaochuz/agents-team-management-system/*"
                     issuer: "https://token.actions.githubusercontent.com"
                     rekor:
                       url: "https://rekor.sigstore.dev"

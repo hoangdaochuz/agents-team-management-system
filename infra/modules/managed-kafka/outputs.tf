@@ -21,8 +21,8 @@ output "bootstrap_lookup" {
 }
 
 output "topic_names" {
-  description = "List of created topic names"
-  value       = concat(values(google_managed_kafka_topic.topics)[*].topic_id, ["__consumer_offsets"])
+  description = "List of created topic names (built from the actual resources, not the input list)"
+  value       = concat(values(google_managed_kafka_topic.topics)[*].topic_id, [google_managed_kafka_topic.consumer_offsets.topic_id])
 }
 
 output "username_secret_name" {
@@ -51,6 +51,6 @@ output "sasl_mechanism" {
 }
 
 output "security_protocol" {
-  description = "Security protocol"
-  value       = "SASL_PLAINTEXT"
+  description = "Security protocol (TLS-only brokers: SASL/PLAIN runs over TLS, i.e. SASL_SSL)"
+  value       = "SASL_SSL"
 }

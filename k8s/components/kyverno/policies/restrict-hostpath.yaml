@@ -6,12 +6,15 @@ spec:
   validationFailureAction: Enforce
   background: true
   rules:
-    - name: block-hostpath-except-sandbox
+    - name: block-hostpath
       match:
         any:
           - resources:
               kinds:
                 - Pod
+      # NOTE: no sandbox exclusion here, unlike the privileged/non-root
+      # policies — the executor plane mounts only emptyDir/PVC/ConfigMap, so
+      # hostPath is forbidden cluster-wide with zero exceptions.
       exclude:
         any:
           - resources:
@@ -21,14 +24,8 @@ spec:
                 - kube-system
                 - argocd
                 - kyverno
-          - resources:
-              kinds:
-                - Pod
-              selector:
-                  matchLabels:
-                    aaks/sandbox: "true"
       validate:
-        message: "HostPath volumes are only allowed in sandbox workloads."
+        message: "HostPath volumes are not allowed."
         pattern:
           spec:
             volumes:

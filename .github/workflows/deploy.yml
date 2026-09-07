@@ -256,4 +256,12 @@ jobs:
           fi
           # HEAD_SHA (tested commit), NOT GITHUB_SHA (master HEAD here).
           git commit -m "promote dev images sha-${HEAD_SHA::7}"
-          git push origin master
+          # Master may advance between CI and now (another merge): rebase and
+          # retry instead of failing the run on a stale push.
+          for attempt in 1 2 3; do
+            git pull --rebase origin master && git push origin master && break
+            echo "push attempt $attempt failed, retrying..."
+            git rebase --abort 2>/dev/null || true
+            sleep 10
+            [ "$attempt" = 3 ] && exit 1
+          done

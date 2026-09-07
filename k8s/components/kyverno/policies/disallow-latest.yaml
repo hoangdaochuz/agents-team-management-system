@@ -44,3 +44,12 @@ spec:
             context: []
             pattern:
               image: "!*:latest"
+          # Debug ephemerals bypass nothing: same two patterns.
+          - list: request.object.spec.ephemeralContainers || `[]`
+            context: []
+            pattern:
+              image: "*:*"
+          - list: request.object.spec.ephemeralContainers || `[]`
+            context: []
+            pattern:
+              image: "!*:latest"

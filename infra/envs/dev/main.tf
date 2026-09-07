@@ -1,19 +1,5 @@
 # Dev environment - main configuration
 
-terraform {
-  required_version = ">= 1.6.0"
-  required_providers {
-    google = {
-      source  = "hashicorp/google"
-      version = "~> 6.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
-    }
-  }
-}
-
 provider "google" {
   project = var.project_id
   region  = var.region
@@ -107,7 +93,7 @@ module "managed_kafka" {
   project_id  = var.project_id
   environment = "dev"
   region      = var.region
-  cluster_id  = "aaks-dev"
+  cluster_id  = "aaks"
   subnet_id   = module.vpc.subnet_id
 
   # Dev: smallest legal capacity (minimum 3 vCPU, ~12GB memory per broker)

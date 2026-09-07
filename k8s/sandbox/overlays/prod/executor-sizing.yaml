@@ -1,6 +1,7 @@
 # Prod executor sizing as a strategic-merge patch (merges by container NAME —
-# unlike the old containers[0]/containers[1] JSON patches, this survives a
-# sidecar reorder).
+# unlike containers[0]-indexed JSON patches, this survives a sidecar reorder).
+# NOTE: `dind` is a native sidecar, so it lives under `initContainers`, not
+# `containers` — a `containers:` entry named dind would silently no-op.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,6 +11,15 @@ spec:
   replicas: 1
   template:
     spec:
+      initContainers:
+        - name: dind
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 3000m
+              memory: 6Gi
       containers:
         - name: executor
           resources:
@@ -19,11 +29,3 @@ spec:
             limits:
               cpu: 1500m
               memory: 2Gi
-        - name: dind
-          resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: 3000m
-              memory: 6Gi

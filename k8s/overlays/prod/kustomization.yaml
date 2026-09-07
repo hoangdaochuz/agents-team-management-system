@@ -35,102 +35,113 @@ images:
 
 # Prod-specific sizing patches
 patches:
-  # Increase replicas for HA
+# Prod-specific sizing patches (strategic merge by container NAME —
+# unlike containers[0]-indexed JSON patches, these survive sidecars).
   - target:
       kind: Deployment
       name: gateway
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 200m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 256Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 1000m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 1Gi
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: gateway
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: gateway
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
   - target:
       kind: Deployment
       name: identity
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 200m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 256Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 1000m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 1Gi
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: identity
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: identity
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
   - target:
       kind: Deployment
       name: workspace
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 200m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 256Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 1000m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 1Gi
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: workspace
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: workspace
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
   - target:
       kind: Deployment
       name: agent
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 200m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 256Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 1000m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 1Gi
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: agent
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: agent
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
   - target:
       kind: Deployment
       name: web
     patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 3
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 100m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 128Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 500m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 256Mi
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: web
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 256Mi
   # Executor sizing (single replica, larger DinD limits) and the clone PVC
   # size live in k8s/sandbox/overlays/prod/kustomization.yaml — the executor
   # moved to the dedicated aaks-sandbox namespace (see k8s/README.md).

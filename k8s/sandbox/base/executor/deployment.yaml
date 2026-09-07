@@ -66,6 +66,56 @@ spec:
           persistentVolumeClaim:
             claimName: executor-clone-pvc
       initContainers:
+        # DinD daemon as a NATIVE SIDECAR (restartPolicy: Always — K8s 1.29+,
+        # GKE REGULAR channel): it starts BEFORE pre-pull-sandbox, so the
+        # socket exists when the pre-pull loop runs. A regular (non-init)
+        # sidecar would start only AFTER all initContainers complete — the
+        # pre-pull would then wait on a socket that can never appear and the
+        # pod would hang in Init forever. Default socket
+        # /var/run/docker.sock is shared below via dind-sock.
+        - name: dind
+          image: docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c
+          restartPolicy: Always
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            # Pod-level runAsNonRoot must not apply to the rootful daemon
+            # (kubelet would refuse with CreateContainerConfigError).
+            runAsNonRoot: false
+            runAsUser: 0
+            privileged: true
+            seccompProfile:
+              type: Unconfined
+          # The daemon has no /healthz — exec probes against the socket.
+          livenessProbe:
+            exec:
+              command: [docker, info]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: [docker, info]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: dind-data
+              mountPath: /var/lib/docker
+            - name: dind-sock
+              mountPath: /var/run
+            - name: clone
+              mountPath: /clone
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
         # Pre-pull sandbox image through the DinD socket at startup. Needs the
         # socket only — NOT privileged (it never touches the host).
         - name: pre-pull-sandbox
@@ -104,50 +154,8 @@ spec:
             runAsNonRoot: false
             runAsUser: 0
       containers:
-        # DinD sidecar (default socket /var/run/docker.sock, shared below)
-        - name: dind
-          image: docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c
-          env:
-            - name: DOCKER_TLS_CERTDIR
-              value: ""
-          securityContext:
-            # Same opt-out as pre-pull: pod-level runAsNonRoot must not apply
-            # to the rootful daemon.
-            runAsNonRoot: false
-            runAsUser: 0
-            privileged: true
-            seccompProfile:
-              type: Unconfined
-          # The daemon has no /healthz — exec probes against the socket.
-          livenessProbe:
-            exec:
-              command: [docker, info]
-            initialDelaySeconds: 60
-            periodSeconds: 30
-            timeoutSeconds: 10
-            failureThreshold: 3
-          readinessProbe:
-            exec:
-              command: [docker, info]
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 6
-          volumeMounts:
-            - name: dind-data
-              mountPath: /var/lib/docker
-            - name: dind-sock
-              mountPath: /var/run
-            - name: clone
-              mountPath: /clone
-          resources:
-            requests:
-              cpu: 500m
-              memory: 1Gi
-            limits:
-              cpu: 2000m
-              memory: 4Gi
-        # Executor container
+        # Executor container (the DinD daemon lives in initContainers as a
+        # native sidecar — see above).
         - name: executor
           image: executor
           ports:

@@ -26,6 +26,12 @@ spec:
           # the DinD daemon + its pre-pull loop are rootful by necessity (the
           # executor main container itself is non-root). Kyverno CAN scope by
           # pod labels where PSS cannot — that is exactly what this uses.
+          #
+          # Explicitly accepted residual: the exclusion is pod-wide, so a
+          # future privileged/root container added to the executor pod would
+          # also pass THIS policy. It would still face restrict-privileged
+          # (same label scope), verify-images, and PR review — the label
+          # itself is the trust boundary, matching the namespace split.
           - resources:
               kinds:
                 - Pod

@@ -407,7 +407,7 @@ func TestNewConfigPlaintextPathUnchanged(t *testing.T) {
 		t.Error("SASL must stay disabled without KAFKA_SASL_USER")
 	}
 	if c.Net.TLS.Enable {
-		t.Error("TLS must stay disabled without KAFKA_TLS=true")
+		t.Error("TLS must stay disabled without SASL credentials (opt-out default only applies with KAFKA_SASL_USER set)")
 	}
 }
 

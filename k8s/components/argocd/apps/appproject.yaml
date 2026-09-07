@@ -14,9 +14,26 @@ spec:
     - https://aquasecurity.github.io/helm-charts/
     - https://falcosecurity.github.io/charts
   destinations:
+    # Workload namespaces…
     - namespace: aaks
       server: https://kubernetes.default.svc
     - namespace: aaks-sandbox
+      server: https://kubernetes.default.svc
+    # …plus every namespace a project Application targets: operators install
+    # into their own namespaces (platform-*.yaml), configs manage shared ones
+    # (config-*.yaml). Argo rejects an Application whose destination is not
+    # listed here, so this list must stay in sync with the apps/ directory.
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    - namespace: kyverno
+      server: https://kubernetes.default.svc
+    - namespace: external-secrets
+      server: https://kubernetes.default.svc
+    - namespace: trivy-system
+      server: https://kubernetes.default.svc
+    - namespace: falco
+      server: https://kubernetes.default.svc
+    - namespace: default
       server: https://kubernetes.default.svc
   # Only the cluster-scoped kinds this project manages: workload namespaces,
   # the secret store + admission policies, and the RBAC/CRD/webhook kinds the

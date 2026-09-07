@@ -215,38 +215,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
----
-# Allow trivy-operator and kyverno to scan workloads. Ports are the in-aaks
-# service ports only (8086/executor lives in aaks-sandbox — covered by the
-# sandbox policies, not here).
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-scanners-to-workloads
-  namespace: aaks
-spec:
-  podSelector:
-    matchLabels:
-      tier: backend
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kyverno
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: trivy-system
-      ports:
-        - protocol: TCP
-          port: 8080
-        - protocol: TCP
-          port: 8081
-        - protocol: TCP
-          port: 8083
-        - protocol: TCP
-          port: 8085
+# NOTE (deliberately no scanner-ingress rule): neither scanner dials workload
+# pod ports. Kyverno enforces via its admission webhook (API server calls the
+# webhook Service in the `kyverno` namespace — covered by the API server, not
+# by pod ingress), and Trivy Operator scans by pulling images into scan-Job
+# pods of its own (egress to the registry, covered by its own namespace,
+# which has no default-deny). An ingress allow here would open ports to
+# traffic that never legitimately occurs.
 ---
 # Allow DNS
 apiVersion: networking.k8s.io/v1

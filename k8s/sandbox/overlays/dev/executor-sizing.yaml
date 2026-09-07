@@ -1,5 +1,6 @@
 # Dev executor sizing as a strategic-merge patch (merges by container NAME —
 # unlike containers[0]-indexed JSON patches, this survives a sidecar reorder).
+# NOTE: `dind` is a native sidecar under `initContainers` (see prod twin).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +9,7 @@ spec:
   replicas: 1
   template:
     spec:
-      containers:
+      initContainers:
         - name: dind
           resources:
             requests:
