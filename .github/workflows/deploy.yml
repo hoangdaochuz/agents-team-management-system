@@ -20,9 +20,15 @@ on:
     types: [completed]
     branches: [master]
 
+# In a `workflow_run` pipeline `github.sha` is the DEFAULT-BRANCH HEAD at
+# trigger time — NOT the commit CI just tested. Every tag/describe/promote
+# below uses the tested commit (`github.event.workflow_run.head_sha`) so the
+# "one commit → one immutable artifact set" invariant actually holds.
+env:
+  HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+
 permissions:
   contents: write
-  packages: write
   id-token: write
 
 jobs:
@@ -33,14 +39,33 @@ jobs:
       matrix:
         include:
           # The 5 consolidated services. gateway/identity/workspace/agent use
-          # the shared distroless Dockerfile; executor uses the git-capable
-          # variant (it execs `git worktree` host-side).
+          # the shared distroless Dockerfile (needs SERVICE + PORT); executor
+          # uses the git-capable variant (it execs `git worktree` host-side —
+          # no build args, the target is hardcoded).
           - name: gateway
             dockerfile: deploy/service.Dockerfile
             context: ./backend
-          - { name: identity,  dockerfile: deploy/service.Dockerfile, context: ./backend }
-          - { name: workspace, dockerfile: deploy/service.Dockerfile, context: ./backend }
-          - { name: agent,     dockerfile: deploy/service.Dockerfile, context: ./backend }
+            build_args: |
+              SERVICE=gateway
+              PORT=8080
+          - name: identity
+            dockerfile: deploy/service.Dockerfile
+            context: ./backend
+            build_args: |
+              SERVICE=identity
+              PORT=8085
+          - name: workspace
+            dockerfile: deploy/service.Dockerfile
+            context: ./backend
+            build_args: |
+              SERVICE=workspace
+              PORT=8081
+          - name: agent
+            dockerfile: deploy/service.Dockerfile
+            context: ./backend
+            build_args: |
+              SERVICE=agent
+              PORT=8083
           - { name: executor,  dockerfile: deploy/runner.Dockerfile,  context: ./backend }
           # SPA
           - { name: web, dockerfile: frontend/Dockerfile, context: ./frontend }
@@ -55,36 +80,39 @@ jobs:
         if: github.event.workflow_run.conclusion != 'success'
         run: exit 1
 
-      - uses: actions/checkout@v4
+      # The CI-tested commit — NOT master HEAD (see top-of-file note).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Authenticate to GCP (OIDC, no stored keys)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SA }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
 
       - name: Login to Artifact Registry
         run: echo "AR_TOKEN=$(gcloud auth print-access-token)" >> "$GITHUB_ENV"
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ vars.GCP_REGISTRY }}
           username: oauth2accesstoken
           password: ${{ env.AR_TOKEN }}
 
       - name: Build and push (once, by commit SHA)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
-          build-args: ${{ matrix.name != 'web' && matrix.name != 'sandbox' && matrix.name != 'executor' && matrix.name != 'clone' && matrix.name != 'migrate' && format('SERVICE={0}', matrix.name) || '' }}
+          build-args: ${{ matrix.build_args }}
           push: true
-          tags: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ github.sha }}
+          tags: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ env.HEAD_SHA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -96,23 +124,26 @@ jobs:
       matrix:
         name: [gateway, identity, workspace, agent, executor, web, sandbox, clone, migrate]
     env:
-      IMAGE: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ github.sha }}
+      IMAGE: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ env.HEAD_SHA }}
     steps:
-      - uses: actions/checkout@v4
+      # Same tested commit as the build job.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Authenticate to GCP (OIDC, no stored keys)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SA }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
 
       - name: Login to Artifact Registry
         run: echo "AR_TOKEN=$(gcloud auth print-access-token)" >> "$GITHUB_ENV"
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ${{ vars.GCP_REGISTRY }}
           username: oauth2accesstoken
@@ -120,7 +151,7 @@ jobs:
 
       # Vulnerability gate: a critical CVE stops promotion dead.
       - name: Trivy image scan (fail on CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
         with:
           image-ref: ${{ env.IMAGE }}
           severity: CRITICAL
@@ -129,13 +160,13 @@ jobs:
           output: trivy-report.sarif
 
       - name: Upload Trivy report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: trivy-sarif-${{ matrix.name }}
           path: trivy-report.sarif
 
       - name: Generate SBOM (Syft, SPDX-JSON)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: ${{ env.IMAGE }}
           tool: syft
@@ -144,13 +175,13 @@ jobs:
           upload-artifact: false
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-${{ matrix.name }}
           path: sbom.spdx.json
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Sign image (keyless)
         run: cosign sign --yes "$IMAGE"
@@ -168,7 +199,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: scan-sign-publish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # GITHUB_TOKEN pushes do not re-trigger workflows (recursion guard):
           # the promotion commit only moves digests, which ci's iac-validate
@@ -180,16 +211,16 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - uses: imranismail/setup-kustomize@v3
+      - uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3
 
       - name: Authenticate to GCP (OIDC, no stored keys)
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SA }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
 
       # Promote by DIGEST (immutable), not tag: resolve each sha-tag to its
       # digest so the overlay records exactly what CI built, scanned and signed.
@@ -203,7 +234,7 @@ jobs:
             cd "$dir"
             for name in "$@"; do
               digest="$(gcloud artifacts docker images describe \
-                "${{ vars.GCP_REGISTRY }}/aaks/${name}:sha-${{ github.sha }}" \
+                "${{ vars.GCP_REGISTRY }}/aaks/${name}:sha-${{ env.HEAD_SHA }}" \
                 --format='value(image_summary.digest)')"
               kustomize edit set image "${name}=${{ vars.GCP_REGISTRY }}/aaks/${name}@${digest}"
             done
@@ -212,7 +243,7 @@ jobs:
           promote k8s/overlays/dev gateway identity workspace agent web migrate
           promote k8s/sandbox/overlays/dev executor clone
           sandbox_digest="$(gcloud artifacts docker images describe \
-            "${{ vars.GCP_REGISTRY }}/aaks/sandbox:sha-${{ github.sha }}" \
+            "${{ vars.GCP_REGISTRY }}/aaks/sandbox:sha-${{ env.HEAD_SHA }}" \
             --format='value(image_summary.digest)')"
           sed -i -E "s|^(  executor-sandbox-image: ).*|\1\"${{ vars.GCP_REGISTRY }}/aaks/sandbox@${sandbox_digest}\"|" \
             k8s/sandbox/overlays/dev/env-configmap.yaml
@@ -223,5 +254,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No promotion changes"; exit 0
           fi
-          git commit -m "promote dev images sha-${GITHUB_SHA::7}"
+          # HEAD_SHA (tested commit), NOT GITHUB_SHA (master HEAD here).
+          git commit -m "promote dev images sha-${HEAD_SHA::7}"
           git push origin master

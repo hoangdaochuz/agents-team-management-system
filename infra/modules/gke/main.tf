@@ -14,20 +14,29 @@ resource "google_container_cluster" "cluster" {
   network    = var.network_id
   subnetwork = var.subnet_id
 
-  # Private cluster configuration
+  # Private cluster configuration: private endpoint AND private nodes (nodes
+  # must not get public IPs — see infra/README.md). No global master access;
+  # operators reach the endpoint via authorized networks (dev) or IAP/bastion.
   private_cluster_config {
     enable_private_endpoint = true
+    enable_private_nodes    = true
     master_ipv4_cidr_block  = var.master_ipv4_cidr_block
+
+    master_global_access_config {
+      enabled = false
+    }
   }
 
   # Master authorized networks (provider v6: top-level block, NOT nested in
-  # private_cluster_config). Empty in prod = no external master access.
+  # private_cluster_config). Default EMPTY (private-only): the operator reaches
+  # the endpoint via IAP/bastion/VPN, or passes their CIDR via
+  # `master_authorized_cidrs` (e.g. a Cloud Shell / office range for dev).
   master_authorized_networks_config {
     dynamic "cidr_blocks" {
-      for_each = var.environment == "dev" ? [1] : []
+      for_each = var.master_authorized_cidrs
       content {
-        cidr_block   = "0.0.0.0/0"
-        display_name = "Allow all for dev (restrict in production)"
+        cidr_block   = cidr_blocks.value
+        display_name = "operator-${cidr_blocks.key}"
       }
     }
   }
@@ -80,8 +89,8 @@ resource "google_container_cluster" "cluster" {
   remove_default_node_pool = true
   initial_node_count       = 1
 
-  # Master version
-  min_master_version = "1.29"
+  # Master version: unset — the REGULAR release channel + auto-upgrade own it.
+  # A stale `min_master_version` pin fights the channel (GKE rejects EOL minors).
 
   # Logging and monitoring (provider v6: component list, not `framework`)
   logging_config {
@@ -133,7 +142,7 @@ resource "google_container_node_pool" "default_pool" {
   location = google_container_cluster.cluster.location
   cluster  = google_container_cluster.cluster.name
 
-  version    = google_container_cluster.cluster.min_master_version
+  # Node version: unset — tracks the channel-owned master version.
   node_count = var.default_node_pool_initial_node_count
 
   management {
@@ -163,8 +172,8 @@ resource "google_container_node_pool" "default_pool" {
     # workspace, agent, web, migrations) schedules here with no tolerations.
     # The sandbox pool below is the only tainted pool.
 
-    # Spot VM configuration
-    preemptible = var.default_node_pool_spot
+    # Spot VM configuration (provider v6: `spot`, not deprecated `preemptible`)
+    spot = var.default_node_pool_spot
 
     # Enable secure boot for nodes
     shielded_instance_config {
@@ -190,6 +199,11 @@ resource "google_container_node_pool" "default_pool" {
     ignore_changes = [node_count]
   }
 
+  upgrade_settings {
+    max_surge       = 1
+    max_unavailable = 0
+  }
+
   timeouts {
     create = "30m"
     update = "30m"
@@ -204,7 +218,7 @@ resource "google_container_node_pool" "sandbox_pool" {
   location = google_container_cluster.cluster.location
   cluster  = google_container_cluster.cluster.name
 
-  version    = google_container_cluster.cluster.min_master_version
+  # Node version: unset — tracks the channel-owned master version.
   node_count = var.sandbox_node_pool_initial_node_count
 
   management {
@@ -222,7 +236,7 @@ resource "google_container_node_pool" "sandbox_pool" {
     disk_size_gb    = var.sandbox_node_pool_disk_size_gb
     disk_type       = var.sandbox_node_pool_disk_type
     image_type      = "COS_CONTAINERD"
-    service_account = google_service_account.default_pool_sa.email
+    service_account = google_service_account.sandbox_pool_sa.email
 
     labels = {
       pool        = "sandbox"
@@ -242,8 +256,8 @@ resource "google_container_node_pool" "sandbox_pool" {
       effect = "NO_SCHEDULE"
     }
 
-    # Spot VM configuration
-    preemptible = var.sandbox_node_pool_spot
+    # Spot VM configuration (provider v6: `spot`, not deprecated `preemptible`)
+    spot = var.sandbox_node_pool_spot
 
     # Shielded nodes
     shielded_instance_config {
@@ -293,6 +307,16 @@ resource "google_service_account" "default_pool_sa" {
   description = "Service account used by GKE nodes for accessing GCP services via Workload Identity"
 }
 
+# Separate SA for the sandbox pool: a privileged-DinD node compromise must
+# not inherit even the default pool's (minimal) identity.
+resource "google_service_account" "sandbox_pool_sa" {
+  project      = var.project_id
+  account_id   = "${var.cluster_name}-sandbox-pool"
+  display_name = "Service account for ${var.cluster_name} sandbox node pool"
+
+  description = "Service account used by sandbox GKE nodes (DinD plane)"
+}
+
 # Minimal IAM for the node pool SA
 resource "google_project_iam_member" "node_pool_log_writer" {
   project = var.project_id
@@ -310,4 +334,23 @@ resource "google_project_iam_member" "node_pool_metrics_viewer" {
   project = var.project_id
   role    = "roles/monitoring.viewer"
   member  = "serviceAccount:${google_service_account.default_pool_sa.email}"
+}
+
+# Same minimal trio for the sandbox SA (kept separate — see above).
+resource "google_project_iam_member" "sandbox_pool_log_writer" {
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.sandbox_pool_sa.email}"
+}
+
+resource "google_project_iam_member" "sandbox_pool_metrics_writer" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.sandbox_pool_sa.email}"
+}
+
+resource "google_project_iam_member" "sandbox_pool_metrics_viewer" {
+  project = var.project_id
+  role    = "roles/monitoring.viewer"
+  member  = "serviceAccount:${google_service_account.sandbox_pool_sa.email}"
 }

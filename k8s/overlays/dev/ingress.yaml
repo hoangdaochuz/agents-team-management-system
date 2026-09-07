@@ -10,8 +10,9 @@ metadata:
     networking.gke.io/managed-certificates: aaks-cert
     # SSE-friendly timeout
     # NOTE: these nginx-class annotations are no-ops on a gce ingress; for
-    # long-lived /stream connections configure the backend service's
-    # `timeoutSec` (BackendPolicy) — GCE defaults cut idle streams at 30s.
+    # long-lived /stream connections the timeout lives in the gateway
+    # BackendConfig (k8s/base/gateway/backendconfig.yaml) — GCE defaults cut
+    # idle streams at 30s.
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-buffering: "off"

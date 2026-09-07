@@ -27,10 +27,10 @@ output "subnet_region" {
 
 output "pods_range_name" {
   description = "Pods secondary range name"
-  value       = google_compute_subnetwork.subnet.secondary_ip_range[0].range_name
+  value       = one([for r in google_compute_subnetwork.subnet.secondary_ip_range : r.range_name if r.range_name == "pods"])
 }
 
 output "services_range_name" {
   description = "Services secondary range name"
-  value       = google_compute_subnetwork.subnet.secondary_ip_range[1].range_name
+  value       = one([for r in google_compute_subnetwork.subnet.secondary_ip_range : r.range_name if r.range_name == "services"])
 }

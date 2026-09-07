@@ -24,10 +24,22 @@ spec:
       validate:
         message: "Image tags using 'latest' are not allowed."
         foreach:
+          # Bare `image: gateway` (no tag at all) must ALSO fail: untagged
+          # pulls resolve to `:latest` at runtime, so the negation alone
+          # would bless exactly what it means to forbid. CI promotion always
+          # writes `name@digest`, which satisfies both patterns.
+          - list: request.object.spec.containers
+            context: []
+            pattern:
+              image: "*:*"
           - list: request.object.spec.containers
             context: []
             pattern:
               image: "!*:latest"
+          - list: request.object.spec.initContainers
+            context: []
+            pattern:
+              image: "*:*"
           - list: request.object.spec.initContainers
             context: []
             pattern:

@@ -10,6 +10,11 @@
 .env.*
 !.env.example
 
+# real Terraform tfvars never ship (only *.example ships — copy and fill in)
+**/terraform.tfvars
+# local provider installs (lockfiles ARE committed for reproducible CI)
+**/.terraform/
+
 # editor / os
 .DS_Store
 .idea/

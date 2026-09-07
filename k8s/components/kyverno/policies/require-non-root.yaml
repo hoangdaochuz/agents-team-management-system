@@ -21,6 +21,11 @@ spec:
                 - kube-system
                 - argocd
                 - kyverno
+          # Pod-label (not namespace) exclusion is deliberate: the sandbox
+          # plane shares no namespace with anything PSS-`restricted`, and only
+          # the DinD daemon + its pre-pull loop are rootful by necessity (the
+          # executor main container itself is non-root). Kyverno CAN scope by
+          # pod labels where PSS cannot — that is exactly what this uses.
           - resources:
               kinds:
                 - Pod

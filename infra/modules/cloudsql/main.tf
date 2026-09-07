@@ -7,8 +7,11 @@ locals {
 
 # Random password for the database user
 resource "random_password" "db_password" {
-  length  = 32
-  special = true
+  length = 32
+  # No special characters: the password is composed into `postgres://` DSNs
+  # (see infra/README.md) and most specials would need URL-encoding. 32
+  # alphanumeric chars is ~190 bits — plenty.
+  special = false
   upper   = true
   numeric = true
 }
@@ -79,7 +82,7 @@ resource "google_sql_database_instance" "instance" {
     }
     database_flags {
       name  = "log_statement"
-      value = "all"
+      value = "ddl" # `all` drowns Cloud Logging (and cost) in prod; DDL keeps schema-change audit
     }
 
     # IP configuration - private only, encrypted only (provider v6 renamed
@@ -90,14 +93,8 @@ resource "google_sql_database_instance" "instance" {
       private_network = var.network_id
       ssl_mode        = "ENCRYPTED_ONLY"
 
-      # Authorized networks (empty for private-only, can add trusted ranges for dev)
-      dynamic "authorized_networks" {
-        for_each = var.environment == "dev" ? [1] : []
-        content {
-          name  = "dev-access"
-          value = "10.0.0.0/8"
-        }
-      }
+      # NOTE: no `authorized_networks` — ipv4_enabled=false makes them dead
+      # config, and 10.0.0.0/8 would be over-broad anyway. Private IP only.
     }
 
     # User flags

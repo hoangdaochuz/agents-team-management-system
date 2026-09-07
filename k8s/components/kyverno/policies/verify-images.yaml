@@ -35,6 +35,11 @@ spec:
           - list: "request.object.spec.initContainers || `[]`"
             pattern:
               image: ("?*docker.pkg.dev/*", "docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c")
+          # Debug/troubleshooting containers must not smuggle an untrusted
+          # image past admission either.
+          - list: "request.object.spec.ephemeralContainers || `[]`"
+            pattern:
+              image: ("?*docker.pkg.dev/*", "docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c")
 
     - name: verify-cosign-signature
       match:

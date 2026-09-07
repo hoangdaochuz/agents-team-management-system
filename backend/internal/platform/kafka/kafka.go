@@ -48,10 +48,12 @@ func NewConfig() *sarama.Config {
 
 // applyAuthFromEnv enables SASL authentication when KAFKA_SASL_USER is set —
 // the managed-broker path (GCP Managed Service for Apache Kafka speaks
-// SASL/PLAIN over TLS). With no KAFKA_SASL_* env present the config is left
-// untouched, so the plaintext compose/CI path is unchanged. KAFKA_TLS=true
-// enables TLS independently (managed brokers require it; public CAs, so the
-// system roots suffice).
+// SASL/PLAIN over TLS, i.e. SASL_SSL). With no KAFKA_SASL_* env present the
+// config is left untouched, so the plaintext compose/CI path is unchanged.
+// TLS rides along with SASL unless explicitly disabled (KAFKA_TLS=false):
+// sending PLAIN credentials over plaintext would leak them, so the safe
+// default is on. Env names match the kafka-credentials ExternalSecret keys
+// (user/password → KAFKA_SASL_USER/KAFKA_SASL_PASSWORD).
 func applyAuthFromEnv(c *sarama.Config) {
 	user := os.Getenv("KAFKA_SASL_USER")
 	if user == "" {
@@ -60,14 +62,15 @@ func applyAuthFromEnv(c *sarama.Config) {
 	mech := strings.ToUpper(strings.TrimSpace(os.Getenv("KAFKA_SASL_MECHANISM")))
 	if mech != "" && mech != "PLAIN" {
 		// Only PLAIN is supported (the managed broker's mechanism); leave SASL
-		// off rather than silently falling back to it.
+		// off rather than silently falling back to it — and say so loudly.
+		slog.Warn("kafka: unsupported KAFKA_SASL_MECHANISM; SASL disabled", "mechanism", mech)
 		return
 	}
 	c.Net.SASL.Enable = true
 	c.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 	c.Net.SASL.User = user
 	c.Net.SASL.Password = os.Getenv("KAFKA_SASL_PASSWORD")
-	if tls := os.Getenv("KAFKA_TLS"); strings.EqualFold(tls, "true") {
+	if tls := os.Getenv("KAFKA_TLS"); !strings.EqualFold(tls, "false") {
 		c.Net.TLS.Enable = true
 	}
 }

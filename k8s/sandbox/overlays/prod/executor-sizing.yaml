@@ -1,0 +1,29 @@
+# Prod executor sizing as a strategic-merge patch (merges by container NAME —
+# unlike the old containers[0]/containers[1] JSON patches, this survives a
+# sidecar reorder).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: executor
+spec:
+  # Single replica: one node's view of the clone root (design OQ1).
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: executor
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1500m
+              memory: 2Gi
+        - name: dind
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 3000m
+              memory: 6Gi

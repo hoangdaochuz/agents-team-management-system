@@ -1,17 +1,19 @@
 # WIF Module - Workload Identity Federation for GitHub Actions and Kubernetes workloads
 
 locals {
-  pool_id     = "github-pool"
-  provider_id = "github-provider"
+  # Per-environment pool/provider: Workload Identity Pool IDs are global to
+  # the project, so dev and prod sharing a project must not collide.
+  pool_id     = "github-pool-${var.environment}"
+  provider_id = "github-provider-${var.environment}"
 }
 
 # GitHub Actions Workload Identity Pool
 resource "google_iam_workload_identity_pool" "github_pool" {
-  project          = var.project_id
+  project                   = var.project_id
   workload_identity_pool_id = local.pool_id
-  display_name     = "GitHub Actions Workload Identity Pool"
-  description      = "OIDC pool for GitHub Actions CI/CD"
-  disabled         = false
+  display_name              = "GitHub Actions Workload Identity Pool"
+  description               = "OIDC pool for GitHub Actions CI/CD"
+  disabled                  = false
 
   lifecycle {
     ignore_changes = [disabled]
@@ -20,28 +22,30 @@ resource "google_iam_workload_identity_pool" "github_pool" {
 
 # GitHub Actions Workload Identity Provider
 resource "google_iam_workload_identity_pool_provider" "github_provider" {
-  project                      = google_iam_workload_identity_pool.github_pool.project
-  workload_identity_pool_id    = google_iam_workload_identity_pool.github_pool.workload_identity_pool_id
+  project                            = google_iam_workload_identity_pool.github_pool.project
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github_pool.workload_identity_pool_id
   workload_identity_pool_provider_id = local.provider_id
-  display_name                 = "GitHub Actions OIDC Provider"
-  description                  = "OIDC provider for GitHub Actions"
+  display_name                       = "GitHub Actions OIDC Provider"
+  description                        = "OIDC provider for GitHub Actions"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
 
   attribute_mapping = {
-    "google.subject"        = "assertion.sub"
-    "repository_owner"      = "assertion.repository_owner"
-    "repository_name"       = "assertion.repository"
-    "ref"                   = "assertion.ref"
-    "sha"                   = "assertion.sha"
-    "workflow"              = "assertion.workflow"
-    "environment"           = "assertion.environment"
-    "actor"                 = "assertion.actor"
+    "google.subject"   = "assertion.sub"
+    "repository_owner" = "assertion.repository_owner"
+    "repository_name"  = "assertion.repository"
+    "ref"              = "assertion.ref"
+    "sha"              = "assertion.sha"
+    "workflow"         = "assertion.workflow"
+    "environment"      = "assertion.environment"
+    "actor"            = "assertion.actor"
   }
 
-  attribute_condition = "assertion.repository_owner == '${var.github_owner}' && assertion.repository == '${var.github_repo}'"
+  # NOTE: GitHub sends `assertion.repository` as `owner/repo` — comparing
+  # against the bare repo name never matches and CI OIDC is always denied.
+  attribute_condition = "assertion.repository_owner == '${var.github_owner}' && assertion.repository == '${var.github_owner}/${var.github_repo}'"
 }
 
 # Service account for CI (GitHub Actions)
@@ -59,19 +63,8 @@ resource "google_project_iam_member" "ci_artifact_registry_writer" {
   member  = "serviceAccount:${google_service_account.ci_sa.email}"
 }
 
-# CI SA: Cloud SQL Client (for potential migration jobs)
-resource "google_project_iam_member" "ci_cloudsql_client" {
-  project = var.project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.ci_sa.email}"
-}
-
-# CI SA: Service Account User (for Workload Identity impersonation)
-resource "google_project_iam_member" "ci_sa_user" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${google_service_account.ci_sa.email}"
-}
+# NOTE: no `cloudsql.client` / `iam.serviceAccountUser` grants — CI pushes
+# images only; migrations run in-cluster via Workload Identity. Least privilege.
 
 # WIF binding: CI SA -> GitHub Actions
 resource "google_service_account_iam_member" "ci_wif_binding" {
@@ -104,11 +97,14 @@ resource "google_project_iam_member" "argocd_gke_viewer" {
   member  = "serviceAccount:${google_service_account.argocd_sa.email}"
 }
 
-# WIF binding for Argo CD
+# WIF binding for Argo CD. Form is
+# `serviceAccount:PROJECT.svc.id.goog[NAMESPACE/KSA]` — the bare
+# `serviceAccount:ns/sa` form never matches and the binding stays dead.
+# KSA `argocd-server` in namespace `argocd` (Argo CD install manifest).
 resource "google_service_account_iam_member" "argocd_wif_binding" {
   service_account_id = google_service_account.argocd_sa.id
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:argocd-system/argocd-server"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[argocd/argocd-server]"
 }
 
 # External Secrets Operator Service Account
@@ -119,30 +115,20 @@ resource "google_service_account" "external_secrets_sa" {
   description  = "Service account for External Secrets Operator"
 }
 
-# External Secrets SA: Secret Manager Access
+# External Secrets SA: Secret Manager Accessor (only what ESO needs — no
+# `secretmanager.viewer`; listing project metadata is not required to sync).
 resource "google_project_iam_member" "external_secrets_secret_accessor" {
   project = var.project_id
   role    = "roles/secretmanager.secretAccessor"
   member  = "serviceAccount:${google_service_account.external_secrets_sa.email}"
 }
 
-resource "google_project_iam_member" "external_secrets_secret_viewer" {
-  project = var.project_id
-  role    = "roles/secretmanager.viewer"
-  member  = "serviceAccount:${google_service_account.external_secrets_sa.email}"
-}
-
-# WIF binding for External Secrets (namespace-scoped)
-resource "google_service_account_iam_member" "external_secrets_wif_binding_default" {
+# WIF binding for External Secrets. KSA `external-secrets` in namespace
+# `external-secrets` (ESO Helm release) — one binding, correct form.
+resource "google_service_account_iam_member" "external_secrets_wif_binding" {
   service_account_id = google_service_account.external_secrets_sa.id
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:default/external-secrets-sa"
-}
-
-resource "google_service_account_iam_member" "external_secrets_wif_binding_aaks" {
-  service_account_id = google_service_account.external_secrets_sa.id
-  role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:aaks-system/external-secrets-sa"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[external-secrets/external-secrets]"
 }
 
 # Trivy Operator Service Account
@@ -160,9 +146,10 @@ resource "google_project_iam_member" "trivy_artifact_registry_reader" {
   member  = "serviceAccount:${google_service_account.trivy_operator_sa.email}"
 }
 
-# WIF binding for Trivy Operator
+# WIF binding for Trivy Operator. KSA `trivy-operator` in namespace
+# `trivy-system` (Trivy Operator Helm release) — correct WI form.
 resource "google_service_account_iam_member" "trivy_wif_binding" {
   service_account_id = google_service_account.trivy_operator_sa.id
   role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:trivy-system/trivy-operator"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[trivy-system/trivy-operator]"
 }

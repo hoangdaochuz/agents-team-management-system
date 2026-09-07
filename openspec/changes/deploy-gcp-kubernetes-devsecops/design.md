@@ -60,9 +60,12 @@ DevSecOps pipeline flow Semgrep → Gitleaks → Dependabot → test/build → D
 Stages in one workflow (`.github/workflows/ci.yml` extended, plus a `deploy.yml`): PR stage runs
 Semgrep (docker://semgrep/semgrep with `p/default` + Go rulesets), Gitleaks, go vet/build/`test
 -race`/golangci-lint, frontend typecheck/build, `terraform fmt/validate`, `kustomize build` for
-all overlays, Trivy config/IaC scan. Main-branch stage builds 7 images (the 5 consolidated
+all overlays, Trivy config/IaC scan. Main-branch stage builds 9 images (the 5 consolidated
 services — gateway/identity/workspace/agent via `deploy/service.Dockerfile`, executor via
-`deploy/runner.Dockerfile` (git-carrying variant), SPA, sandbox base from `backend/runner/Dockerfile`), tags
+`deploy/runner.Dockerfile` (git-carrying variant), SPA, sandbox base from `backend/runner/Dockerfile`,
+plus `clone` (clone-bootstrap CronJob) and `migrate` (migration PreSync Jobs) — the last two
+are CI-built (not upstream-pulled at deploy time) so that EVERY image the cluster runs
+originates in our Artifact Registry, which the Kyverno verify-images policy requires), tags
 `sha-<commit>`, runs Trivy image scan (exit on CRITICAL), generates Syft SBOMs, Cosign keyless
 signs image+SBOM (GitHub OIDC), pushes to Artifact Registry via **GitHub OIDC → GCP** (WIF, no
 keys), then updates the dev overlay's digests in Git (or a separate manifests repo — see D6).

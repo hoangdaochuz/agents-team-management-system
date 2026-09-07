@@ -17,8 +17,8 @@ resource "google_filestore_instance" "filestore" {
   }
 
   networks {
-    network         = var.network_id
-    modes           = ["MODE_IPV4"]
+    network = var.network_id
+    modes   = ["MODE_IPV4"]
   }
 
   labels = {

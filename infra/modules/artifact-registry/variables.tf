@@ -21,3 +21,9 @@ variable "registry_name" {
   type        = string
   default     = "aaks"
 }
+
+variable "immutable_tags" {
+  description = "Forbid tag overwrites (prod: sha-tags become unmutable proof of build-once)"
+  type        = bool
+  default     = false
+}

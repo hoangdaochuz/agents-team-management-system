@@ -27,19 +27,21 @@ module "vpc" {
   environment   = "prod"
   region        = var.region
   vpc_name      = "aaks-prod"
-  subnet_cidr   = "10.0.0.0/24"
-  pods_cidr     = "10.1.0.0/16"
-  services_cidr = "10.2.0.0/16"
+  subnet_cidr   = "10.10.0.0/24"
+  pods_cidr     = "10.11.0.0/16"
+  services_cidr = "10.12.0.0/16"
+  nat_static_ip = true
 }
 
 # Artifact Registry Module
 module "artifact_registry" {
   source = "../../modules/artifact-registry"
 
-  project_id    = var.project_id
-  environment   = "prod"
-  region        = var.region
-  registry_name = "aaks"
+  project_id     = var.project_id
+  environment    = "prod"
+  region         = var.region
+  registry_name  = "aaks"
+  immutable_tags = true
 }
 
 # GKE Module
@@ -94,6 +96,10 @@ module "cloudsql" {
 
   backup_enabled    = true
   backup_start_time = "03:00"
+
+  # The private-IP instance needs the VPC's Private Service Access peering
+  # first — order explicitly (network_id alone doesn't imply it).
+  depends_on = [module.vpc]
 }
 
 # Managed Kafka Module
@@ -111,7 +117,6 @@ module "managed_kafka" {
     vcpu_count   = 9
     memory_bytes = 32212254720 # ~32GB
   }
-  kafka_broker_count       = 3  # Can scale to more if needed
   topic_partitions         = 12 # Higher partitions for prod
   topic_replication_factor = 3
 }
@@ -124,7 +129,7 @@ module "filestore" {
   environment   = "prod"
   region        = var.region
   zone_suffix   = "a"
-  instance_name = "aaks-prod-clone-root"
+  instance_name = "aaks-clone-root"
   network_id    = module.vpc.vpc_id
 
   capacity_gb = 2048        # 2TB for prod
@@ -143,10 +148,8 @@ module "secrets" {
 module "wif" {
   source = "../../modules/wif"
 
-  project_id            = var.project_id
-  environment           = "prod"
-  project_number        = var.project_number
-  github_owner          = var.github_owner
-  github_repo           = var.github_repo
-  artifact_registry_url = module.artifact_registry.registry_url
+  project_id   = var.project_id
+  environment  = "prod"
+  github_owner = var.github_owner
+  github_repo  = var.github_repo
 }

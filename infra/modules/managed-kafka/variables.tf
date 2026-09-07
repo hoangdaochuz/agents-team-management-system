@@ -38,18 +38,8 @@ variable "kafka_capacity" {
   }
 }
 
-variable "kafka_broker_count" {
-  description = "Number of Kafka brokers (minimum 3 per GCP API)"
-  type        = number
-  default     = 3
-  validation {
-    condition     = var.kafka_broker_count >= 3
-    error_message = "Managed Kafka requires at least 3 brokers"
-  }
-}
-
 variable "topic_partitions" {
-  description = "Default number of partitions per topic"
+  description = "Default number of partitions per topic (prod uses 12 vs 6: more parallelism, but key-ordering now spreads over more partitions — consumers must handle it)"
   type        = number
   default     = 6
 }

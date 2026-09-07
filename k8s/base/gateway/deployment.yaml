@@ -100,6 +100,15 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+          # Slow first boot (Cloud SQL/Kafka dial) must not look dead:
+          # startupProbe gates liveness/readiness for up to 5m.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           resources:
             requests:
               cpu: 100m

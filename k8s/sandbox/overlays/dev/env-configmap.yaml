@@ -4,7 +4,7 @@ metadata:
   name: env-values
   namespace: aaks-sandbox
 data:
-  # Managed Kafka bootstrap (from infra/envs/dev output `kafka_bootstrap`):
+  # Managed Kafka bootstrap (from infra/envs/dev output `kafka_bootstrap_lookup`):
   # SASL/PLAIN over TLS — credentials come from the kafka-credentials
   # ExternalSecret in this same namespace.
   kafka-brokers: "REPLACE-WITH-DEV-MANAGED-KAFKA-BOOTSTRAP:9092"

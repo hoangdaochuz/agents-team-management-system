@@ -34,9 +34,9 @@ output "sql_instance_name" {
   value       = module.cloudsql.instance_name
 }
 
-output "kafka_bootstrap_servers" {
-  description = "Kafka bootstrap servers"
-  value       = module.managed_kafka.bootstrap_servers
+output "kafka_bootstrap_lookup" {
+  description = "Command printing the real bootstrap endpoints (paste into k8s env-values kafka-brokers)"
+  value       = module.managed_kafka.bootstrap_lookup
 }
 
 output "kafka_topic_names" {
@@ -74,15 +74,15 @@ output "kafka_password_secret_name" {
 output "secret_names" {
   description = "All secret names"
   value = {
-    agent_master_key          = module.secrets.agent_master_key_secret_name
-    internal_token            = module.secrets.internal_token_secret_name
-    agent_internal_token      = module.secrets.agent_internal_token_secret_name
-    db_dsns                   = module.secrets.db_dsn_secret_names
-    auth_seed_superadmin_email = module.secrets.auth_seed_superadmin_email_secret_name
+    agent_master_key              = module.secrets.agent_master_key_secret_name
+    internal_token                = module.secrets.internal_token_secret_name
+    agent_internal_token          = module.secrets.agent_internal_token_secret_name
+    db_dsns                       = module.secrets.db_dsn_secret_names
+    auth_seed_superadmin_email    = module.secrets.auth_seed_superadmin_email_secret_name
     auth_seed_superadmin_password = module.secrets.auth_seed_superadmin_password_secret_name
-    db_password               = module.cloudsql.db_user_secret_name
-    kafka_username            = module.managed_kafka.username_secret_name
-    kafka_password            = module.managed_kafka.password_secret_name
+    db_password                   = module.cloudsql.db_user_secret_name
+    kafka_username                = module.managed_kafka.username_secret_name
+    kafka_password                = module.managed_kafka.password_secret_name
   }
 }
 

@@ -4,10 +4,9 @@
 # Tuning (design D7): the DinD sidecar + sandbox containers legitimately spawn
 # processes, pull images, and mount volumes all day — the stock rules would
 # drown the alert stream. The exceptions below silence the two noisiest
-# default rules for the sandbox plane only (pods named `executor-*`, which is
-# exactly the executor Deployment + the clone-bootstrap jobs... note: the
-# CronJob pods are named `clone-bootstrap-*`; they run plain `git`, which does
-# not trip these two rules, so scoping to `executor-*` is sufficient).
+# default rules for the sandbox plane only: the executor pods (`executor-*`)
+# and the hourly clone-bootstrap jobs (`clone-bootstrap-*`, which run
+# `sh -c` + git — a shell spawn by any other name).
 # Everything else — including the custom shell-spawn alert for the 5 service
 # containers — keeps firing.
 customRules:
@@ -19,7 +18,7 @@ customRules:
           fields: [k8s.pod.name]
           comps: [startswith]
           values:
-            - ["executor-"]
+            - ["executor-", "clone-bootstrap-"]
     - rule: Container Drift Detected (open+create)
       append: true
       exceptions:
@@ -27,12 +26,13 @@ customRules:
           fields: [k8s.pod.name]
           comps: [startswith]
           values:
-            - ["executor-"]
+            - ["executor-", "clone-bootstrap-"]
     - rule: Shell Spawn in Service Container
       desc: Detect shell spawn in non-sandbox service containers
       condition: >
         spawned_process and container and shell_procs
         and not (k8s.pod.name startswith executor-)
+        and not (k8s.pod.name startswith clone-bootstrap-)
         and user.name != "root"
       output: >
         Shell spawned in service container (user=%user.name command=%proc.cmdline

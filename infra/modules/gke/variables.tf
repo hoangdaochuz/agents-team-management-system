@@ -53,6 +53,12 @@ variable "master_ipv4_cidr_block" {
   default     = "172.16.0.0/28"
 }
 
+variable "master_authorized_cidrs" {
+  description = "Operator CIDRs allowed to reach a private master endpoint (default none — use IAP/bastion/VPN)"
+  type        = list(string)
+  default     = []
+}
+
 variable "release_channel" {
   description = "GKE release channel"
   type        = string

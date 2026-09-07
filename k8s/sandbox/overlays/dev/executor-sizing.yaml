@@ -1,0 +1,19 @@
+# Dev executor sizing as a strategic-merge patch (merges by container NAME —
+# unlike containers[0]-indexed JSON patches, this survives a sidecar reorder).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: executor
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: dind
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 2Gi

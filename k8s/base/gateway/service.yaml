@@ -4,6 +4,10 @@ metadata:
   name: gateway
   labels:
     app: gateway
+  annotations:
+    # Container-native NEGs (pods as endpoints) + the SSE-safe BackendConfig.
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "aaks-gateway"}'
 spec:
   type: ClusterIP
   ports:

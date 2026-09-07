@@ -38,3 +38,9 @@ variable "services_cidr" {
   type        = string
   default     = "10.2.0.0/16"
 }
+
+variable "nat_static_ip" {
+  description = "Reserve a static egress IP for Cloud NAT (prod needs stable source IPs for allowlisted externals)"
+  type        = bool
+  default     = false
+}

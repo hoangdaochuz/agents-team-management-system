@@ -18,43 +18,9 @@ images:
     newTag: sha-PLACEHOLDER
 
 patches:
-  # Executor stays single-replica (one node's view of the clone root — OQ1)
-  # with larger headroom than dev; DinD is containers[0], executor is [1].
-  - target:
-      kind: Deployment
-      name: executor
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-      - op: replace
-        path: /spec/template/spec/containers/1/resources/requests/cpu
-        value: 250m
-      - op: replace
-        path: /spec/template/spec/containers/1/resources/requests/memory
-        value: 512Mi
-      - op: replace
-        path: /spec/template/spec/containers/1/resources/limits/cpu
-        value: 1500m
-      - op: replace
-        path: /spec/template/spec/containers/1/resources/limits/memory
-        value: 2Gi
-  - target:
-      kind: Deployment
-      name: executor
-    patch: |-
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 500m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 1Gi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/cpu
-        value: 3000m
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 6Gi
+  # Strategic merge by container name (see executor-sizing.yaml) + the PVC
+  # size as a JSON patch.
+  - path: executor-sizing.yaml
   - target:
       kind: PersistentVolumeClaim
       name: executor-clone-pvc

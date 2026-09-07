@@ -32,6 +32,10 @@ spec:
 ---
 # INGRESS half of backend-to-backend (default-deny-ingress blocks ALL pod
 # ingress otherwise — without this, no service can reach any other service).
+# Includes the cross-namespace peer: the executor lives in aaks-sandbox but
+# hydrates provider keys/task data from workspace:8081/agent:8083, so those
+# two ports accept its ingress (gateway→executor egress is mirrored by
+# allow-gateway-to-sandbox below; the sandbox side allows it out).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -64,6 +68,18 @@ spec:
       ports:
         - protocol: TCP
           port: 8080 # SPA → gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aaks-sandbox
+          podSelector:
+            matchLabels:
+              app: executor
+      ports:
+        - protocol: TCP
+          port: 8081 # executor → workspace (task data)
+        - protocol: TCP
+          port: 8083 # executor → agent (provider keys / MCP)
 ---
 # GCE Ingress (global LB + health checks) → gateway and SPA. GCE LBs talk to
 # pods directly (container-native NEGs); health-check and LB ranges below are
@@ -200,7 +216,9 @@ spec:
         - protocol: TCP
           port: 5432
 ---
-# Allow trivy-operator and kyverno to scan workloads
+# Allow trivy-operator and kyverno to scan workloads. Ports are the in-aaks
+# service ports only (8086/executor lives in aaks-sandbox — covered by the
+# sandbox policies, not here).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -229,8 +247,6 @@ spec:
           port: 8083
         - protocol: TCP
           port: 8085
-        - protocol: TCP
-          port: 8086
 ---
 # Allow DNS
 apiVersion: networking.k8s.io/v1

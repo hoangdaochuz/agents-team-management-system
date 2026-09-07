@@ -433,6 +433,23 @@ func TestApplyAuthFromEnv(t *testing.T) {
 		}
 	})
 
+	t.Run("sasl implies tls unless explicitly disabled", func(t *testing.T) {
+		t.Setenv("KAFKA_SASL_USER", "svc")
+		t.Setenv("KAFKA_SASL_PASSWORD", "pw")
+		c := NewConfig()
+		if !c.Net.TLS.Enable {
+			t.Error("TLS must ride along with SASL by default (no plaintext PLAIN)")
+		}
+		t.Setenv("KAFKA_TLS", "false")
+		c = NewConfig()
+		if c.Net.TLS.Enable {
+			t.Error("KAFKA_TLS=false must keep the plaintext escape hatch")
+		}
+		if !c.Net.SASL.Enable {
+			t.Error("SASL itself stays enabled with KAFKA_TLS=false")
+		}
+	})
+
 	t.Run("unsupported mechanism leaves SASL off", func(t *testing.T) {
 		t.Setenv("KAFKA_SASL_USER", "svc")
 		t.Setenv("KAFKA_SASL_MECHANISM", "GSSAPI")

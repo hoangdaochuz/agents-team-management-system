@@ -16,8 +16,10 @@ resource "random_password" "kafka_username" {
 }
 
 resource "random_password" "kafka_password" {
-  length  = 32
-  special = true
+  length = 32
+  # Alphanumeric only: SASL passwords travel in env + Secret Manager without
+  # quoting surprises. (The username below already uses special=false.)
+  special = false
   upper   = true
   numeric = true
 }
@@ -101,8 +103,7 @@ resource "google_managed_kafka_topic" "topics" {
   topic_id        = each.value
   partition_count = var.topic_partitions
 
-  # Special config for __consumer_offsets
-  replication_factor = each.value == "__consumer_offsets" ? 1 : var.topic_replication_factor
+  replication_factor = var.topic_replication_factor
 
   # Per-topic Kafka configs (provider v6 `configs` map — not nested blocks).
   configs = merge(
@@ -114,14 +115,16 @@ resource "google_managed_kafka_topic" "topics" {
   depends_on = [google_secret_manager_secret_version.kafka_password]
 }
 
-# Create __consumer_offsets topic explicitly if not in the list
+# __consumer_offsets is provisioned explicitly (it is not in topic_names, so
+# it has its own resource): RF=3 like everything else — a single-replica
+# offsets topic would stall every consumer group if its broker hiccups.
 resource "google_managed_kafka_topic" "consumer_offsets" {
   project            = var.project_id
   cluster            = google_managed_kafka_cluster.cluster.cluster_id
   location           = var.region
   topic_id           = "__consumer_offsets"
   partition_count    = 50
-  replication_factor = 1
+  replication_factor = 3
 
   configs = {
     "cleanup.policy" = "compact"

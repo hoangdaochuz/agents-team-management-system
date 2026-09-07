@@ -8,7 +8,7 @@ resource "google_artifact_registry_repository" "registry" {
   project       = var.project_id
 
   docker_config {
-    immutable_tags = false
+    immutable_tags = var.immutable_tags
   }
 
   labels = {

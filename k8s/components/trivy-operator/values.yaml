@@ -1,11 +1,18 @@
-# Trivy Operator Helm values (chart trivy-operator 0.36.0). Consumed inline by
-# k8s/components/argocd/apps/platform-trivy.yaml (valuesObject) — this file is
-# the human-readable record of the tuning; the Application is authoritative.
+# Trivy Operator Helm values (chart trivy-operator 0.36.0, app 0.34.0).
+# Consumed by k8s/components/argocd/apps/platform-trivy.yaml via valueFiles —
+# THIS file is the tuning source of truth (keys verified against the chart's
+# values.yaml at tag v0.34.0).
 #
-# Replaces the old trivy-operator/config.yaml ConfigMap: the Helm release owns
-# the operator's config, so a separately-managed ConfigMap would fight it.
-# targetNamespaces: aaks,aaks-sandbox
-# operator.scanJobTimeout: 5m
-# operator.scanJobsConcurrentLimit: 3
-# trivy.severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-# trivy.serverInsecure: false
+# Blank targetNamespaces would select ALL namespaces; scope to ours (excludes
+# argocd, kyverno, operators — their images are covered by pipeline scans).
+targetNamespaces: aaks,aaks-sandbox
+operator:
+  # Give up on a stuck scan job after 5m.
+  scanJobTimeout: 5m
+  # At most 3 scan jobs at once (small dev clusters).
+  scanJobsConcurrentLimit: 3
+trivy:
+  # Report everything at LOW and above (HIGH/CRITICAL gate the pipeline;
+  # in-cluster visibility stays broad).
+  severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+  serverInsecure: false

@@ -80,5 +80,5 @@ output "kubernetes_service_accounts" {
 
 output "github_actions_wif_provider" {
   description = "Full WIF provider string for GitHub Actions"
-  value = "${var.project_id}/locations/global/workloadIdentityPools/${local.pool_id}/providers/${local.provider_id}"
+  value       = "${var.project_id}/locations/global/workloadIdentityPools/${local.pool_id}/providers/${local.provider_id}"
 }

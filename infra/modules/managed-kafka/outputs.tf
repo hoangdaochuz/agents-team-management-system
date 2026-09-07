@@ -15,11 +15,9 @@ output "cluster_location" {
   value       = google_managed_kafka_cluster.cluster.location
 }
 
-output "bootstrap_servers" {
-  description = "Kafka bootstrap server endpoints"
-  value = [
-    "${google_managed_kafka_cluster.cluster.cluster_id}-${var.kafka_broker_count - 1}.${var.region}.kafka.gcloud.internal:9092",
-  ]
+output "bootstrap_lookup" {
+  description = "Command resolving the real bootstrap endpoints (Managed Kafka exposes no endpoint attribute in Terraform) — paste the result into the k8s env-values `kafka-brokers`"
+  value       = "gcloud managed-kafka clusters describe ${google_managed_kafka_cluster.cluster.cluster_id} --location=${google_managed_kafka_cluster.cluster.location} --project=${var.project_id}"
 }
 
 output "topic_names" {

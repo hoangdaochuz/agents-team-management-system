@@ -1,11 +1,16 @@
 # Secrets Module - Secret Manager secret containers (values bootstrapped manually)
+#
+# Every secret_id carries the environment suffix: Secret Manager IDs are
+# project-global, so unsuffixed dev+prod sharing one project would collide on
+# the second `apply`. ExternalSecrets reference them via the `aaks-ENV-...`
+# placeholder (replaced with the env at bootstrap).
 
 # Agent master key - for encrypting LLM provider keys at rest (was the
 # Settings service's SETTINGS_MASTER_KEY; the settings plane merged into the
 # agent service in consolidate-microservices)
 resource "google_secret_manager_secret" "agent_master_key" {
   project   = var.project_id
-  secret_id = "agent-master-key"
+  secret_id = "aaks-${var.environment}-agent-master-key"
   replication {
     auto {}
   }
@@ -20,7 +25,7 @@ resource "google_secret_manager_secret" "agent_master_key" {
 # Shared internal service token (INTERNAL_TOKEN, consumed by every service)
 resource "google_secret_manager_secret" "internal_token" {
   project   = var.project_id
-  secret_id = "internal-token"
+  secret_id = "aaks-${var.environment}-internal-token"
   replication {
     auto {}
   }
@@ -37,7 +42,7 @@ resource "google_secret_manager_secret" "internal_token" {
 # executor)
 resource "google_secret_manager_secret" "agent_internal_token" {
   project   = var.project_id
-  secret_id = "agent-internal-token"
+  secret_id = "aaks-${var.environment}-agent-internal-token"
   replication {
     auto {}
   }
@@ -54,10 +59,10 @@ resource "google_secret_manager_secret" "agent_internal_token" {
 # identity/workspace/agent/executor-dsn ExternalSecrets)
 resource "google_secret_manager_secret" "db_dsns" {
   for_each = toset([
-    "identity-db-dsn",
-    "workspace-db-dsn",
-    "agent-db-dsn",
-    "executor-db-dsn"
+    "aaks-${var.environment}-identity-db-dsn",
+    "aaks-${var.environment}-workspace-db-dsn",
+    "aaks-${var.environment}-agent-db-dsn",
+    "aaks-${var.environment}-executor-db-dsn"
   ])
   project   = var.project_id
   secret_id = each.key
@@ -75,7 +80,7 @@ resource "google_secret_manager_secret" "db_dsns" {
 # Seed superadmin email
 resource "google_secret_manager_secret" "auth_seed_superadmin_email" {
   project   = var.project_id
-  secret_id = "auth-seed-superadmin-email"
+  secret_id = "aaks-${var.environment}-auth-seed-superadmin-email"
   replication {
     auto {}
   }
@@ -90,7 +95,7 @@ resource "google_secret_manager_secret" "auth_seed_superadmin_email" {
 # Seed superadmin password
 resource "google_secret_manager_secret" "auth_seed_superadmin_password" {
   project   = var.project_id
-  secret_id = "auth-seed-superadmin-password"
+  secret_id = "aaks-${var.environment}-auth-seed-superadmin-password"
   replication {
     auto {}
   }

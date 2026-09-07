@@ -51,22 +51,30 @@ spec:
       nodeSelector:
         aaks-sandbox: "true"
       volumes:
-        # Shared volume for Docker socket
-        - name: dind
+        # Daemon storage (DinD only) and the socket dir, split in two: sharing
+        # the whole data dir as the socket dir would expose daemon internals
+        # to every container mounting it.
+        - name: dind-data
+          emptyDir: {}
+        # Shared socket dir. `docker:dind` listens on /var/run/docker.sock by
+        # default — no custom --host flag, no second-guessing the entrypoint:
+        # both containers share /var/run and the socket simply appears there.
+        - name: dind-sock
           emptyDir: {}
         # Filestore PVC for clone root
         - name: clone
           persistentVolumeClaim:
             claimName: executor-clone-pvc
       initContainers:
-        # Pre-pull sandbox image through DinD socket at startup
+        # Pre-pull sandbox image through the DinD socket at startup. Needs the
+        # socket only — NOT privileged (it never touches the host).
         - name: pre-pull-sandbox
           image: docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c
           command:
             - sh
             - -c
             - |
-              until docker -H unix:///dind/docker.sock pull "${EXECUTOR_SANDBOX_IMAGE}"; do
+              until docker -H unix:///var/run/docker.sock pull "${EXECUTOR_SANDBOX_IMAGE}"; do
                 echo "Waiting for DinD socket and pulling sandbox image..."
                 sleep 5
               done
@@ -78,8 +86,8 @@ spec:
                   name: env-values
                   key: executor-sandbox-image
           volumeMounts:
-            - name: dind
-              mountPath: /dind
+            - name: dind-sock
+              mountPath: /var/run
           # No resources on the pre-pull loop would trip the Kyverno
           # require-resource-limits policy (it has no sandbox exclusion).
           resources:
@@ -90,25 +98,46 @@ spec:
               cpu: 100m
               memory: 128Mi
           securityContext:
+            # Pod-level says runAsNonRoot:true — this container runs as root
+            # (socket perms), so it must opt back out explicitly or kubelet
+            # refuses with CreateContainerConfigError.
+            runAsNonRoot: false
             runAsUser: 0
-            privileged: true
       containers:
-        # DinD sidecar
+        # DinD sidecar (default socket /var/run/docker.sock, shared below)
         - name: dind
           image: docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c
           env:
             - name: DOCKER_TLS_CERTDIR
               value: ""
           securityContext:
-            privileged: true
+            # Same opt-out as pre-pull: pod-level runAsNonRoot must not apply
+            # to the rootful daemon.
+            runAsNonRoot: false
             runAsUser: 0
+            privileged: true
             seccompProfile:
               type: Unconfined
+          # The daemon has no /healthz — exec probes against the socket.
+          livenessProbe:
+            exec:
+              command: [docker, info]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: [docker, info]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
           volumeMounts:
-            - name: dind
+            - name: dind-data
               mountPath: /var/lib/docker
-            - name: dind
-              mountPath: /dind
+            - name: dind-sock
+              mountPath: /var/run
             - name: clone
               mountPath: /clone
           resources:
@@ -193,8 +222,11 @@ spec:
                 configMapKeyRef:
                   name: env-values
                   key: executor-sandbox-image
+            # Socket path must match the DinD default (/var/run/docker.sock,
+            # shared via the dind-sock volume) — a custom path here with no
+            # matching dockerd --host flag means the socket never exists.
             - name: EXECUTOR_DOCKER_SOCKET
-              value: /dind/docker.sock
+              value: /var/run/docker.sock
             - name: EXECUTOR_CLONE_ROOT
               value: /clone
             # EXECUTOR_DRIVER selects the agent-loop driver (simulated|llm);
@@ -217,6 +249,15 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+          # Slow first boot (Cloud SQL/Kafka dial) must not look dead:
+          # startupProbe gates liveness/readiness for up to 5m.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8086
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
           resources:
             requests:
               cpu: 200m
@@ -232,8 +273,8 @@ spec:
               drop:
                 - ALL
           volumeMounts:
-            - name: dind
-              mountPath: /dind
+            - name: dind-sock
+              mountPath: /var/run
             - name: clone
               mountPath: /clone
       terminationGracePeriodSeconds: 60

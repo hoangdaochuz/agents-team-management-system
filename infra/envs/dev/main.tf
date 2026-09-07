@@ -90,10 +90,14 @@ module "cloudsql" {
   db_disk_size_gb      = 100
   db_disk_type         = "PD_SSD"
   db_availability_type = "ZONAL"
-  deletion_protection  = true
+  deletion_protection  = false # dev iterates via destroy; prod keeps true
 
   backup_enabled    = true
   backup_start_time = "03:00"
+
+  # The private-IP instance needs the VPC's Private Service Access peering
+  # first — order explicitly (network_id alone doesn't imply it).
+  depends_on = [module.vpc]
 }
 
 # Managed Kafka Module
@@ -111,7 +115,6 @@ module "managed_kafka" {
     vcpu_count   = 3
     memory_bytes = 12595200000 # ~12GB
   }
-  kafka_broker_count       = 3 # Minimum per API
   topic_partitions         = 6
   topic_replication_factor = 3
 }
@@ -124,7 +127,7 @@ module "filestore" {
   environment   = "dev"
   region        = var.region
   zone_suffix   = var.zone_suffix
-  instance_name = "aaks-dev-clone-root"
+  instance_name = "aaks-clone-root"
   network_id    = module.vpc.vpc_id
 
   capacity_gb = 1024        # 1TB minimum
@@ -143,10 +146,8 @@ module "secrets" {
 module "wif" {
   source = "../../modules/wif"
 
-  project_id            = var.project_id
-  environment           = "dev"
-  project_number        = var.project_number
-  github_owner          = var.github_owner
-  github_repo           = var.github_repo
-  artifact_registry_url = module.artifact_registry.registry_url
+  project_id   = var.project_id
+  environment  = "dev"
+  github_owner = var.github_owner
+  github_repo  = var.github_repo
 }
