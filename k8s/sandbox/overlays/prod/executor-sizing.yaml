@@ -11,6 +11,11 @@ spec:
   replicas: 1
   template:
     spec:
+      # Mirror the base pod default (non-root) so this standalone patch keeps
+      # its security posture explicit (strategic-merge keeps base values).
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
       initContainers:
         - name: dind
           resources:
@@ -20,6 +25,11 @@ spec:
             limits:
               cpu: 3000m
               memory: 6Gi
+          # Mirror the base opt-out (rootful daemon): the patch is evaluated
+          # standalone by policy scanners, so restate it here.
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
       containers:
         - name: executor
           resources:
@@ -29,3 +39,7 @@ spec:
             limits:
               cpu: 1500m
               memory: 2Gi
+          # Mirror the base pod default (non-root) for the same reason.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000

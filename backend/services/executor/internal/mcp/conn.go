@@ -31,12 +31,13 @@ type conn struct {
 }
 
 // dial launches the server process, runs the initialize handshake, and
-// enumerates tools.
+// enumerates tools. s comes from stored workspace MCP-server config
+// (operator-administered, same trust as code) — never from task input.
 func dial(ctx context.Context, s resources.McpServer, log *slog.Logger) (*conn, error) {
 	if s.Command == "" {
 		return nil, fmt.Errorf("mcp server %q: empty command", s.Name)
 	}
-	c := exec.Command(s.Command, s.Args...)
+	c := exec.Command(s.Command, s.Args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	if len(s.Env) > 0 {
 		c.Env = envSlice(s.Env)
 	}

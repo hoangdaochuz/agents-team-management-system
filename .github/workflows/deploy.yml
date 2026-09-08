@@ -81,7 +81,11 @@ jobs:
         run: exit 1
 
       # The CI-tested commit — NOT master HEAD (see top-of-file note).
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Safe workflow_run checkout: this workflow only triggers on `ci`
+      # completing on branch `master` (see `on:`), so head_sha is always a
+      # master commit that passed CI — never untrusted fork-PR code. The
+      # Guard step above additionally refuses non-success conclusions.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 # nosemgrep: yaml.github-actions.security.workflow-run-target-code-checkout.workflow-run-target-code-checkout
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -126,8 +130,9 @@ jobs:
     env:
       IMAGE: ${{ vars.GCP_REGISTRY }}/aaks/${{ matrix.name }}:sha-${{ env.HEAD_SHA }}
     steps:
-      # Same tested commit as the build job.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # Same tested commit as the build job (safe: master-only trigger +
+      # success guard, see the build job comment).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 # nosemgrep: yaml.github-actions.security.workflow-run-target-code-checkout.workflow-run-target-code-checkout
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
@@ -151,7 +156,7 @@ jobs:
 
       # Vulnerability gate: a critical CVE stops promotion dead.
       - name: Trivy image scan (fail on CRITICAL)
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}
           severity: CRITICAL

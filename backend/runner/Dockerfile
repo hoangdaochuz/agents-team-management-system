@@ -25,4 +25,6 @@ RUN apt-get update \
 
 WORKDIR /workspace
 # Default: keep the container alive so the backend can exec into it.
-CMD ["sleep", "infinity"]
+# Root is intentional here (see NOTE above): disposable credential-less
+# sandbox, never via the K8s API.
+CMD ["sleep", "infinity"] # nosemgrep: dockerfile.security.missing-user.missing-user

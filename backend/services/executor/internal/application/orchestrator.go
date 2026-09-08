@@ -134,7 +134,9 @@ func (r *Runner) executeAndFinish(ctx context.Context, taskID, runID identity.ID
 		r.publish(ctx, events.TopicStep, events.StepData{Step: st}, taskID)
 		return nil
 	}
-	res, err := r.driver.Execute(ctx, rc, sink)
+	// driver.Result is a value struct (never nil), so touching res on the
+	// error path cannot nil-deref — Execute returns the zero Result then.
+	res, err := r.driver.Execute(ctx, rc, sink) // nosemgrep: trailofbits.go.invalid-usage-of-modified-variable.invalid-usage-of-modified-variable
 	if err != nil {
 		res.Status = agentexec.RunAborted
 		res.Error = err.Error()

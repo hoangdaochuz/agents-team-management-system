@@ -26,7 +26,9 @@ func New(upstream string) (*httputil.ReverseProxy, error) {
 	}
 	rp := httputil.NewSingleHostReverseProxy(target)
 	orig := rp.Director
-	rp.Director = func(req *http.Request) {
+	// Safe Director use: delegates to the default first, then mutates only
+	// Path/Host — no headers are added here, so none can be stripped.
+	rp.Director = func(req *http.Request) { // nosemgrep: go.lang.security.reverseproxy-director.reverseproxy-director
 		orig(req)
 		if strings.HasPrefix(req.URL.Path, "/api") {
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api")

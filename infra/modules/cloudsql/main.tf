@@ -91,6 +91,7 @@ resource "google_sql_database_instance" "instance" {
     ip_configuration {
       ipv4_enabled    = false
       private_network = var.network_id
+      # nosemgrep: terraform.gcp.security.gcp-sql-database-ssl-insecure-value-postgres-mysql.gcp-sql-database-ssl-insecure-value-postgres-mysql — private-IP-only instance (no public endpoint exists to downgrade); ENCRYPTED_ONLY forces TLS, matching ?sslmode=require. Client-cert mode would break pgx without adding security here.
       ssl_mode        = "ENCRYPTED_ONLY"
 
       # NOTE: no `authorized_networks` — ipv4_enabled=false makes them dead

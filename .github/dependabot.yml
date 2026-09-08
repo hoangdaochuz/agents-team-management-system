@@ -6,6 +6,9 @@ updates:
     package-ecosystem: "gomod"
     schedule:
       interval: "weekly"
+    # Don't pull freshly-published (possibly malicious/unstable) versions.
+    cooldown:
+      default-days: 7
     groups:
       golang-dependencies:
         patterns:
@@ -19,6 +22,8 @@ updates:
     package-ecosystem: "npm"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       frontend-dependencies:
         patterns:
@@ -32,6 +37,8 @@ updates:
     package-ecosystem: "github-actions"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns:
