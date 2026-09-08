@@ -13,9 +13,6 @@ updates:
       golang-dependencies:
         patterns:
           - "*"
-    ignore:
-      # Ignore specific packages if needed
-      # - dependency-name: "example.com/pkg"
 
   # npm packages in frontend/
   - directory: "/frontend"
@@ -28,9 +25,6 @@ updates:
       frontend-dependencies:
         patterns:
           - "*"
-    ignore:
-      # Ignore specific packages if needed
-      # - dependency-name: "example-package"
 
   # GitHub Actions
   - directory: "/"
