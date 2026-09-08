@@ -1,0 +1,32 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-hostpath
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: block-hostpath
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      # NOTE: no sandbox exclusion here, unlike the privileged/non-root
+      # policies — the executor plane mounts only emptyDir/PVC/ConfigMap, so
+      # hostPath is forbidden cluster-wide with zero exceptions.
+      exclude:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - kube-system
+                - argocd
+                - kyverno
+      validate:
+        message: "HostPath volumes are not allowed."
+        pattern:
+          spec:
+            volumes:
+              - X(hostPath): null

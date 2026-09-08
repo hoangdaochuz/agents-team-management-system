@@ -1,0 +1,2 @@
+-- Placeholder for agent migrations
+-- CI will replace this with actual migration files from backend/services/agent/internal/infrastructure/repository/migrations

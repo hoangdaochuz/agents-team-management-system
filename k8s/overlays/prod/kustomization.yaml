@@ -1,0 +1,170 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aaks
+
+resources:
+  - ../../base
+  - namespace.yaml
+  - filestore-storage-class.yaml
+  - ingress.yaml
+  - env-configmap.yaml
+
+# Image tags - placeholders for promotion PRs to replace with digests that
+# have soaked in dev (promotion changes the manifest reference, never rebuilds).
+# (The executor + clone images live in k8s/sandbox/overlays/prod.)
+images:
+  - name: gateway
+    newName: us-docker.pkg.dev/your-project-id/aaks/gateway
+    newTag: sha-PLACEHOLDER
+  - name: identity
+    newName: us-docker.pkg.dev/your-project-id/aaks/identity
+    newTag: sha-PLACEHOLDER
+  - name: workspace
+    newName: us-docker.pkg.dev/your-project-id/aaks/workspace
+    newTag: sha-PLACEHOLDER
+  - name: agent
+    newName: us-docker.pkg.dev/your-project-id/aaks/agent
+    newTag: sha-PLACEHOLDER
+  - name: web
+    newName: us-docker.pkg.dev/your-project-id/aaks/web
+    newTag: sha-PLACEHOLDER
+  - name: migrate
+    newName: us-docker.pkg.dev/your-project-id/aaks/migrate
+    newTag: sha-PLACEHOLDER
+
+# Prod-specific sizing patches
+patches:
+# Prod-specific sizing patches (strategic merge by container NAME —
+# unlike containers[0]-indexed JSON patches, these survive sidecars).
+  - target:
+      kind: Deployment
+      name: gateway
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: gateway
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: gateway
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
+  - target:
+      kind: Deployment
+      name: identity
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: identity
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: identity
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
+  - target:
+      kind: Deployment
+      name: workspace
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: workspace
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: workspace
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
+  - target:
+      kind: Deployment
+      name: agent
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: agent
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: agent
+                resources:
+                  requests:
+                    cpu: 200m
+                    memory: 256Mi
+                  limits:
+                    cpu: 1000m
+                    memory: 1Gi
+  - target:
+      kind: Deployment
+      name: web
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: web
+      spec:
+        replicas: 3
+        template:
+          spec:
+            containers:
+              - name: web
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 256Mi
+  # Executor sizing (single replica, larger DinD limits) and the clone PVC
+  # size live in k8s/sandbox/overlays/prod/kustomization.yaml — the executor
+  # moved to the dedicated aaks-sandbox namespace (see k8s/README.md).
+
+# ConfigMap generator for migration files (to be populated by CI)
+configMapGenerator:
+  - name: identity-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/identity.sql
+    options:
+      disableNameSuffixHash: true
+  - name: workspace-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/workspace.sql
+    options:
+      disableNameSuffixHash: true
+  - name: agent-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/agent.sql
+    options:
+      disableNameSuffixHash: true
+  - name: executor-migrations
+    files:
+      - placeholder.sql=migrations-placeholder/executor.sql
+    options:
+      disableNameSuffixHash: true

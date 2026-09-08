@@ -1,0 +1,2 @@
+-- Placeholder for executor migrations
+-- CI will replace this with actual migration files from backend/services/executor/internal/infrastructure/repository/migrations

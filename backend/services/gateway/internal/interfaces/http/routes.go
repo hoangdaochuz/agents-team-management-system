@@ -244,7 +244,9 @@ func (s *Server) serveSession(w http.ResponseWriter, r *http.Request) {
 	w.Header().Del("Content-Length")
 	if rec.code != http.StatusOK && (r.Method != http.MethodPost || rec.code != http.StatusCreated) {
 		w.WriteHeader(rec.code)
-		_, _ = w.Write(rec.body)
+		// JSON replay from our own upstream service — not HTML rendering,
+		// so html/template escaping does not apply.
+		_, _ = w.Write(rec.body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 		return
 	}
 	var u identity.User
@@ -281,7 +283,8 @@ func (s *Server) serveWorkspaces(w http.ResponseWriter, r *http.Request) {
 	s.proxy(application.UpstreamIdentity).ServeHTTP(rec, r)
 	if rec.code != http.StatusOK {
 		w.WriteHeader(rec.code)
-		_, _ = w.Write(rec.body)
+		// JSON replay from our own upstream service — not HTML rendering.
+		_, _ = w.Write(rec.body) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 		return
 	}
 	var wss []workspaces.Workspace

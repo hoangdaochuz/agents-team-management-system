@@ -1,0 +1,24 @@
+# Pod Security Standards labels for the shared/system namespaces (wave 2).
+# The workload namespaces are owned by their overlays, not here (see
+# k8s/components/pss/namespace-labels.yaml).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-config-pss
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/components/pss
+  destination:
+    namespace: default
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false

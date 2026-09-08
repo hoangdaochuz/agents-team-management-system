@@ -1,0 +1,121 @@
+# Clone bootstrap (design D3, task 5.4): the backend never `git clone`s — it
+# only creates worktrees inside a pre-existing clone at EXECUTOR_CLONE_ROOT.
+# This CronJob seeds that clone root (the Filestore PVC shared with the
+# executor and its DinD sidecar at /clone): it clones every repo in
+# MANAGED_REPOS on first run and `git fetch`es them hourly afterwards, so a
+# fresh environment converges without manual steps and stays fresh.
+#
+# Bootstrap a brand-new environment immediately with:
+#   kubectl -n aaks-sandbox create job --from=cronjob/clone-bootstrap clone-bootstrap-manual
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clone-bootstrap
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clone-bootstrap
+  labels:
+    app: clone-bootstrap
+spec:
+  # Hourly reconcile (cheap when everything is already cloned: a fetch).
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: clone-bootstrap
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: clone-bootstrap
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: clone
+              persistentVolumeClaim:
+                claimName: executor-clone-pvc
+            - name: tmp
+              emptyDir: {}
+          containers:
+            - name: bootstrap
+              # CI-built from deploy/clone.Dockerfile (git + ca-certs on the
+              # pinned alpine), promoted by digest like every workload image.
+              image: clone
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: MANAGED_REPOS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: env-values
+                      key: clone-repos
+                - name: GIT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: git-credentials
+                      key: token
+                      optional: true
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  if [ -z "${MANAGED_REPOS:-}" ]; then
+                    echo "MANAGED_REPOS is empty — set clone-repos in the sandbox env-values ConfigMap."
+                    exit 0
+                  fi
+                  for repo in $MANAGED_REPOS; do
+                    # Inject the token (if provided) into https remotes so
+                    # private managed repos clone without baked-in credentials.
+                    url="$repo"
+                    case "$url" in
+                      https://*)
+                        if [ -n "${GIT_TOKEN:-}" ]; then
+                          url="https://x-access-token:${GIT_TOKEN}@${url#https://}"
+                        fi
+                        ;;
+                    esac
+                    name="$(basename "$url" .git)"
+                    dest="/clone/$name"
+                    if [ -d "$dest/.git" ]; then
+                      echo "fetching $name ..."
+                      git -C "$dest" fetch --prune
+                    else
+                      echo "cloning $repo -> $dest ..."
+                      git clone "$url" "$dest"
+                    fi
+                  done
+                  echo "clone root reconciled."
+              volumeMounts:
+                - name: clone
+                  mountPath: /clone
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+      terminationGracePeriodSeconds: 30

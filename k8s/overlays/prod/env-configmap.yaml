@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-values
+  namespace: aaks
+data:
+  # Managed Service for Apache Kafka bootstrap (from infra/envs/prod output
+  # `kafka_bootstrap`): SASL/PLAIN over TLS — credentials come from the
+  # kafka-credentials ExternalSecret, injected as env by every service.
+  kafka-brokers: "REPLACE-WITH-PROD-MANAGED-KAFKA-BOOTSTRAP:9092"
+  kafka-tls: "true"
+  kafka-sasl-mechanism: "PLAIN"
+
+  # Executor configuration
+  executor-sandbox-image: "us-central1-docker.pkg.dev/your-project-id/aaks/sandbox:sha-PLACEHOLDER"
+  executor-pr-base-url: "https://github.com/your-org/your-repo"

@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Backend services in the `aaks` namespace (5 consolidated services — see
+  # openspec/changes/consolidate-microservices). The executor lives apart in
+  # k8s/sandbox (own namespace: it runs the privileged DinD sidecar, which
+  # Pod Security Standards cannot admit next to `restricted` workloads).
+  - gateway/
+  - identity/
+  - workspace/
+  - agent/
+
+  # Frontend SPA
+  - web/
+
+  # Migration jobs (one per database)
+  - migrations/job-template.yaml

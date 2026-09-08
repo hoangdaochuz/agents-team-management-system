@@ -1,0 +1,30 @@
+# Trivy Operator (Helm, version-pinned): continuous CVE + exposed-secret
+# scanning of running workloads, surfaced as VulnerabilityReports per
+# namespace. Scan tuning lives in k8s/components/trivy-operator/values.yaml
+# (single source of truth — no inline valuesObject to drift against it).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-platform-trivy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: aaks
+  source:
+    repoURL: https://aquasecurity.github.io/helm-charts/
+    chart: trivy-operator
+    targetRevision: 0.36.0
+    helm:
+      valueFiles:
+        - k8s/components/trivy-operator/values.yaml
+  destination:
+    namespace: trivy-system
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

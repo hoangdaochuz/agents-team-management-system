@@ -1,0 +1,2 @@
+-- Placeholder for identity migrations
+-- CI will replace this with actual migration files from backend/services/identity/internal/infrastructure/repository/migrations

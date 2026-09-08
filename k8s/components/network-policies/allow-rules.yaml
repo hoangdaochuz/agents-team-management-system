@@ -1,0 +1,248 @@
+---
+# Allow backend services to reach each other on the internal service ports:
+# gateway → its 4 upstreams, executor → agent/workspace (provider keys,
+# task data), identity → workspace and agent → workspace (provisioning).
+# EGRESS half: same-namespace peers. (The executor moved to aaks-sandbox —
+# gateway → executor:8086 is covered by allow-gateway-to-sandbox below.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-backend
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8080  # gateway
+        - protocol: TCP
+          port: 8081  # workspace
+        - protocol: TCP
+          port: 8083  # agent
+        - protocol: TCP
+          port: 8085  # identity
+---
+# INGRESS half of backend-to-backend (default-deny-ingress blocks ALL pod
+# ingress otherwise — without this, no service can reach any other service).
+# Includes the cross-namespace peer: the executor lives in aaks-sandbox but
+# hydrates provider keys/task data from workspace:8081/agent:8083, so those
+# two ports accept its ingress (gateway→executor egress is mirrored by
+# allow-gateway-to-sandbox below; the sandbox side allows it out).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-ingress
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8080 # gateway
+        - protocol: TCP
+          port: 8081 # workspace
+        - protocol: TCP
+          port: 8083 # agent
+        - protocol: TCP
+          port: 8085 # identity
+    - from:
+        - podSelector:
+            matchLabels:
+              app: web
+      ports:
+        - protocol: TCP
+          port: 8080 # SPA → gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aaks-sandbox
+          podSelector:
+            matchLabels:
+              app: executor
+      ports:
+        - protocol: TCP
+          port: 8081 # executor → workspace (task data)
+        - protocol: TCP
+          port: 8083 # executor → agent (provider keys / MCP)
+---
+# GCE Ingress (global LB + health checks) → gateway and SPA. GCE LBs talk to
+# pods directly (container-native NEGs); health-check and LB ranges below are
+# Google's published ranges — without this, the public URL is unreachable.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-lb
+  namespace: aaks
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [gateway, web]
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 130.211.0.0/22 # GCP LB + health checks
+        - ipBlock:
+            cidr: 35.191.0.0/16 # GCP LB + health checks
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Gateway → executor across namespaces (task run/review/stop commands).
+# Peers select the aaks-sandbox namespace via the automatic
+# kubernetes.io/metadata.name label.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-sandbox
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aaks-sandbox
+          podSelector:
+            matchLabels:
+              app: executor
+      ports:
+        - protocol: TCP
+          port: 8086
+---
+# Allow web to gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-web-to-gateway
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# Allow all services to Cloud SQL (private IP - to be patched per env)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-cloudsql
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24  # Placeholder - patch per env with actual Cloud SQL private IP range
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Allow all services to Kafka
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-kafka
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.1.0/24  # Placeholder - patch per env with actual Kafka private IP range
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+# Migration PreSync Jobs → Cloud SQL. The jobs are labeled app:migrations
+# (NOT tier:backend), so the backend rule above does not select them — without
+# this, no migration Job can reach its database and every rollout stalls.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-migrations-to-cloudsql
+  namespace: aaks
+spec:
+  podSelector:
+    matchLabels:
+      app: migrations
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24  # Placeholder - same Cloud SQL range as above
+      ports:
+        - protocol: TCP
+          port: 5432
+# NOTE (deliberately no scanner-ingress rule): neither scanner dials workload
+# pod ports. Kyverno enforces via its admission webhook (API server calls the
+# webhook Service in the `kyverno` namespace — covered by the API server, not
+# by pod ingress), and Trivy Operator scans by pulling images into scan-Job
+# pods of its own (egress to the registry, covered by its own namespace,
+# which has no default-deny). An ingress allow here would open ports to
+# traffic that never legitimately occurs.
+---
+# Allow DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: aaks
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

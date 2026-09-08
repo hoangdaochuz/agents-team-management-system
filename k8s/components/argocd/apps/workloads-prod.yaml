@@ -1,0 +1,26 @@
+# Prod workloads (k8s/overlays/prod). This Application's overlay changes ONLY
+# via reviewed promotion PRs carrying dev-soaked digests — auto-sync converges
+# the cluster to the approved state, selfHeal stays off so a human owns prod.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-workloads-prod
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/overlays/prod
+  destination:
+    namespace: aaks
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

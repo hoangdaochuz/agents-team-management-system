@@ -1,0 +1,50 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aaks-ingress
+  namespace: aaks
+  annotations:
+    # GCE Ingress annotations
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: aaks-dev-static-ip
+    networking.gke.io/managed-certificates: aaks-cert
+    # SSE-friendly timeout
+    # NOTE: these nginx-class annotations are no-ops on a gce ingress; for
+    # long-lived /stream connections the timeout lives in the gateway
+    # BackendConfig (k8s/base/gateway/backendconfig.yaml) — GCE defaults cut
+    # idle streams at 30s.
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  defaultBackend:
+    service:
+      name: web
+      port:
+        number: 8080
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080
+          - path: /stream
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 8080
+---
+apiVersion: networking.gke.io/v1
+kind: ManagedCertificate
+metadata:
+  name: aaks-cert
+  namespace: aaks
+spec:
+  domains:
+    - dev.aaks.example.com

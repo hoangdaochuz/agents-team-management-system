@@ -1,0 +1,27 @@
+# Root app-of-apps for the PROD cluster (twin of root-dev.yaml). Syncs the
+# shared platform/config apps plus the prod-env workloads; dev-env Applications
+# are excluded. Prod promotion is a reviewed PR to k8s/{overlays,sandbox/overlays}/prod.
+# Bootstrap once:
+#   kubectl apply -f k8s/components/argocd/apps/appproject.yaml
+#   kubectl apply -f k8s/components/argocd/apps/root-prod.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-root-prod
+  namespace: argocd
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/components/argocd/apps
+    directory:
+      exclude: '*-dev.yaml'
+  destination:
+    namespace: argocd
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false

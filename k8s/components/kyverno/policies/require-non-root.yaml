@@ -1,0 +1,53 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-non-root
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-runasnonroot
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - kube-system
+                - argocd
+                - kyverno
+          # Pod-label (not namespace) exclusion is deliberate: the sandbox
+          # plane shares no namespace with anything PSS-`restricted`, and only
+          # the DinD daemon + its pre-pull loop are rootful by necessity (the
+          # executor main container itself is non-root). Kyverno CAN scope by
+          # pod labels where PSS cannot — that is exactly what this uses.
+          #
+          # Explicitly accepted residual: the exclusion is pod-wide, so a
+          # future privileged/root container added to the executor pod would
+          # also pass THIS policy. It would still face restrict-privileged
+          # (same label scope), verify-images, and PR review — the label
+          # itself is the trust boundary, matching the namespace split.
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                  matchLabels:
+                    aaks/sandbox: "true"
+      validate:
+        message: "Containers must run as non-root."
+        foreach:
+          - list: request.object.spec.containers
+            context: []
+            pattern:
+              securityContext:
+                runAsNonRoot: true
+          - list: request.object.spec.initContainers
+            context: []
+            pattern:
+              securityContext:
+                runAsNonRoot: true

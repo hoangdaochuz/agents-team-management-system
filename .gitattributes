@@ -1,3 +1,6 @@
-# Normalize line endings: SQL migrations must be stored LF so diffs stay
-# readable regardless of the platform they were authored on.
+# Normalize line endings: SQL migrations and Go module files must be stored
+# LF so diffs stay readable regardless of the platform they were authored on
+# (CI runs `go mod tidy && git diff --exit-code`, which fails on CRLF).
 *.sql text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf

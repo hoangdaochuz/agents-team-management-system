@@ -1,0 +1,31 @@
+# External Secrets Operator (Helm, version-pinned). Serves the
+# ClusterSecretStore + ExternalSecrets in k8s/components/external-secrets
+# and k8s/sandbox/base/externalsecrets.yaml (synced by config-eso, wave 2).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-platform-eso
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: aaks
+  source:
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: 2.10.0
+    helm:
+      valuesObject:
+        # CRDs must exist before the config-eso ExternalSecrets sync (wave 2).
+        crds:
+          create: true
+  destination:
+    namespace: external-secrets
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

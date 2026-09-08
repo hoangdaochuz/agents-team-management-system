@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-values
+  namespace: aaks-sandbox
+data:
+  # Managed Kafka bootstrap (from infra/envs/dev output `kafka_bootstrap_lookup`):
+  # SASL/PLAIN over TLS — credentials come from the kafka-credentials
+  # ExternalSecret in this same namespace.
+  kafka-brokers: "REPLACE-WITH-DEV-MANAGED-KAFKA-BOOTSTRAP:9092"
+  kafka-tls: "true"
+  kafka-sasl-mechanism: "PLAIN"
+
+  # Sandbox base image for the DinD daemon to run task containers from.
+  # CI promotes the exact signed digest here (never `latest`, never rebuilt).
+  executor-sandbox-image: "us-central1-docker.pkg.dev/your-project-id/aaks/sandbox:sha-PLACEHOLDER"
+  executor-pr-base-url: "https://github.com/your-org/your-repo"
+
+  # Space-separated `git clone` URLs the clone-bootstrap CronJob seeds into
+  # the Filestore clone root (one directory per repo). Private repos need a
+  # `git-credentials` Secret (key `token`) in this namespace — create it from
+  # your Git host token; the CronJob's secretKeyRef is optional.
+  clone-repos: "https://github.com/your-org/your-managed-repo.git"

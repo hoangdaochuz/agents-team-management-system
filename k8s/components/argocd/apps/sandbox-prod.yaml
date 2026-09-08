@@ -1,0 +1,25 @@
+# Prod sandbox plane (k8s/sandbox/overlays/prod). Overlay changes ONLY via
+# reviewed promotion PRs, same as the prod workloads.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-sandbox-prod
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/sandbox/overlays/prod
+  destination:
+    namespace: aaks-sandbox
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

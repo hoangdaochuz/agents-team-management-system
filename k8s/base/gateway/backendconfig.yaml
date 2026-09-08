@@ -1,0 +1,12 @@
+# GCE BackendConfig for the gateway Service. The `nginx.ingress.kubernetes.io/*`
+# annotations on our Ingress are NO-OPs on a GCE ingress — long-lived SSE
+# streams (`/api/tasks/:id/stream`) need the timeout HERE, otherwise GCE cuts
+# idle streams at its 30s default and steps stop arriving mid-run.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: aaks-gateway
+spec:
+  timeoutSec: 3600
+  connectionDraining:
+    drainTimeoutSec: 60

@@ -1,0 +1,39 @@
+version: 2
+updates:
+  # Go modules live in backend/ (go.mod is NOT at the repo root — a "/"
+  # directory here would silently watch nothing).
+  - directory: "/backend"
+    package-ecosystem: "gomod"
+    schedule:
+      interval: "weekly"
+    # Don't pull freshly-published (possibly malicious/unstable) versions.
+    cooldown:
+      default-days: 7
+    groups:
+      golang-dependencies:
+        patterns:
+          - "*"
+
+  # npm packages in frontend/
+  - directory: "/frontend"
+    package-ecosystem: "npm"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+
+  # GitHub Actions
+  - directory: "/"
+    package-ecosystem: "github-actions"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"

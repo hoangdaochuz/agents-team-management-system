@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: aaks-sandbox
+
+resources:
+  - ../../base
+  - env-configmap.yaml
+
+# Image digests — placeholders for CI (`deploy.yml` promote-dev) to replace
+# with the exact digests it built, scanned, and signed. Prod promotion copies
+# digests that have soaked in dev (never rebuilds).
+images:
+  - name: executor
+    newName: us-central1-docker.pkg.dev/your-project-id/aaks/executor
+    newTag: sha-PLACEHOLDER
+  - name: clone
+    newName: us-central1-docker.pkg.dev/your-project-id/aaks/clone
+    newTag: sha-PLACEHOLDER
+
+patches:
+  # Small dev sizing: strategic merge by container name (executor-sizing.yaml)
+  # + the Filestore PVC as a JSON patch.
+  - path: executor-sizing.yaml
+  - target:
+      kind: PersistentVolumeClaim
+      name: executor-clone-pvc
+    patch: |-
+      - op: replace
+        path: /spec/resources/requests/storage
+        value: 200Gi

@@ -1,0 +1,324 @@
+# Executor service (runner, renamed): Docker sandbox driver, agent loop,
+# step streaming. Single replica (worktree/file access assumes one node's
+# view — design D3/OQ1). Lives in the DEDICATED `aaks-sandbox` namespace (see
+# ../../README and k8s/README): Pod Security Standards cannot exempt a single
+# pod, and the privileged DinD sidecar is inadmissible under the `restricted`
+# profile the `aaks` namespace enforces — so the sandbox gets its own
+# namespace (PSS `privileged`, guarded by the label-scoped Kyverno policies
+# instead) and schedules on the tainted sandbox node pool. The Filestore PVC
+# is mounted at the SAME absolute path (/clone) in both containers so the
+# DinD daemon can resolve the executor's worktree bind sources.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: executor
+  labels:
+    app: executor
+    tier: backend
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: executor
+  template:
+    metadata:
+      labels:
+        app: executor
+        tier: backend
+        aaks/sandbox: "true"
+    spec:
+      serviceAccountName: executor
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Per design D3: schedule on dedicated sandbox pool. The toleration
+      # matches the pool's `aaks/sandbox` taint (taints are Kubernetes-only,
+      # so the `/` form is fine); the nodeSelector uses the slash-free
+      # `aaks-sandbox` node label (GCE instance labels forbid `/`).
+      tolerations:
+        - key: aaks/sandbox
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      nodeSelector:
+        aaks-sandbox: "true"
+      volumes:
+        # Daemon storage (DinD only) and the socket dir, split in two: sharing
+        # the whole data dir as the socket dir would expose daemon internals
+        # to every container mounting it.
+        - name: dind-data
+          emptyDir: {}
+        # Shared socket dir. `docker:dind` listens on /var/run/docker.sock by
+        # default — no custom --host flag, no second-guessing the entrypoint:
+        # both containers share /var/run and the socket simply appears there.
+        - name: dind-sock
+          emptyDir: {}
+        # Filestore PVC for clone root
+        - name: clone
+          persistentVolumeClaim:
+            claimName: executor-clone-pvc
+      initContainers:
+        # DinD daemon as a NATIVE SIDECAR (restartPolicy: Always — K8s 1.29+,
+        # GKE REGULAR channel): it starts BEFORE pre-pull-sandbox, so the
+        # socket exists when the pre-pull loop runs. A regular (non-init)
+        # sidecar would start only AFTER all initContainers complete — the
+        # pre-pull would then wait on a socket that can never appear and the
+        # pod would hang in Init forever. Default socket
+        # /var/run/docker.sock is shared below via dind-sock.
+        - name: dind
+          image: docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c
+          restartPolicy: Always
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            # Pod-level runAsNonRoot must not apply to the rootful daemon
+            # (kubelet would refuse with CreateContainerConfigError).
+            runAsNonRoot: false
+            runAsUser: 0
+            privileged: true
+            seccompProfile:
+              type: Unconfined
+          # The daemon has no /healthz — exec probes against the socket.
+          livenessProbe:
+            exec:
+              command: [docker, info]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: [docker, info]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: dind-data
+              mountPath: /var/lib/docker
+            - name: dind-sock
+              mountPath: /var/run
+            - name: clone
+              mountPath: /clone
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+        # Pre-pull sandbox image through the DinD socket at startup. Needs the
+        # socket only — NOT privileged (it never touches the host).
+        - name: pre-pull-sandbox
+          image: docker:27.3.1-dind@sha256:7bc418f769fa1147e939170711a520ec21aa0b172dc8c2c5bc8c20646c91de6c
+          command:
+            - sh
+            - -c
+            - |
+              until docker -H unix:///var/run/docker.sock pull "${EXECUTOR_SANDBOX_IMAGE}"; do
+                echo "Waiting for DinD socket and pulling sandbox image..."
+                sleep 5
+              done
+              echo "Sandbox image pre-pulled successfully"
+          env:
+            - name: EXECUTOR_SANDBOX_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: executor-sandbox-image
+          volumeMounts:
+            - name: dind-sock
+              mountPath: /var/run
+          # No resources on the pre-pull loop would trip the Kyverno
+          # require-resource-limits policy (it has no sandbox exclusion).
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            # Pod-level says runAsNonRoot:true — this container runs as root
+            # (socket perms), so it must opt back out explicitly or kubelet
+            # refuses with CreateContainerConfigError.
+            runAsNonRoot: false
+            runAsUser: 0
+      containers:
+        # Executor container (the DinD daemon lives in initContainers as a
+        # native sidecar — see above).
+        - name: executor
+          image: executor
+          ports:
+            - containerPort: 8086
+              name: http
+              protocol: TCP
+          env:
+            - name: HTTP_ADDR
+              value: ":8086"
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-brokers
+            # Managed Kafka: SASL/PLAIN over TLS (see platform/kafka
+            # applyAuthFromEnv — unset vars would mean the plaintext path).
+            - name: KAFKA_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-tls
+            - name: KAFKA_SASL_MECHANISM
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-sasl-mechanism
+            - name: KAFKA_SASL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: user
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: password
+            # DB name stays runner_db (the service was renamed, the DB was not).
+            - name: EXECUTOR_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: executor-dsn
+                  key: dsn
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-token
+                  key: token
+            # Fetches decrypted provider keys / MCP config from the agent
+            # service over the internal token path.
+            - name: AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-internal-token
+                  key: token
+            # Cross-namespace upstreams: the executor lives in aaks-sandbox
+            # while agent/workspace stay in aaks — short names would resolve
+            # in the wrong namespace, so these are cluster FQDNs.
+            - name: AGENT_URL
+              value: http://agent.aaks.svc.cluster.local:8083
+            - name: WORKSPACE_URL
+              value: http://workspace.aaks.svc.cluster.local:8081
+            - name: EXECUTOR_PR_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: executor-pr-base-url
+            # Per design D3: DinD configuration
+            - name: EXECUTOR_SANDBOX
+              value: docker
+            - name: EXECUTOR_SANDBOX_IMAGE
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: executor-sandbox-image
+            # Socket path must match the DinD default (/var/run/docker.sock,
+            # shared via the dind-sock volume) — a custom path here with no
+            # matching dockerd --host flag means the socket never exists.
+            - name: EXECUTOR_DOCKER_SOCKET
+              value: /var/run/docker.sock
+            - name: EXECUTOR_CLONE_ROOT
+              value: /clone
+            # EXECUTOR_DRIVER selects the agent-loop driver (simulated|llm);
+            # the sandbox is selected by EXECUTOR_SANDBOX above.
+            - name: EXECUTOR_DRIVER
+              value: simulated
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8086
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8086
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Slow first boot (Cloud SQL/Kafka dial) must not look dead:
+          # startupProbe gates liveness/readiness for up to 5m.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8086
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: dind-sock
+              mountPath: /var/run
+            - name: clone
+              mountPath: /clone
+      terminationGracePeriodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: executor
+  labels:
+    app: executor
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8086
+      targetPort: 8086
+      protocol: TCP
+      name: http
+  selector:
+    app: executor
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: executor-clone-pvc
+  labels:
+    app: executor
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: filestore
+  resources:
+    requests:
+      storage: 1Ti
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: executor
+automountServiceAccountToken: false

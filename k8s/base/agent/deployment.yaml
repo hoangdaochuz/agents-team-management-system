@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  labels:
+    app: agent
+    tier: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+        tier: backend
+    spec:
+      serviceAccountName: agent
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: agent
+          ports:
+            - containerPort: 8083
+              name: http
+              protocol: TCP
+          env:
+            - name: HTTP_ADDR
+              value: ":8083"
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-brokers
+            # Managed Kafka: SASL/PLAIN over TLS (see platform/kafka
+            # applyAuthFromEnv — unset vars would mean the plaintext path).
+            - name: KAFKA_TLS
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-tls
+            - name: KAFKA_SASL_MECHANISM
+              valueFrom:
+                configMapKeyRef:
+                  name: env-values
+                  key: kafka-sasl-mechanism
+            - name: KAFKA_SASL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: user
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: kafka-credentials
+                  key: password
+            - name: AGENT_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-dsn
+                  key: dsn
+            # Agent service = agent + settings (consolidate-microservices):
+            # it encrypts provider keys itself and answers the executor's
+            # internal key/MCP endpoints.
+            - name: INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: internal-token
+                  key: token
+            - name: AGENT_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-internal-token
+                  key: token
+            - name: AGENT_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agent-master-key
+                  key: key
+            - name: WORKSPACE_URL
+              value: http://workspace.aaks.svc.cluster.local:8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8083
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8083
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Slow first boot (Cloud SQL/Kafka dial) must not look dead:
+          # startupProbe gates liveness/readiness for up to 5m.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8083
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent
+  labels:
+    app: agent
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8083
+      targetPort: 8083
+      protocol: TCP
+      name: http
+  selector:
+    app: agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agent
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agent
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent
+automountServiceAccountToken: false

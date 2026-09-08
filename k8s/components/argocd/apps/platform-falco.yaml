@@ -1,0 +1,29 @@
+# Falco runtime threat detection (Helm, version-pinned) with the tuned rules
+# in k8s/components/falco/values.yaml (suppressed DinD churn in the sandbox
+# plane, shell-spawn alerts in the service containers).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-platform-falco
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: aaks
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: 9.1.0
+    helm:
+      valueFiles:
+        - k8s/components/falco/values.yaml
+  destination:
+    namespace: falco
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true

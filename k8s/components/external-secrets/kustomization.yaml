@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Secret wiring only (ClusterSecretStore + ExternalSecrets — values resolve
+  # from Secret Manager at runtime). The ESO OPERATOR is installed by Argo CD
+  # from the pinned Helm chart (components/argocd/apps/platform-eso.yaml).
+  - externalsecret-aaks.yaml

@@ -21,7 +21,10 @@ type localEnv struct {
 func (e *localEnv) WorktreeBranch() string { return e.wt.Branch }
 
 func (e *localEnv) Exec(ctx context.Context, cmd string, args ...string) (ExecResult, error) {
-	c := exec.CommandContext(ctx, cmd, args...)
+	// Executing agent commands IS this driver's purpose; containment is the
+	// caller's choice of driver (docker sandbox in prod, this host fallback
+	// only for local dev). Commands are built by the agent loop, not raw user input.
+	c := exec.CommandContext(ctx, cmd, args...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	c.Dir = e.wt.Path
 	var stdout, stderr strings.Builder
 	c.Stdout = &stdout

@@ -397,6 +397,77 @@ func TestDLQTopicNaming(t *testing.T) {
 	}
 }
 
+// --- SASL/TLS env auth (managed Kafka) ---
+
+// TestNewConfigPlaintextPathUnchanged verifies that with no KAFKA_SASL_* env
+// set (the compose/CI path), the config keeps SASL and TLS disabled.
+func TestNewConfigPlaintextPathUnchanged(t *testing.T) {
+	c := NewConfig()
+	if c.Net.SASL.Enable {
+		t.Error("SASL must stay disabled without KAFKA_SASL_USER")
+	}
+	if c.Net.TLS.Enable {
+		t.Error("TLS must stay disabled without SASL credentials (opt-out default only applies with KAFKA_SASL_USER set)")
+	}
+}
+
+// TestApplyAuthFromEnv covers the managed-broker auth matrix: PLAIN default,
+// explicit mechanisms, TLS flag, and the unknown-mechanism no-op.
+func TestApplyAuthFromEnv(t *testing.T) {
+	t.Run("plain is the default mechanism", func(t *testing.T) {
+		t.Setenv("KAFKA_SASL_USER", "svc")
+		t.Setenv("KAFKA_SASL_PASSWORD", "pw")
+		t.Setenv("KAFKA_TLS", "true")
+		c := NewConfig()
+		if !c.Net.SASL.Enable {
+			t.Fatal("SASL should be enabled when KAFKA_SASL_USER is set")
+		}
+		if c.Net.SASL.Mechanism != sarama.SASLTypePlaintext {
+			t.Errorf("mechanism = %q, want %q", c.Net.SASL.Mechanism, sarama.SASLTypePlaintext)
+		}
+		if c.Net.SASL.User != "svc" || c.Net.SASL.Password != "pw" {
+			t.Errorf("credentials not applied: user=%q", c.Net.SASL.User)
+		}
+		if !c.Net.TLS.Enable {
+			t.Error("KAFKA_TLS=true should enable TLS")
+		}
+	})
+
+	t.Run("sasl implies tls unless explicitly disabled", func(t *testing.T) {
+		t.Setenv("KAFKA_SASL_USER", "svc")
+		t.Setenv("KAFKA_SASL_PASSWORD", "pw")
+		c := NewConfig()
+		if !c.Net.TLS.Enable {
+			t.Error("TLS must ride along with SASL by default (no plaintext PLAIN)")
+		}
+		t.Setenv("KAFKA_TLS", "false")
+		c = NewConfig()
+		if c.Net.TLS.Enable {
+			t.Error("KAFKA_TLS=false must keep the plaintext escape hatch")
+		}
+		if !c.Net.SASL.Enable {
+			t.Error("SASL itself stays enabled with KAFKA_TLS=false")
+		}
+	})
+
+	t.Run("unsupported mechanism leaves SASL off", func(t *testing.T) {
+		t.Setenv("KAFKA_SASL_USER", "svc")
+		t.Setenv("KAFKA_SASL_MECHANISM", "GSSAPI")
+		c := NewConfig()
+		if c.Net.SASL.Enable {
+			t.Error("unknown mechanism must not enable SASL")
+		}
+	})
+
+	t.Run("tls without sasl stays off unless flagged", func(t *testing.T) {
+		t.Setenv("KAFKA_TLS", "false")
+		c := NewConfig()
+		if c.Net.TLS.Enable || c.Net.SASL.Enable {
+			t.Error("neither TLS nor SASL should be enabled here")
+		}
+	})
+}
+
 func headerMap(h []sarama.RecordHeader) map[string]string {
 	out := make(map[string]string, len(h))
 	for _, h := range h {

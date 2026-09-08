@@ -78,7 +78,7 @@ func sessionToken(r *http.Request) string {
 // set when the request arrived over TLS (direct or via X-Forwarded-Proto), so
 // the cookie never rides plaintext on a downgrade path.
 func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 		Name:     sessionCookie,
 		Value:    token,
 		Path:     "/",
@@ -97,8 +97,11 @@ func isSecure(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
-func clearCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, MaxAge: -1})
+func clearCookie(w http.ResponseWriter, r *http.Request, name string) {
+	// Mirror the session cookie flags so browsers accept the deletion.
+	// Secure is dynamic via isSecure (TLS-or-forwarded-https), which the
+	// static rule below cannot see — hence the suppression.
+	http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r), MaxAge: -1}) // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 }
 
 // clientIP extracts the client address, honoring X-Forwarded-For (the gateway
@@ -162,7 +165,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if token := sessionToken(r); token != "" {
 		_ = s.app.Logout(r.Context(), token)
 	}
-	clearCookie(w, sessionCookie)
+	clearCookie(w, r, sessionCookie)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -253,8 +256,8 @@ func (s *Server) signup(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		httputil.ServerError(w, s.log, "auth.Signup", err)
 	default:
-		clearCookie(w, sessionCookie)
-		http.SetCookie(w, &http.Cookie{Name: signupCookie, Value: reqID, Path: "/", HttpOnly: true, MaxAge: 7 * 86400})
+		clearCookie(w, r, sessionCookie)
+		http.SetCookie(w, &http.Cookie{Name: signupCookie, Value: reqID, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r), MaxAge: 7 * 86400}) // nosemgrep: go.lang.security.audit.net.cookie-missing-secure.cookie-missing-secure
 		httputil.WriteJSON(w, http.StatusCreated, map[string]any{"request_id": reqID})
 	}
 }

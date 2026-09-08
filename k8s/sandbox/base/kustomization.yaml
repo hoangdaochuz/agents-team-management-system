@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  # Privileged agent-execution plane: the executor (DinD sidecar + shared
+  # Filestore clone volume) and the clone-bootstrap CronJob that seeds it.
+  # Everything here lands in `aaks-sandbox` (see namespace.yaml) — Pod
+  # Security Standards cannot exempt a single pod, so the privileged DinD
+  # sidecar cannot share the PSS-`restricted` `aaks` namespace. Guarded
+  # instead by the label-scoped Kyverno policies (aaks/sandbox=true) and the
+  # sandbox NetworkPolicies in networkpolicies.yaml.
+  - namespace.yaml
+  - executor/
+  - clone-bootstrap/
+  - externalsecrets.yaml
+  - networkpolicies.yaml

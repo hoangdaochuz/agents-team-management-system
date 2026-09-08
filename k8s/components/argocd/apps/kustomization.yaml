@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The full delivery graph: shared platform/config Applications plus the per-env
+# workload + sandbox Applications. Each cluster's root (root-dev/root-prod)
+# syncs this directory with the other env excluded.
+resources:
+  - appproject.yaml
+  - root-dev.yaml
+  - root-prod.yaml
+  - platform-kyverno.yaml
+  - platform-eso.yaml
+  - platform-trivy.yaml
+  - platform-falco.yaml
+  - config-kyverno-policies.yaml
+  - config-networkpolicies.yaml
+  - config-eso.yaml
+  - config-pss.yaml
+  - workloads-dev.yaml
+  - workloads-prod.yaml
+  - sandbox-dev.yaml
+  - sandbox-prod.yaml

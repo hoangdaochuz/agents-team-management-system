@@ -1,0 +1,156 @@
+# NetworkPolicies for the aaks-sandbox namespace: default-deny both
+# directions, explicit allows only. Cross-namespace peers select the `aaks`
+# namespace via the automatic `kubernetes.io/metadata.name` label (no custom
+# namespace labels needed).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+# Gateway (aaks) → executor:8086 (task run/review/stop commands).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-gateway
+  namespace: aaks-sandbox
+spec:
+  podSelector:
+    matchLabels:
+      app: executor
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aaks
+          podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - protocol: TCP
+          port: 8086
+---
+# Executor → agent/workspace (provider-key/MCP hydration, task data).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-services
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: aaks
+      ports:
+        - protocol: TCP
+          port: 8081 # workspace
+        - protocol: TCP
+          port: 8083 # agent
+---
+# Executor/consumers → managed Kafka (patch CIDR per env with the actual
+# private IP range, same as the aaks allow-to-kafka rule).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-kafka
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.1.0/24 # Placeholder - patch per env
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+# Executor → Cloud SQL private IP (patch CIDR per env, same as aaks).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-cloudsql
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/24 # Placeholder - patch per env
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# DinD image pulls (Artifact Registry) + git-clone https remotes + any
+# registry the sandbox base image is pulled from. Narrowed to 443/22 outside
+# RFC1918; kubelet image pulls are host traffic and unaffected by this.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-registry-and-git
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 192.168.0.0/16
+              - 172.16.0.0/12
+      ports:
+        - protocol: TCP
+          port: 443 # AR, GCR, https git remotes
+        - protocol: TCP
+          port: 22 # ssh git remotes (only if MANAGED_REPOS uses ssh)
+---
+# DNS (kube-dns in kube-system).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: aaks-sandbox
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

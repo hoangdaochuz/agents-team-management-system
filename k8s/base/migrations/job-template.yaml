@@ -1,0 +1,295 @@
+# Argo CD PreSync migration jobs — one per database (4 after
+# consolidate-microservices): identity, workspace, agent, executor.
+# Each job runs golang-migrate against the migrations ConfigMap generated
+# from that service's repository migrations at CI time (see overlays'
+# configMapGenerator). Jobs run BEFORE the new service pods roll out.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: migrations
+automountServiceAccountToken: false
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: identity-migrate
+  labels:
+    app: migrations
+    service: identity
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  # Bound a stuck migration (hung Cloud SQL dial) instead of retrying forever.
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: migrations
+        service: identity
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: migrations
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
+          command:
+            - sh
+            - -c
+            - |
+              /migrate -path /migrations \
+                -database "${IDENTITY_DB_DSN}" \
+                -lock-timeout 5m \
+                up
+          env:
+            - name: IDENTITY_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: identity-dsn
+                  key: dsn
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: migrations
+          configMap:
+            name: identity-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: workspace-migrate
+  labels:
+    app: migrations
+    service: workspace
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  # Bound a stuck migration (hung Cloud SQL dial) instead of retrying forever.
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: migrations
+        service: workspace
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: migrations
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
+          command:
+            - sh
+            - -c
+            - |
+              /migrate -path /migrations \
+                -database "${WORKSPACE_DB_DSN}" \
+                -lock-timeout 5m \
+                up
+          env:
+            - name: WORKSPACE_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: workspace-dsn
+                  key: dsn
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: migrations
+          configMap:
+            name: workspace-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agent-migrate
+  labels:
+    app: migrations
+    service: agent
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  # Bound a stuck migration (hung Cloud SQL dial) instead of retrying forever.
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: migrations
+        service: agent
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: migrations
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
+          command:
+            - sh
+            - -c
+            - |
+              /migrate -path /migrations \
+                -database "${AGENT_DB_DSN}" \
+                -lock-timeout 5m \
+                up
+          env:
+            - name: AGENT_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: agent-dsn
+                  key: dsn
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: migrations
+          configMap:
+            name: agent-migrations
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: executor-migrate
+  labels:
+    app: migrations
+    service: executor
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  # Bound a stuck migration (hung Cloud SQL dial) instead of retrying forever.
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app: migrations
+        service: executor
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: migrations
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # CI-built from deploy/migrate.Dockerfile (upstream golang-migrate,
+          # digest-pinned, repushed to our Artifact Registry) — promoted by
+          # digest like every other workload image, so the Kyverno
+          # verify-images policy admits these Jobs.
+          image: migrate
+          command:
+            - sh
+            - -c
+            - |
+              /migrate -path /migrations \
+                -database "${EXECUTOR_DB_DSN}" \
+                -lock-timeout 5m \
+                up
+          env:
+            # DB name stays runner_db (the service was renamed, the DB was not).
+            - name: EXECUTOR_DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: executor-dsn
+                  key: dsn
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: migrations
+          configMap:
+            name: executor-migrations

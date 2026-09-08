@@ -1,34 +1,77 @@
 name: ci
 
+# Supply chain: every third-party Action below is SHA-pinned (trailing `# vN`
+# comment records the moving tag it was resolved from — Dependabot's
+# `github-actions` ecosystem keeps the pins fresh), and the scan images are
+# tag+digest pinned. Nothing mutable runs in this pipeline.
 on:
   push:
     branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'infra/**'
+      - 'k8s/**'
+      - 'deploy/**'
+      - '.github/**'
   pull_request:
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'infra/**'
+      - 'k8s/**'
+      - 'deploy/**'
+      - '.github/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep:1.176.0@sha256:12672acdb0949e19f9f6a4c2b288edd0b404f268f0ca7738a2c06f372f50362e
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: semgrep scan --error --config p/default --config p/golang --config p/typescript
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      # Full-history secret scan via the docker image directly (the hosted
+      # gitleaks-action needs a license for org repos; the binary does not).
+      - run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f detect --source /repo
+
   build-test:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25'
           cache: true
 
-      - run: go mod tidy
+      # A bare `go mod tidy` is NOT a check — it rewrites and exits 0 even
+      # when go.mod/go.sum were dirty. Fail on drift instead.
+      - run: go mod tidy && git diff --exit-code -- go.mod go.sum
       - run: go vet ./...
       - run: go build ./...
       - run: go test -race ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
           version: v2.12.2
           working-directory: backend
@@ -39,9 +82,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: npm
@@ -50,3 +93,65 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  iac-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: terraform fmt
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_wrapper: false
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infra/
+
+      - name: Validate Terraform (dev)
+        run: |
+          cd infra/envs/dev
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate Terraform (prod)
+        run: |
+          cd infra/envs/prod
+          terraform init -backend=false
+          terraform validate
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@53f941b41dca13ed61874bbc6b4b6e1562877530 # v3
+
+      - name: Build Kustomize dev
+        run: kustomize build k8s/overlays/dev
+
+      - name: Build Kustomize prod
+        run: kustomize build k8s/overlays/prod
+
+      - name: Build Kustomize sandbox dev
+        run: kustomize build k8s/sandbox/overlays/dev
+
+      - name: Build Kustomize sandbox prod
+        run: kustomize build k8s/sandbox/overlays/prod
+
+      - name: Build Kustomize components
+        run: |
+          for c in argocd argocd/apps kyverno network-policies external-secrets pss; do
+            kustomize build k8s/components/$c > /dev/null
+          done
+
+      - name: Trivy IaC scan
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: k8s/
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: Trivy infra scan
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra/
+          severity: CRITICAL,HIGH
+          exit-code: 1

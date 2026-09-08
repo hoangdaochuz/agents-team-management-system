@@ -1,0 +1,26 @@
+# Dev workloads: gateway/identity/workspace/agent/web + migration PreSync
+# hooks (k8s/overlays/dev). CI promotes here automatically by committing
+# digest updates; Argo CD auto-syncs + self-heals.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aaks-workloads-dev
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: aaks
+  source:
+    repoURL: https://github.com/hoangdaochuz/agents-team-management-system
+    targetRevision: master
+    path: k8s/overlays/dev
+  destination:
+    namespace: aaks
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
